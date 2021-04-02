@@ -49,7 +49,7 @@ Start by creating a InkStory
 let story = InkStory()
 ```
 
-Then load a story from a Ink JSON (you can use Inklecate or Inky to convert an .Ink file to a .json file.):
+Then load a story from a Ink JSON (you can use [Inklecate](https://github.com/inkle/ink/releases) or [Inky](https://github.com/inkle/inky/releases/tag/0.11.0) to convert an .ink file to a .json file.):
 ```
 let storyJSON = ... //
 story.loadStory(json: storyJSON)
