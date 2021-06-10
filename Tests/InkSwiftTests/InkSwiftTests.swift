@@ -141,9 +141,7 @@ final class InkSwiftTests: XCTestCase {
         story.setVariable("doubleVar", to: 1.1)
         let newValue = story.getVariable("doubleVar").toDouble()
         XCTAssertEqual(newValue, 1.1)
-    }
-    
-    
+    }    
         
     // MARK: Observed variables
     func testRegisterObservedVariable() {

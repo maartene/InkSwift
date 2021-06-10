@@ -33,6 +33,7 @@ let package = Package(
             name: "InkSwiftTests",
             dependencies: ["InkSwift"],
             resources: [
+                .process("test.ink"),
                 .process("test.ink.json"),
                 .process("compare.json")
             ]
