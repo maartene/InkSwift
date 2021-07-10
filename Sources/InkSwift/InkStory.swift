@@ -348,6 +348,7 @@ public final class InkStory: ObservableObject {
     ///   - value: new String value
     public func setVariable(_ variable: String, to value: String) {
         jsContext.evaluateScript("story.variablesState[\"\(variable)\"] = \"\(value)\";")
+        refreshObservedVariables()
     }
     
     /// Sets an Ink variable to a specific Int value
@@ -356,6 +357,7 @@ public final class InkStory: ObservableObject {
     ///   - value: new Int value
     public func setVariable(_ variable: String, to value: Int) {
         jsContext.evaluateScript("story.variablesState[\"\(variable)\"] = \(value);")
+        refreshObservedVariables()
     }
     
     /// Sets an Ink variable to a specific Double value
@@ -364,6 +366,7 @@ public final class InkStory: ObservableObject {
     ///   - value: new Double value
     public func setVariable(_ variable: String, to value: Double) {
         jsContext.evaluateScript("story.variablesState[\"\(variable)\"] = \(value);")
+        refreshObservedVariables()
     }
     
     

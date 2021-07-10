@@ -111,6 +111,22 @@ final class CombineTests: XCTestCase {
         print(new_observedVariable)
         XCTAssertNotEqual(old_observedVariable, new_observedVariable)
     }
+    
+    func testSetObservedVariableTriggersCombine() throws {
+        let story = loadSampleStory()
+        story.registerObservedVariable("observedVariable")
+        let old_observedVariable = story.oberservedVariables["observedVariable"]?.toInt32() ?? -1
+        
+        var new_observedVariable = old_observedVariable
+        story.$oberservedVariables.sink(receiveValue: { o in
+            new_observedVariable = o["observedVariable"]?.toInt32() ?? -1
+        }).store(in: &cancellables)
+            
+        story.setVariable("observedVariable", to: 1)
+        
+
+        XCTAssertNotEqual(old_observedVariable, new_observedVariable)
+    }
 
     // MARK: Misc stuff
     private func loadSampleStory() -> InkStory {
