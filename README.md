@@ -11,7 +11,7 @@ Swift wrapper for the Ink narrative scripting language. Based on InkJS. Requires
 * Combine integration (subscribe to state changes, observe variables).
 
 ## Limitations
-* InkSwift uses JavascriptCore. This means that only Apple platforms are supported. I'm working on Linux support using [SwiftJS](https://github.com/SusanDoggie/SwiftJS), but there is a [bug](https://github.com/SusanDoggie/SwiftJS/issues/1) that makes it unusable at this time.
+* InkSwift uses JavascriptCore. This means that only Apple platforms are supported. I'm working on Linux support using [SwiftJS](https://github.com/SusanDoggie/SwiftJS).
 
 ## Getting started
 ### Regular XCode project
