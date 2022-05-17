@@ -57,6 +57,19 @@ public final class InkStory: ObservableObject {
         jsContext.evaluateScript(jsInkUrlString)
     }
     
+    
+    /// Compiles and runs an Ink story based on specified Ink code.
+    /// - Parameter ink: The story to load in Ink format.
+    ///
+    /// WARNING: This method is not yet implemented as the Ink compiler is not yet part of the InkJS distribution.
+    public func loadStory(ink: String) {
+        fatalError("Not implemented.")
+        
+        jsContext.evaluateScript("const story  = (new inkjs.Compiler('\(ink)')).Compile()")
+        continueStory()
+        print("Succesfully loaded and compiled InkStory.")
+    }
+    
     /*public func inkStoryJson(fileName: String, fileExtension: String?) -> String {
         guard let url = Bundle.main.url(forResource: fileName, withExtension: fileExtension) else {
             fatalError("Could not find ink story file.")
