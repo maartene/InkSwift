@@ -173,15 +173,15 @@ final class InkSwiftTests: XCTestCase {
     }
     
     // MARK: Load/save state
-    private let compareJSON =
-        """
-        {
-          "jsonState" : "{\\"callstackThreads\\":{\\"threads\\":[{\\"callstack\\":[{\\"exp\\":false,\\"type\\":0,\\"temp\\":{}}],\\"threadIndex\\":0}],\\"threadCounter\\":0},\\"variablesState\\":{\\"stringVar\\":\\"^Initial\\",\\"intVar\\":2,\\"doubleVar\\":0.1,\\"observedVariable\\":0},\\"evalStack\\":[],\\"outputStream\\":[\\"^Initial\\",\\"\\\\n\\"],\\"currentChoices\\":[],\\"visitCounts\\":{\\"\\":1},\\"turnIndices\\":{},\\"turnIdx\\":-1,\\"storySeed\\":42,\\"previousRandom\\":0,\\"inkSaveVersion\\":8,\\"inkFormatVersion\\":19}",
-          "currentTags" : {
-
-          }
-        }
-        """
+//    private let compareJSON =
+//        """
+//        {
+//          "jsonState" : "{\\"callstackThreads\\":{\\"threads\\":[{\\"callstack\\":[{\\"exp\\":false,\\"type\\":0,\\"temp\\":{}}],\\"threadIndex\\":0}],\\"threadCounter\\":0},\\"variablesState\\":{\\"stringVar\\":\\"^Initial\\",\\"intVar\\":2,\\"doubleVar\\":0.1,\\"observedVariable\\":0},\\"evalStack\\":[],\\"outputStream\\":[\\"^Initial\\",\\"\\\\n\\"],\\"currentChoices\\":[],\\"visitCounts\\":{\\"\\":1},\\"turnIndices\\":{},\\"turnIdx\\":-1,\\"storySeed\\":42,\\"previousRandom\\":0,\\"inkSaveVersion\\":8,\\"inkFormatVersion\\":19}",
+//          "currentTags" : {
+//
+//          }
+//        }
+//        """
     
     func testSave() {
         let story = loadSampleStory()
@@ -195,6 +195,8 @@ final class InkSwiftTests: XCTestCase {
     
     func testLoad() {
         let story = loadSampleStory()
+        XCTAssertEqual(story.getVariable("intVar").toString(), "0")
+        
         let compareJSON = loadCompareJSON()
         story.loadState(compareJSON)
         story.continueStory()
