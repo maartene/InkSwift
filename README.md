@@ -1,5 +1,5 @@
 # InkSwift
-Swift wrapper for the Ink narrative scripting language. Based on InkJS. Requires JavaScriptCore (so for now no Linux support).
+Swift wrapper for the Ink narrative scripting language. Based on InkJS. This version requires JavaScriptCore (so for now no Linux support).
 
 ## Supported features
 * Loading compiled Ink stories `loadStory(json: String)` as well as Ink directly `loadStory(ink: String)`;
@@ -11,7 +11,7 @@ Swift wrapper for the Ink narrative scripting language. Based on InkJS. Requires
 * Combine integration (subscribe to state changes, observe variables).
 
 ## Limitations
-* InkSwift uses JavascriptCore. This means that only Apple platforms are supported. I'm working on Linux support using [SwiftJS](https://github.com/SusanDoggie/SwiftJS). See the 'JSCore' branch for a version that uses SwiftJS instead of JavascriptCore. The tests pass on macOS. Please let me know if it works on Linux as well. Then I will probably merge it into main.
+* This version uses JavaScriptCore. The `JXKit` branch has experimental support for Apple and Linux platforms using `JXKit` (https://github.com/jectivex/JXKit). The tests pass on macOS and Linux. For now I'll keep the two branches seperate, but I will probably merge them in due time.
 
 ## Getting started
 ### Regular XCode project
