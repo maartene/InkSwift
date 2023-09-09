@@ -4,7 +4,7 @@ Swift wrapper for the Ink narrative scripting language. Based on InkJS. Requires
 Use the ``InkStory`` class to run your Ink stories.
 
 ### Supported features
-- Loading Ink stories `loadStory(json: String)`;
+- Loading (compiled) Ink stories `loadStory(json: String)` as well as Ink directly `loadStory(ink: String)`;
 - Basic flow: continue story `continueStory()` and choices `chooseChoiceIndex(_ index: Int)`;
 - Moving to knots/stitches `moveToKnitStitch(_ knot: String, stitch: String? = nil)`;
 - Tag support. Read `currentTags` variable;

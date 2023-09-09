@@ -8,7 +8,7 @@ let package = Package(
     platforms: [
         .macOS(.v10_15),
         .iOS(.v13),
-        .tvOS(.v13)
+        .tvOS(.v13),
     ],
     products: [
         // Products define the executables and libraries a package produces, and make them visible to other packages.
@@ -27,7 +27,7 @@ let package = Package(
             name: "InkSwift",
             dependencies: [],
             resources: [
-                .process("ink.js")]
+                .process("ink-full.js")]
         ),
         .testTarget(
             name: "InkSwiftTests",

@@ -2,7 +2,7 @@
 Swift wrapper for the Ink narrative scripting language. Based on InkJS. Requires JavaScriptCore (so for now no Linux support).
 
 ## Supported features
-* Loading Ink stories `loadStory(json: String)`;
+* Loading compiled Ink stories `loadStory(json: String)` as well as Ink directly `loadStory(ink: String)`;
 * Basic flow: continue story `continueStory()` and choices `chooseChoiceIndex(_ index: Int)`;
 * Moving to knots/stitches `moveToKnitStitch(_ knot: String, stitch: String? = nil)`;
 * Tag support. Read `currentTags` variable;
@@ -53,6 +53,12 @@ Then load a story from a Ink JSON (you can use [Inklecate](https://github.com/in
 ```
 let storyJSON = ... //
 story.loadStory(json: storyJSON)
+```
+
+Alternatively, you can load a story from Ink directly. Not however, that this might hinder performance for users.
+```
+story.loadStory(ink: "Hello, World!")
+
 ```
 
 You can create a very basic command line 'player' using just a few lines of code:

@@ -11,12 +11,12 @@ import XCTest
 final class CompilerTests: XCTestCase {
     
     func testCompileHelloWorld() {
-        print("For now this test always succeeds as the Ink compiler is not yet a strandard part of InkJS.")
-        XCTAssert(true)
+//        print("For now this test always succeeds as the Ink compiler is not yet a strandard part of InkJS.")
+//        XCTAssert(true)
         
-//        let inkStory = InkStory()
-//        inkStory.loadStory(ink: "Hello, World")
-//        print(inkStory.currentText)
+        let inkStory = InkStory()
+        inkStory.loadStory(ink: "Hello, World")
+        print(inkStory.currentText)
     }
     
     static var allTests = [

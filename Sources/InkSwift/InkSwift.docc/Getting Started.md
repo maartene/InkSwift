@@ -46,6 +46,12 @@ let storyJSON = ... //
 story.loadStory(json: storyJSON)
 ```
 
+Alternatively, you can load a story from Ink directly. Not however, that this might hinder performance for users.
+```swift
+story.loadStory(ink: "Hello, World!")
+
+```
+
 You can create a very basic command line 'player' using just a few lines of code:
 
 ```swift
