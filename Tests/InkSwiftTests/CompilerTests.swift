@@ -18,8 +18,4 @@ final class CompilerTests: XCTestCase {
         inkStory.loadStory(ink: "Hello, World")
         print(inkStory.currentText)
     }
-    
-    static var allTests = [
-        ("testCompileHelloWorld", testCompileHelloWorld)
-    ]
 }

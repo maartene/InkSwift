@@ -7,7 +7,7 @@
 //
 
 import Foundation
-import JavaScriptCore
+import JXKit
 import Combine
 
 /// The InkStory class allows you to run Ink stories from Swift applications.
@@ -19,7 +19,7 @@ public final class InkStory: ObservableObject {
         let currentTags: [String: String]
     }
     
-    var jsContext: JSContext! = JSContext()
+    var jxContext: JXContext! = JXContext()
     
     /// Tags specified in this array retain their value after the line where they are declared (making them act kind of like a variable).
     ///
@@ -39,7 +39,7 @@ public final class InkStory: ObservableObject {
         options = [Option]()
         currentTags = [String: String]()
         globalTags = [String: String]()
-        oberservedVariables = [String: JSValue]()
+        oberservedVariables = [String: JXValue]()
         currentErrors = [String]()
         
         guard let jsInkUrl = Bundle.module.url(forResource: "ink-full", withExtension: "js") else {
@@ -54,16 +54,25 @@ public final class InkStory: ObservableObject {
             fatalError("Unable to parse InkJS as string.")
         }
         
-        jsContext.evaluateScript(jsInkUrlString)
+        do {
+            try jxContext.eval(jsInkUrlString)
+        } catch {
+            fatalError("Failed to evaluate InkJS JavaScript code with error: \(error)")
+        }
+        
     }
     
     
     /// Compiles and runs an Ink story based on specified Ink code.
     /// - Parameter ink: The story to load in Ink format.
     public func loadStory(ink: String) {
-        jsContext.evaluateScript("const story  = (new inkjs.Compiler('\(ink)')).Compile()")
-        continueStory()
-        print("Succesfully loaded and compiled InkStory.")
+        do {
+            try jxContext.eval("const story  = (new inkjs.Compiler('\(ink)')).Compile()")
+            continueStory()
+            print("Succesfully loaded and compiled InkStory.")
+        } catch {
+            print("Failed to compile ink story: \(error)")
+        }
     }
     
     /// Loads an Ink story from the Ink stories JSON representations.
@@ -73,11 +82,13 @@ public final class InkStory: ObservableObject {
     ///
     /// Also note, this method requires the actual JSON, not a filename.
     public func loadStory(json: String) {
-        
-        jsContext.evaluateScript("story = new inkjs.Story(\(json));")
-        continueStory()
-        
-        print("Succesfully loaded InkStory.")
+        do {
+            try jxContext.eval("story = new inkjs.Story(\(json));")
+            continueStory()
+            print("Succesfully loaded InkStory.")
+        } catch {
+            print("Failed to load ink story: \(error)")
+        }
     }
     
     /// The text output for the current location in the Ink story.
@@ -126,10 +137,10 @@ public final class InkStory: ObservableObject {
     /// The Ink variable's value changes which trigger Combine to publish a value change.
     ///
     /// All variables can be inspected using ``getVariable(_:)``. This property exists mainly for combine to signal the change to specific Ink variables.
-    @Published public var oberservedVariables: [String: JSValue]
+    @Published public var oberservedVariables: [String: JXValue]
     
     private func refreshState() {
-        currentText = jsContext.evaluateScript("story.currentText;")?.toString() ?? ""
+        currentText = (try? jxContext.eval("story.currentText;").string) ?? ""
         refreshOptions()
         parseTags()
         refreshObservedVariables()
@@ -145,7 +156,7 @@ public final class InkStory: ObservableObject {
     ///
     /// - Returns: The next line of text in the Ink story. Same value as ``currentText``
     @discardableResult public func continueStory() -> String {
-        _ = jsContext.evaluateScript("story.Continue();")
+        _ = try? jxContext.eval("story.Continue();")
         refreshState()
         return currentText
     }
@@ -153,7 +164,7 @@ public final class InkStory: ObservableObject {
     /// Returns the current story text (bridging InkJS 'currentText' variable)
     /// # This function has side effects: it sets the 'currentText' variable.
     /*private func _storyCurrentText() -> String {
-        let s = jsContext.evaluateScript("story.currentText;")?.toString() ?? ""
+        let s = jxContext.eval("story.currentText;")?.toString() ?? ""
         currentText = s
         return s
     }*/
@@ -161,21 +172,24 @@ public final class InkStory: ObservableObject {
     /// Returns whether the story can respond to a 'continue' trigger (bridging InkJS 'canContinue' variable)
     /// # This function has side effects: it sets the 'canContinue' variable
     private func _storyCanContinue() -> Bool {
-        let c = jsContext.evaluateScript("story.canContinue;").toBool()
+        let c = (try? jxContext.eval("story.canContinue;").bool) ?? false
         canContinue = c
         return c
     }
     
     private func refreshOptions() {
         //options.removeAll()
-        let textOptions = jsContext.evaluateScript("story.currentChoices;")?.toArray() ?? []
+        let textOptions = (try? jxContext.eval("story.currentChoices;").array) ?? []
         
         options = textOptions.compactMap { option in
-            if let dict = option as? Dictionary<String, Any> {
-                if let index = dict["index"] as? NSNumber, let text = dict["text"] as? String {
-                    return Option(index: index.intValue, text: text)
-                }
+            if let optionDictionary = try? option.dictionary, let index = try? optionDictionary["index"]?.int, let text = try? optionDictionary["text"]?.string {
+                return Option(index: index, text: text)
             }
+//            if let dict = option as? Dictionary<String, Any> {
+//                if let index = dict["index"] as? NSNumber, let text = dict["text"] as? String {
+//                    return Option(index: index.intValue, text: text)
+//                }
+//            }
             return nil
         }
         
@@ -189,9 +203,9 @@ public final class InkStory: ObservableObject {
     }
     
     private func refreshErrors() {
-        let errors = jsContext.evaluateScript("story.currentErrors;")?.toArray() ?? []
+        let errors = (try? jxContext.eval("story.currentErrors;").array) ?? []
         currentErrors = errors.compactMap { element in
-            element as? String
+            try? element.string
         }
     }
     
@@ -205,10 +219,14 @@ public final class InkStory: ObservableObject {
     ///   - index: (retrieve from ``Option/index``)
     ///   - afterChoiceAction: an optional callback to call after the choice is made
     public func chooseChoiceIndex(_ index: Int, afterChoiceAction: (() -> Void)? = nil) {
-        jsContext.evaluateScript("story.ChooseChoiceIndex(\(index));")
-        //options.removeAll()
-        continueStory()
-        afterChoiceAction?()
+        do {
+            try jxContext.eval("story.ChooseChoiceIndex(\(index));")
+            //options.removeAll()
+            continueStory()
+            afterChoiceAction?()
+        } catch {
+            print("Failed to chooseChoiceIndex: \(index) due to error: \(error)")
+        }
     }
     
     private func clearTags() {
@@ -222,10 +240,10 @@ public final class InkStory: ObservableObject {
     }
     
     private func parseTags() {
-        let gts = jsContext.evaluateScript("story.globalTags;")?.toArray() ?? []
+        let gts = (try? jxContext.eval("story.globalTags;").array) ?? []
         
         for tag in gts {
-            if let tagValue = tag as? String {
+            if let tagValue = try? tag.string {
                 let splits = tagValue.split(separator: ":")
                 if splits.count > 1 {
                     globalTags[String(splits[0])] = String(splits[1])
@@ -237,9 +255,9 @@ public final class InkStory: ObservableObject {
         //print("Global tags: \(globalTags)")
         
         clearTags()
-        let cts = jsContext.evaluateScript("story.currentTags;")?.toArray() ?? []
+        let cts = (try? jxContext.eval("story.currentTags;").array) ?? []
         for tag in cts {
-            if let tagValue = tag as? String {
+            if let tagValue = try? tag.string {
                 let splits = tagValue.split(separator: ":")
                 if splits.count > 1 {
                     currentTags[String(splits[0])] = String(splits[1]).trimmingCharacters(in: .whitespaces)
@@ -261,7 +279,7 @@ public final class InkStory: ObservableObject {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
         
-        let json = jsContext.evaluateScript("story.state.toJson();")?.toString() ?? ""
+        let json = (try? jxContext.eval("story.state.toJson();").string) ?? ""
         let state = SaveState(jsonState: json, currentTags: currentTags)
         do {
             let data = try encoder.encode(state)
@@ -286,7 +304,7 @@ public final class InkStory: ObservableObject {
         do {
             let state = try decoder.decode(SaveState.self, from: jsonData)
         
-            // Double escape JSON input to pass as a parameter inside evaluateScriptInContext
+            // Double escape JSON input to pass as a parameter inside evalInContext
             var json = state.jsonState
             json = json.replacingOccurrences(of: "\\", with: "\\\\")
             json = json.replacingOccurrences(of: "\"", with: "\\\"")
@@ -296,7 +314,7 @@ public final class InkStory: ObservableObject {
             json = json.replacingOccurrences(of: "\r", with: "\\r")
             //json = json.replacingOccurrences(of: "\f", with: "\\f")
             
-            jsContext.evaluateScript("story.state.LoadJson(\"\(json)\");")
+            try jxContext.eval("story.state.LoadJson(\"\(json)\");")
             currentTags = state.currentTags
             print("Succesfully restored state from JSON string.")
             continueStory()
@@ -304,8 +322,8 @@ public final class InkStory: ObservableObject {
             print("Error while loading: ", error)
         }
         
-        //print(jsContext.evaluateScript("story.hasError;")?.toBool() ?? false)
-        //print(jsContext.evaluateScript("story.currentErrors;")?.toArray() ?? [])
+        //print(jxContext.eval("story.hasError;")?.toBool() ?? false)
+        //print(jxContext.eval("story.currentErrors;")?.toArray() ?? [])
         
     }
     
@@ -325,16 +343,20 @@ public final class InkStory: ObservableObject {
                 
         print("moveToKnitStitch: path: \(path)")
         
-        jsContext.evaluateScript("story.ChoosePathString(\"\(path)\")")
-        continueStory()
+        do {
+            try jxContext.eval("story.ChoosePathString(\"\(path)\")")
+            continueStory()
+        } catch {
+            print("Failed to moveToKnitStitch: \(path) due to error: \(error)")
+        }
     }
     
     
     /// Inspect an Ink variables value.
     /// - Parameter variable: the Ink variable to inspect
     /// - Returns: the variables value or `null` if the variable is not known.
-    public func getVariable(_ variable: String) -> JSValue {
-        return jsContext.evaluateScript("story.variablesState[\"\(variable)\"];")
+    public func getVariable(_ variable: String) -> JXValue {
+        return (try? jxContext.eval("story.variablesState[\"\(variable)\"];")) ?? jxContext.null()
     }
     
     
@@ -343,8 +365,12 @@ public final class InkStory: ObservableObject {
     ///   - variable: Ink variable name
     ///   - value: new String value
     public func setVariable(_ variable: String, to value: String) {
-        jsContext.evaluateScript("story.variablesState[\"\(variable)\"] = \"\(value)\";")
-        refreshObservedVariables()
+        do {
+            try jxContext.eval("story.variablesState[\"\(variable)\"] = \"\(value)\";")
+            refreshObservedVariables()
+        } catch {
+            print("failed to set variable \(variable) to value \(value) due to error: \(error)")
+        }
     }
     
     /// Sets an Ink variable to a specific Int value
@@ -352,8 +378,12 @@ public final class InkStory: ObservableObject {
     ///   - variable: Ink variable name
     ///   - value: new Int value
     public func setVariable(_ variable: String, to value: Int) {
-        jsContext.evaluateScript("story.variablesState[\"\(variable)\"] = \(value);")
-        refreshObservedVariables()
+        do {
+            try jxContext.eval("story.variablesState[\"\(variable)\"] = \(value);")
+            refreshObservedVariables()
+        } catch {
+            print("failed to set variable \(variable) to value \(value) due to error: \(error)")
+        }
     }
     
     /// Sets an Ink variable to a specific Double value
@@ -361,8 +391,12 @@ public final class InkStory: ObservableObject {
     ///   - variable: Ink variable name
     ///   - value: new Double value
     public func setVariable(_ variable: String, to value: Double) {
-        jsContext.evaluateScript("story.variablesState[\"\(variable)\"] = \(value);")
-        refreshObservedVariables()
+        do {
+            try jxContext.eval("story.variablesState[\"\(variable)\"] = \(value);")
+            refreshObservedVariables()
+        } catch {
+            print("failed to set variable \(variable) to value \(value) due to error: \(error)")
+        }
     }
     
     
@@ -373,7 +407,7 @@ public final class InkStory: ObservableObject {
     /// - Parameter variableName: the variable to observe.
     public func registerObservedVariable(_ variableName: String) {
         if oberservedVariables.keys.contains(variableName) == false {
-            oberservedVariables[variableName] = JSValue(nullIn: jsContext)
+            oberservedVariables[variableName] = jxContext.null()
         }
     }
     

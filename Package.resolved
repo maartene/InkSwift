@@ -1,0 +1,14 @@
+{
+  "pins" : [
+    {
+      "identity" : "jxkit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/jectivex/JXKit.git",
+      "state" : {
+        "revision" : "1d2c56ada375aa14c9ec2eb299d27690949fb5a4",
+        "version" : "3.5.1"
+      }
+    }
+  ],
+  "version" : 2
+}

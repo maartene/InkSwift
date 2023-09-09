@@ -96,12 +96,12 @@ final class CombineTests: XCTestCase {
     func testOberservedVariables() throws {
         let story = loadSampleStory()
         story.registerObservedVariable("observedVariable")
-        let old_observedVariable = story.oberservedVariables["observedVariable"]?.toInt32() ?? -1
+        let old_observedVariable = (try? story.oberservedVariables["observedVariable"]?.int32) ?? -1
         var new_observedVariable = old_observedVariable
         
         story.moveToKnitStitch("ObservedVariables")
         story.$oberservedVariables.sink(receiveValue: { o in
-            new_observedVariable = o["observedVariable"]?.toInt32() ?? -1
+            new_observedVariable = (try? o["observedVariable"]?.int32) ?? -1
         }).store(in: &cancellables)
         
         story.continueStory()
@@ -115,11 +115,11 @@ final class CombineTests: XCTestCase {
     func testSetObservedVariableTriggersCombine() throws {
         let story = loadSampleStory()
         story.registerObservedVariable("observedVariable")
-        let old_observedVariable = story.oberservedVariables["observedVariable"]?.toInt32() ?? -1
+        let old_observedVariable = (try? story.oberservedVariables["observedVariable"]?.int32) ?? -1
         
         var new_observedVariable = old_observedVariable
         story.$oberservedVariables.sink(receiveValue: { o in
-            new_observedVariable = o["observedVariable"]?.toInt32() ?? -1
+            new_observedVariable = (try? o["observedVariable"]?.int32) ?? -1
         }).store(in: &cancellables)
             
         story.setVariable("observedVariable", to: 1)
@@ -145,12 +145,4 @@ final class CombineTests: XCTestCase {
             fatalError("Failed to load story: \(error)")
         }
     }
-    
-    static var allTests = [
-        ("testCurrentTextChangedStory", testCurrentTextChangedStory),
-        ("testCanContinueChangedStory", testCanContinueChangedStory),
-        ("testOptionsChangedStory", testOptionsChangedStory),
-        ("testCurrentTagsChanges", testCurrentTagsChanges),
-        ("testOberservedVariables", testOberservedVariables),        
-    ]
 }
