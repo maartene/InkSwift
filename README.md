@@ -2,7 +2,7 @@
 Swift wrapper for the Ink narrative scripting language. Based on InkJS. 
 
 ## Supported features
-* Apple and Linux platforms (using [JXKit](https://github.com/jectivex/JXKit)
+* Apple and Linux platforms (using [JXKit](https://github.com/jectivex/JXKit))
 * Loading compiled Ink stories `loadStory(json: String)` as well as Ink directly `loadStory(ink: String)`;
 * Basic flow: continue story `continueStory()` and choices `chooseChoiceIndex(_ index: Int)`;
 * Moving to knots/stitches `moveToKnitStitch(_ knot: String, stitch: String? = nil)`;
