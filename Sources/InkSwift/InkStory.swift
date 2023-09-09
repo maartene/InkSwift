@@ -8,7 +8,10 @@
 
 import Foundation
 import JXKit
-import Combine
+import JavaScriptCore
+#if canImport(Combine)
+    import Combine
+#endif
 
 /// The InkStory class allows you to run Ink stories from Swift applications.
 ///
@@ -94,7 +97,10 @@ public final class InkStory: ObservableObject {
     /// The text output for the current location in the Ink story.
     ///
     /// You can use `Combine` to subscribe to changes in this property.
-    @Published public var currentText: String
+#if canImport(Combine)
+    @Published
+#endif
+    public var currentText: String
     
     /// Whether it is possible to continue the current story.
     ///
@@ -104,40 +110,58 @@ public final class InkStory: ObservableObject {
     /// * The story reached it's end (there is no more content)
     ///
     /// You can use `Combine` to subscribe to changes in this property.
-    @Published public var canContinue: Bool
+#if canImport(Combine)
+    @Published
+#endif
+    public var canContinue: Bool
     
     /// The current options in the Ink story.
     ///
     /// When there are no options, this property's value is `[]`.
     ///
-    /// You can use `Combine` to subscribe to changes in this property.
-    @Published public var options: [Option]
+    /// (Apple platforms only) You can use `Combine` to subscribe to changes in this property.
+#if canImport(Combine)
+    @Published
+#endif
+    public var options: [Option]
     
     /// The global tags and their current values
     ///
     /// This is a dictionary of the form `tag` => `value`. Note that tags don't need to have an associated value. If that is the case, then `value` = `tag`.
     ///
-    /// You can use `Combine` to subscribe to changes in this property.
-    @Published public var globalTags: [String: String]
+    /// (Apple platforms only) You can use `Combine` to subscribe to changes in this property.
+#if canImport(Combine)
+    @Published
+#endif
+    public var globalTags: [String: String]
     
     /// Currently active errors in the Ink story.
     ///
     /// When there are no options, this property's value is `[]`.
     ///
-    /// You can use `Combine` to subscribe to changes in this property.
-    @Published public var currentErrors: [String]
+    /// (Apple platforms only) You can use `Combine` to subscribe to changes in this property.
+#if canImport(Combine)
+    @Published
+#endif
+    public var currentErrors: [String]
     
     /// The currently active tags and their (current) values.
     ///
     /// This is a dictionary of the form `tag` => `value`. Note that tags don't need to have an associated value. If that is the case, then `value` = `tag`.
     ///
-    /// You can use `Combine` to subscribe to changes in this property.
-    @Published public var currentTags: [String: String]
+    /// (Apple platforms only) You can use `Combine` to subscribe to changes in this property.
+#if canImport(Combine)
+    @Published
+#endif
+    public var currentTags: [String: String]
     
-    /// The Ink variable's value changes which trigger Combine to publish a value change.
+    /// (Apple platforms only)  The Ink variable's value changes which trigger Combine to publish a value change.
     ///
     /// All variables can be inspected using ``getVariable(_:)``. This property exists mainly for combine to signal the change to specific Ink variables.
-    @Published public var oberservedVariables: [String: JXValue]
+#if canImport(Combine)
+    @Published
+#endif
+    public var oberservedVariables: [String: JXValue]
     
     private func refreshState() {
         currentText = (try? jxContext.eval("story.currentText;").string) ?? ""

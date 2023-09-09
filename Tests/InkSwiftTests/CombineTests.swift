@@ -5,6 +5,7 @@
 //  Created by Maarten Engels on 16/02/2021.
 //
 
+#if canImport(Combine)
 import XCTest
 import Combine
 @testable import InkSwift
@@ -146,3 +147,11 @@ final class CombineTests: XCTestCase {
         }
     }
 }
+#else
+final class CombineUnavailableTests: XCTestCase {
+    func test_combineNotAvailable() {
+        print("Combine is not available on this platform. Skipping Combine tests.")
+        XCTAssertTrue(true)
+    }
+}
+#endif
