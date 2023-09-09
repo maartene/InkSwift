@@ -5,8 +5,9 @@
 //  Created by Maarten Engels on 16/02/2021.
 //
 
-#if canImport(Combine)
 import XCTest
+
+#if canImport(Combine)
 import Combine
 @testable import InkSwift
 
