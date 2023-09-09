@@ -8,7 +8,6 @@
 
 import Foundation
 import JXKit
-import JavaScriptCore
 #if canImport(Combine)
     import Combine
 #endif
