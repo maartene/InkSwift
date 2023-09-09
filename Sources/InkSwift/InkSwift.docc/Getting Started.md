@@ -91,10 +91,10 @@ print("Story done!")
 ## Using Combine/SwiftUI
 InkStory conforms to the `ObservableObject` protocol. This makes using it in Combine possible and SwiftUI very easy. A simple example SwiftUI view that can play an Ink story would contain:
 
-### Import the SwiftInk package
+### Import the InkSwift package
 Add 
 ```swift
-import SwiftInk
+import InkSwift
 ``` 
 
 to ContentView.swift
@@ -116,7 +116,7 @@ guard let storyJSON = try? String(contentsOf: url) else {
     fatalError("Could not load story file.")
 }
 
-story.loadStory(json: storyJSON)
+story.loadStory(json: storyJSON) 
 }
 ```
 
