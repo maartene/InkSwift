@@ -10,6 +10,9 @@ import Foundation
 import JXKit
 #if canImport(Combine)
     import Combine
+#else
+// a stub protocol to allow compiling on environments where Combine is not available.
+protocol ObservableObject { }
 #endif
 
 /// The InkStory class allows you to run Ink stories from Swift applications.
