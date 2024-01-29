@@ -1,4 +1,5 @@
 import XCTest
+import JSONEquality
 @testable import InkSwift
 
 final class InkSwiftTests: XCTestCase {
@@ -182,15 +183,34 @@ final class InkSwiftTests: XCTestCase {
 //          }
 //        }
 //        """
+
+//    func compareJSON(_ json1: String, _ json2: String) -> Bool {
+//        guard json1.count == json2.count else {
+//            return false
+//        }
+//        
+//        // perform a simple checksum to check for equality
+//        var json1Counts = [Character: Int]()
+//        for character in json1 {
+//            json1Counts[character] = json1Counts[character, default: 0] + 1
+//        }
+//        
+//        var json2Counts = [Character: Int]()
+//        for character in json2 {
+//            json2Counts[character] = json2Counts[character, default: 0] + 1
+//        }
+//        
+//        return json1Counts == json2Counts
+//    }
     
-    func testSave() {
+    func testSave() throws {
         let story = loadSampleStory()
         story.continueStory()
         story.setVariable("intVar", to: 2)
         let saveJSON = story.stateToJSON()
-        let compareJSON = loadCompareJSON()
-        print(saveJSON)
-        XCTAssertEqual(saveJSON + "\n", compareJSON)
+        let expectedJSON = loadCompareJSON()
+        print(saveJSON, "\n\n", expectedJSON)
+        XCTAssertTrue(try JSONEquality.JSONEquals(saveJSON, expectedJSON))
     }
     
     func testLoad() throws {

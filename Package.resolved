@@ -1,6 +1,15 @@
 {
   "pins" : [
     {
+      "identity" : "jsonequality",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/neallester/JSONEquality.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "5dc87268b5ef24718857c1dd42dd36403b79623b"
+      }
+    },
+    {
       "identity" : "jxkit",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/jectivex/JXKit.git",

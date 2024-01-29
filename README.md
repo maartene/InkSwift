@@ -154,4 +154,5 @@ var body: some View {
 
 ## Licenced content
 * The Ink runtime uses the official Ink Javascript port [InkJS](https://github.com/y-lohse/inkjs)
+* The Compiler tests use [The Intercept](https://github.com/inkle/the-intercept) as an example story to compile
 * Cross-platform JavaScript runtime [JXKit](https://github.com/jectivex/JXKit)
