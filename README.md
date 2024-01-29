@@ -11,6 +11,10 @@ Swift wrapper for the Ink narrative scripting language. Based on InkJS.
 * Loading and saving state `stateToJSON()` and `loadState(_ jsonDataString: String)`;
 * On Apple platforms: Combine integration (subscribe to state changes, observe variables).
 
+### Linux installations
+JXKit on Linux requires JavaScriptCore libraries, that are part of WebKit. For Ubuntu 20.04 and newer:
+`sudo apt install libwebkit2gtk-4.0-dev`
+
 ## Limitations
 * None that I'm aware of.
 
