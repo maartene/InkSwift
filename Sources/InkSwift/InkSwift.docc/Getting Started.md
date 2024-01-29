@@ -116,7 +116,7 @@ guard let storyJSON = try? String(contentsOf: url) else {
     fatalError("Could not load story file.")
 }
 
-story.loadStory(json: storyJSON)
+story.loadStory(json: storyJSON) 
 }
 ```
 

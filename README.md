@@ -18,7 +18,6 @@ JXKit on Linux requires JavaScriptCore libraries, that are part of WebKit. For U
 ## Limitations
 * When using the built in Ink compiler, don't use JavaScript tokens that can confuse string definitions, like \`.
 
-
 ## Getting started
 ### Regular XCode project
 Use 'File' -> 'Swift Packages' -> 'Add Package Dependency...' to add the package to your project.
