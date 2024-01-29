@@ -70,22 +70,17 @@ public final class InkStory: ObservableObject {
     
     /// Compiles and runs an Ink story based on specified Ink code.
     /// - Parameter ink: The story to load in Ink format.
-    public func loadStory(ink: String) {
-        do {
-            let jsCode =
-            """
-            const code =
-            `
-            \(ink)
-            `
-            const story = (new inkjs.Compiler(code)).Compile()
-            """
-            try jxContext.eval(jsCode)
-            continueStory()
-            print("Succesfully loaded and compiled InkStory.")
-        } catch {
-            print("Failed to compile ink story: \(error)")
-        }
+    public func loadStory(ink: String) throws {
+        let jsCode =
+        """
+        const code =
+        `
+        \(ink)
+        `
+        const story = (new inkjs.Compiler(code)).Compile()
+        """
+        try jxContext.eval(jsCode)
+        continueStory()
     }
     
     /// Loads an Ink story from the Ink stories JSON representations.

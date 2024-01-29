@@ -16,9 +16,9 @@ final class CompilerTests: XCTestCase {
     -> END
     """
     
-    func testCompileHelloWorld() {
+    func testCompileHelloWorld() throws {
         let inkStory = InkStory()
-        inkStory.loadStory(ink: testInk)
+        try inkStory.loadStory(ink: testInk)
         // If the story compiles correctly, the first line should now be available.
         XCTAssertEqual(inkStory.currentText.trimmingCharacters(in: .whitespacesAndNewlines), "Hello, World!")
     }
@@ -32,8 +32,30 @@ final class CompilerTests: XCTestCase {
         
         let inkStory = InkStory()
         let storyInk = try String(contentsOf: url)
-        inkStory.loadStory(ink: storyInk)
+        try inkStory.loadStory(ink: storyInk)
         // If the story compiles correctly, the first line should now be available.
         XCTAssertEqual(inkStory.currentText.trimmingCharacters(in: .whitespacesAndNewlines), "They are keeping me waiting.")
+    }
+    
+    func testCompileFails_forInkwithError() {
+        let ink =
+        """
+        Hello,
+        -> Foo
+        """
+        
+        let inkStory = InkStory()
+        XCTAssertThrowsError(try inkStory.loadStory(ink: ink))
+    }
+    
+    func testCompileFails_forInkwithJavaScript() throws {
+        let ink =
+        """
+        Hello,`confuse me
+        -> End
+        """
+        
+        let inkStory = InkStory()
+        XCTAssertThrowsError(try inkStory.loadStory(ink: ink))
     }
 }

@@ -16,7 +16,8 @@ JXKit on Linux requires JavaScriptCore libraries, that are part of WebKit. For U
 `sudo apt install libwebkit2gtk-4.0-dev`
 
 ## Limitations
-* None that I'm aware of.
+* When using the built in Ink compiler, don't use JavaScript tokens that can confuse string definitions, like \`.
+
 
 ## Getting started
 ### Regular XCode project
