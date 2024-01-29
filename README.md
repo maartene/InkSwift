@@ -1,17 +1,22 @@
 # InkSwift
-Swift wrapper for the Ink narrative scripting language. Based on InkJS. This version requires JavaScriptCore (so for now no Linux support).
+Swift wrapper for the Ink narrative scripting language. Based on InkJS. 
 
 ## Supported features
+* Apple and Linux platforms (using [JXKit](https://github.com/jectivex/JXKit))
 * Loading compiled Ink stories `loadStory(json: String)` as well as Ink directly `loadStory(ink: String)`;
 * Basic flow: continue story `continueStory()` and choices `chooseChoiceIndex(_ index: Int)`;
 * Moving to knots/stitches `moveToKnitStitch(_ knot: String, stitch: String? = nil)`;
 * Tag support. Read `currentTags` variable;
 * Setting and getting variable values (supports strings, 32-bit integers and doubles);
 * Loading and saving state `stateToJSON()` and `loadState(_ jsonDataString: String)`;
-* Combine integration (subscribe to state changes, observe variables).
+* On Apple platforms: Combine integration (subscribe to state changes, observe variables).
+
+### Linux installations
+JXKit on Linux requires JavaScriptCore libraries, that are part of WebKit. For Ubuntu 20.04 and newer:
+`sudo apt install libwebkit2gtk-4.0-dev`
 
 ## Limitations
-* This version uses JavaScriptCore. The `JXKit` branch has experimental support for Apple and Linux platforms using `JXKit` (https://github.com/jectivex/JXKit). The tests pass on macOS and Linux. For now I'll keep the two branches seperate, but I will probably merge them in due time.
+* When using the built in Ink compiler, don't use JavaScript tokens that can confuse string definitions, like \`.
 
 ## Getting started
 ### Regular XCode project
@@ -153,3 +158,5 @@ var body: some View {
 
 ## Licenced content
 * The Ink runtime uses the official Ink Javascript port [InkJS](https://github.com/y-lohse/inkjs)
+* The Compiler tests use [The Intercept](https://github.com/inkle/the-intercept) as an example story to compile
+* Cross-platform JavaScript runtime [JXKit](https://github.com/jectivex/JXKit)

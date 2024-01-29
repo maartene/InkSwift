@@ -1,4 +1,5 @@
 import XCTest
+import JSONEquality
 @testable import InkSwift
 
 final class InkSwiftTests: XCTestCase {
@@ -104,42 +105,42 @@ final class InkSwiftTests: XCTestCase {
     }
     
     // MARK: Variable tests
-    func testGetVariable() {
+    func testGetVariable() throws {
         let story = loadSampleStory()
         story.continueStory()
         let jsValue = story.getVariable("stringVar")
         print(jsValue)
-        let value = story.getVariable("stringVar").toString()
+        let value = try story.getVariable("stringVar").string
         XCTAssertEqual(value, "Initial")
     }
     
-    func testSetStringVariable() {
+    func testSetStringVariable() throws {
         let story = loadSampleStory()
-        let oldValue = story.getVariable("stringVar").toString()
+        let oldValue = try story.getVariable("stringVar").string
         XCTAssertEqual(oldValue, "Initial")
         story.continueStory()
         story.setVariable("stringVar", to: "Value Set")
-        let newValue = story.getVariable("stringVar").toString()
+        let newValue = try story.getVariable("stringVar").string
         XCTAssertEqual(newValue, "Value Set")
     }
     
-    func testSetIntVariable() {
+    func testSetIntVariable() throws {
         let story = loadSampleStory()
-        let oldValue = story.getVariable("intVar").toInt32()
+        let oldValue = try story.getVariable("intVar").int32
         XCTAssertEqual(oldValue, 0)
         story.continueStory()
         story.setVariable("intVar", to: 1)
-        let newValue = story.getVariable("intVar").toInt32()
+        let newValue = try story.getVariable("intVar").int32
         XCTAssertEqual(newValue, 1)
     }
     
-    func testSetDoubleVariable() {
+    func testSetDoubleVariable() throws {
         let story = loadSampleStory()
-        let oldValue = story.getVariable("doubleVar").toDouble()
+        let oldValue = try story.getVariable("doubleVar").double
         XCTAssertEqual(oldValue, 0.1)
         story.continueStory()
         story.setVariable("doubleVar", to: 1.1)
-        let newValue = story.getVariable("doubleVar").toDouble()
+        let newValue = try story.getVariable("doubleVar").double
         XCTAssertEqual(newValue, 1.1)
     }    
         
@@ -161,15 +162,15 @@ final class InkSwiftTests: XCTestCase {
         XCTAssertFalse(story.oberservedVariables.keys.contains("observedVariable"))
     }
     
-    func testObservedVariableChange() {
+    func testObservedVariableChange() throws {
         let story = loadSampleStory()
         story.registerObservedVariable("observedVariable")
         XCTAssertTrue(story.oberservedVariables.keys.contains("observedVariable"))
-        XCTAssertEqual(story.oberservedVariables["observedVariable"]?.toInt32() ?? -1, 0)
+        XCTAssertEqual(try story.oberservedVariables["observedVariable"]?.int32 ?? -1, 0)
         
         story.moveToKnitStitch("ObservedVariables")
         story.continueStory()
-        XCTAssertEqual(story.oberservedVariables["observedVariable"]?.toInt32() ?? -1, 1)
+        XCTAssertEqual(try story.oberservedVariables["observedVariable"]?.int32 ?? -1, 1)
     }
     
     // MARK: Load/save state
@@ -182,27 +183,46 @@ final class InkSwiftTests: XCTestCase {
 //          }
 //        }
 //        """
+
+//    func compareJSON(_ json1: String, _ json2: String) -> Bool {
+//        guard json1.count == json2.count else {
+//            return false
+//        }
+//        
+//        // perform a simple checksum to check for equality
+//        var json1Counts = [Character: Int]()
+//        for character in json1 {
+//            json1Counts[character] = json1Counts[character, default: 0] + 1
+//        }
+//        
+//        var json2Counts = [Character: Int]()
+//        for character in json2 {
+//            json2Counts[character] = json2Counts[character, default: 0] + 1
+//        }
+//        
+//        return json1Counts == json2Counts
+//    }
     
-    func testSave() {
+    func testSave() throws {
         let story = loadSampleStory()
         story.continueStory()
         story.setVariable("intVar", to: 2)
         let saveJSON = story.stateToJSON()
-        let compareJSON = loadCompareJSON()
-        print(saveJSON)
-        XCTAssertEqual(saveJSON + "\n", compareJSON)
+        let expectedJSON = loadCompareJSON()
+        print(saveJSON, "\n\n", expectedJSON)
+        XCTAssertTrue(try JSONEquality.JSONEquals(saveJSON, expectedJSON))
     }
     
-    func testLoad() {
+    func testLoad() throws {
         let story = loadSampleStory()
-        XCTAssertEqual(story.getVariable("intVar").toString(), "0")
+        XCTAssertEqual(try story.getVariable("intVar").string, "0")
         
         let compareJSON = loadCompareJSON()
         story.loadState(compareJSON)
         story.continueStory()
         print(story.currentText)
         let intVarJS = story.getVariable("intVar")
-        let intVar = intVarJS.toString()
+        let intVar = try intVarJS.string
         XCTAssertEqual(intVar, "2")
     }
     
@@ -236,26 +256,4 @@ final class InkSwiftTests: XCTestCase {
             fatalError("Failed to load compare JSON: \(error)")
         }
     }
-    
-    static var allTests = [
-        ("testCreateInkStory", testCreateInkStory),
-        ("testLoadInkStory", testLoadInkStory),
-        ("testGoToKnot", testGoToKnot),
-        ("testGoToKnotStitch", testGoToKnotStitch),
-        ("testSeeChoices", testSeeChoices),
-        ("testChooseChoiseOption", testChooseChoiseOption),
-        ("testTag", testTag),
-        ("testValueTag", testValueTag),
-        ("testRetainTag", testRetainTag),
-        ("testNonRetainTag", testNonRetainTag),
-        ("testSetStringVariable", testSetStringVariable),
-        ("testSetIntVariable", testSetIntVariable),
-        ("testSetDoubleVariable", testSetDoubleVariable),
-        ("testGetVariable", testGetVariable),
-        ("testRegisterObservedVariable", testRegisterObservedVariable),
-        ("testDeRegisterObservedVariable", testDeRegisterObservedVariable),
-        ("testObservedVariableChange", testObservedVariableChange),
-        ("testSave", testSave),
-        ("testLoad", testLoad),
-    ]
 }

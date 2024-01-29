@@ -10,16 +10,52 @@ import XCTest
 
 final class CompilerTests: XCTestCase {
     
-    func testCompileHelloWorld() {
-//        print("For now this test always succeeds as the Ink compiler is not yet a strandard part of InkJS.")
-//        XCTAssert(true)
-        
+    let testInk =
+    """
+    Hello, World!
+    -> END
+    """
+    
+    func testCompileHelloWorld() throws {
         let inkStory = InkStory()
-        inkStory.loadStory(ink: "Hello, World")
-        print(inkStory.currentText)
+        try inkStory.loadStory(ink: testInk)
+        // If the story compiles correctly, the first line should now be available.
+        XCTAssertEqual(inkStory.currentText.trimmingCharacters(in: .whitespacesAndNewlines), "Hello, World!")
     }
     
-    static var allTests = [
-        ("testCompileHelloWorld", testCompileHelloWorld)
-    ]
+    /// I use TheIntercept as a test case, because it's a pretty complicated Ink story that highlights many of its features. If this one compiles, I am fairly certain other Ink stories also compile.
+    func testCompileTheIntercept() throws {
+        guard let url = Bundle.module.url(forResource: "TheIntercept", withExtension: "ink") else {
+            XCTFail("Could not find ink story file.")
+            return
+        }
+        
+        let inkStory = InkStory()
+        let storyInk = try String(contentsOf: url)
+        try inkStory.loadStory(ink: storyInk)
+        // If the story compiles correctly, the first line should now be available.
+        XCTAssertEqual(inkStory.currentText.trimmingCharacters(in: .whitespacesAndNewlines), "They are keeping me waiting.")
+    }
+    
+    func testCompileFails_forInkwithError() {
+        let ink =
+        """
+        Hello,
+        -> Foo
+        """
+        
+        let inkStory = InkStory()
+        XCTAssertThrowsError(try inkStory.loadStory(ink: ink))
+    }
+    
+    func testCompileFails_forInkwithJavaScript() throws {
+        let ink =
+        """
+        Hello,`confuse me
+        -> End
+        """
+        
+        let inkStory = InkStory()
+        XCTAssertThrowsError(try inkStory.loadStory(ink: ink))
+    }
 }
