@@ -211,8 +211,21 @@ public final class InkStory: ObservableObject {
         let textOptions = (try? jxContext.eval("story.currentChoices;").array) ?? []
         
         options = textOptions.compactMap { option in
-            if let optionDictionary = try? option.dictionary, let index = try? optionDictionary["index"]?.int, let text = try? optionDictionary["text"]?.string {
-                return Option(index: index, text: text)
+            if let optionDictionary = try? option.dictionary, let index = try? optionDictionary["index"]?.int, let text = try? optionDictionary["text"]?.string, let tagsArray = try? optionDictionary["tags"]?.array ?? [] {
+                
+                var tagsDictionary = [String:String]()
+                for tag in tagsArray {
+                    if let tagValue = try? tag.string {
+                        let splits = tagValue.split(separator: ":")
+                        if splits.count > 1 {
+                            tagsDictionary[String(splits[0])] = String(splits[1]).trimmingCharacters(in: .whitespaces)
+                        } else {
+                            tagsDictionary[String(splits[0])] = String(splits[0])
+                        }
+                    }
+                }
+                
+                return Option(index: index, text: text, tags: tagsDictionary)
             }
 //            if let dict = option as? Dictionary<String, Any> {
 //                if let index = dict["index"] as? NSNumber, let text = dict["text"] as? String {
@@ -468,9 +481,12 @@ public struct Option {
     public let index: Int
     /// The choices text as returned from the Ink story.
     public let text: String
+    /// The tags associated with this option, if any
+    public var tags: [String: String]
     
-    fileprivate init(index: Int, text: String) {
+    fileprivate init(index: Int, text: String, tags: [String: String]) {
         self.index = index
         self.text = text
+        self.tags = tags
     }
 }

@@ -104,6 +104,40 @@ final class InkSwiftTests: XCTestCase {
         XCTAssertEqual(story.currentTags.count, 0)
     }
     
+    func testChoiceTags() throws {
+        let story = loadSampleStory()
+        story.moveToKnitStitch("Choice")
+        story.continueStory()
+        print(story.options)
+        XCTAssertGreaterThanOrEqual(story.options.count, 2)
+        XCTAssertTrue(story.options[0].tags.keys.contains("option1Tag"))
+        XCTAssertEqual(story.options[0].tags["option1Tag"], "option1TagValue")
+        XCTAssertTrue(story.options[1].tags.keys.contains("option2Tag"))
+        XCTAssertEqual(story.options[1].tags["option2Tag"], "option2Tag")
+    }
+
+    func testChoiceOnlySharedAndContentTag() throws {
+        let story = loadSampleStory()
+        story.moveToKnitStitch("Choice")
+        story.continueStory()
+        print(story.options)
+        XCTAssertGreaterThanOrEqual(story.options.count, 3)
+        XCTAssertEqual(story.options[2].tags.count, 2)
+        XCTAssertTrue(story.options[2].tags.keys.contains("choice_tag"))
+        XCTAssertEqual(story.options[2].tags["choice_tag"], "choice_tag")
+        XCTAssertTrue(story.options[2].tags.keys.contains("shared_tag"))
+        XCTAssertEqual(story.options[2].tags["shared_tag"], "shared_tag")
+        story.chooseChoiceIndex(story.options[2].index)
+        print(story.currentTags)
+        XCTAssertEqual(story.currentTags.count, 2)
+        XCTAssertTrue(story.currentTags.keys.contains("content_tag"))
+        XCTAssertEqual(story.currentTags["content_tag"], "content_tag")
+        XCTAssertTrue(story.currentTags.keys.contains("shared_tag"))
+        XCTAssertEqual(story.currentTags["shared_tag"], "shared_tag")
+    }
+    
+
+    
     // MARK: Variable tests
     func testGetVariable() throws {
         let story = loadSampleStory()
