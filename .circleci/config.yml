@@ -30,6 +30,9 @@ jobs:
       # Checkout the code as the first step.
       - checkout
       - run:
+          name: "Update repositories"
+          command: "apt update"
+      - run:
           name: "Install dependencies"
           command: "apt install libwebkit2gtk-4.1-dev"
       - run:
