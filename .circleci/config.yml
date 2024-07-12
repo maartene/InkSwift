@@ -31,7 +31,7 @@ jobs:
       - checkout
       - run:
           name: "Install dependencies"
-          command: "sudo apt install libwebkit2gtk-4.0-dev"
+          command: "apt install libwebkit2gtk-4.0-dev"
       - run:
           name: "Build"
           command: "swift build"
