@@ -34,7 +34,7 @@ jobs:
           command: "apt update"
       - run:
           name: "Update packages"
-          command: "apt upgrade"
+          command: "apt upgrade -y"
       - run:
           name: "Install dependencies"
           command: "apt install -y libwebkit2gtk-4.1-dev"
