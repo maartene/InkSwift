@@ -22,10 +22,11 @@ You are now at stitch 1
 
 === Choice
 Choice 1
-    * Option 1
+    * Option 1 # option1Tag: option1TagValue
     You chose option 1
-    * Option 2
+    * [Option 2 # option2Tag]
     You chose option 2
+    * A choice #shared_tag [ with detail #choice_tag ] and content # content_tag
 - -> END
 
 === Tags
