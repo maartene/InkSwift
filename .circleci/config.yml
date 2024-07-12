@@ -32,7 +32,7 @@ jobs:
           command: "swift build"
       - run:
           name: "Run tests"
-          command: "swift run"
+          command: "swift test"
 
 # Orchestrate jobs using workflows
 # See: https://circleci.com/docs/workflows/ & https://circleci.com/docs/configuration-reference/#workflows
