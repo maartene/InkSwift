@@ -174,6 +174,9 @@ var body: some View {
 }
 ```
 
+## Contributors
+- [Griff](https://github.com/techpink) added support for choice tags.
+
 ## Licenced content
 
 - The Ink runtime uses the official Ink Javascript port [InkJS](https://github.com/y-lohse/inkjs)
