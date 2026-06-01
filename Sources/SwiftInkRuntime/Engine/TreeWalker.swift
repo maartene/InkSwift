@@ -1,5 +1,3 @@
-import Foundation
-
 struct TreeWalker {
 
     // MARK: - Public API
@@ -94,9 +92,8 @@ struct TreeWalker {
             break  // end evaluation mode
 
         case "out":
-            // Pop top of eval stack, convert to string, append to outputStream
             if let top = state.evalStack.popLast() {
-                state.outputStream.append(inkValueToString(top))
+                state.outputStream.append(top.asString)
             }
 
         case "str":
@@ -173,84 +170,34 @@ struct TreeWalker {
 
     private func handleNativeFunction(_ fn: String, state: inout StoryState) {
         switch fn {
-        case "+":
-            applyBinaryOp(state: &state) { lhs, rhs in addInkValues(lhs, rhs) }
-        case "-":
-            applyBinaryOp(state: &state) { lhs, rhs in subtractInkValues(lhs, rhs) }
-        case "*":
-            applyBinaryOp(state: &state) { lhs, rhs in multiplyInkValues(lhs, rhs) }
-        case "/":
-            applyBinaryOp(state: &state) { lhs, rhs in divideInkValues(lhs, rhs) }
-        case "%":
-            applyBinaryOp(state: &state) { lhs, rhs in moduloInkValues(lhs, rhs) }
-        case "==":
-            applyBinaryOp(state: &state) { lhs, rhs in .bool(lhs == rhs) }
-        case "!=":
-            applyBinaryOp(state: &state) { lhs, rhs in .bool(lhs != rhs) }
-        case ">":
-            applyBinaryOp(state: &state) { lhs, rhs in compareInkValues(lhs, rhs, op: >) }
-        case "<":
-            applyBinaryOp(state: &state) { lhs, rhs in compareInkValues(lhs, rhs, op: <) }
-        case ">=":
-            applyBinaryOp(state: &state) { lhs, rhs in compareInkValues(lhs, rhs, op: >=) }
-        case "<=":
-            applyBinaryOp(state: &state) { lhs, rhs in compareInkValues(lhs, rhs, op: <=) }
+        case "+":   applyBinaryOp(state: &state) { $0.adding($1) }
+        case "-":   applyBinaryOp(state: &state) { $0.subtracting($1) }
+        case "*":   applyBinaryOp(state: &state) { $0.multiplying($1) }
+        case "/":   applyBinaryOp(state: &state) { $0.dividing(by: $1) }
+        case "%":   applyBinaryOp(state: &state) { $0.modulo($1) }
+        case "==":  applyBinaryOp(state: &state) { .bool($0 == $1) }
+        case "!=":  applyBinaryOp(state: &state) { .bool($0 != $1) }
+        case ">":   applyBinaryOp(state: &state) { $0.comparing(to: $1, using: >) }
+        case "<":   applyBinaryOp(state: &state) { $0.comparing(to: $1, using: <) }
+        case ">=":  applyBinaryOp(state: &state) { $0.comparing(to: $1, using: >=) }
+        case "<=":  applyBinaryOp(state: &state) { $0.comparing(to: $1, using: <=) }
         case "!":
             applyUnaryOp(state: &state) { value in
                 guard case .bool(let b) = value else { return value }
                 return .bool(!b)
             }
-        case "&&":
-            applyBinaryOp(state: &state) { lhs, rhs in
-                .bool(inkValueToBool(lhs) && inkValueToBool(rhs))
-            }
-        case "||":
-            applyBinaryOp(state: &state) { lhs, rhs in
-                .bool(inkValueToBool(lhs) || inkValueToBool(rhs))
-            }
-        case "srnd":
-            _ = state.evalStack.popLast()  // pop seed, result is implementation-defined
-        case "floor":
-            applyUnaryOp(state: &state, op: floorInkValue)
-        case "ceiling":
-            applyUnaryOp(state: &state, op: ceilingInkValue)
-        case "int":
-            applyUnaryOp(state: &state, op: toIntInkValue)
-        case "float":
-            applyUnaryOp(state: &state, op: toFloatInkValue)
-        default:
-            break  // unsupported native functions are no-ops for this implementation
+        case "&&":  applyBinaryOp(state: &state) { .bool($0.asBool && $1.asBool) }
+        case "||":  applyBinaryOp(state: &state) { .bool($0.asBool || $1.asBool) }
+        case "srnd":    _ = state.evalStack.popLast()  // pop seed; result is implementation-defined
+        case "floor":   applyUnaryOp(state: &state) { $0.floored }
+        case "ceiling": applyUnaryOp(state: &state) { $0.ceiled }
+        case "int":     applyUnaryOp(state: &state) { $0.toInt }
+        case "float":   applyUnaryOp(state: &state) { $0.toFloat }
+        default:    break  // unsupported native functions are no-ops
         }
     }
 
-    // MARK: - Helpers
-
-    private func inkValueToString(_ value: InkValue) -> String {
-        switch value {
-        case .int(let n): return String(n)
-        case .float(let f): return String(f)
-        case .string(let s): return s
-        case .bool(let b): return b ? "true" : "false"
-        }
-    }
-
-    private func inkValueToBool(_ value: InkValue) -> Bool {
-        switch value {
-        case .bool(let b): return b
-        case .int(let n): return n != 0
-        case .float(let f): return f != 0.0
-        case .string(let s): return !s.isEmpty
-        }
-    }
-
-    private func inkValueToDouble(_ value: InkValue) -> Double {
-        switch value {
-        case .int(let n): return Double(n)
-        case .float(let f): return f
-        case .bool(let b): return b ? 1.0 : 0.0
-        case .string: return 0.0
-        }
-    }
+    // MARK: - Stack operation helpers
 
     private func applyUnaryOp(state: inout StoryState, op: (InkValue) -> InkValue) {
         guard let top = state.evalStack.popLast() else { return }
@@ -265,91 +212,5 @@ struct TreeWalker {
         let rhs = state.evalStack.removeLast()
         let lhs = state.evalStack.removeLast()
         state.evalStack.append(op(lhs, rhs))
-    }
-
-    // MARK: - Arithmetic helpers
-
-    private func addInkValues(_ lhs: InkValue, _ rhs: InkValue) -> InkValue {
-        switch (lhs, rhs) {
-        case (.int(let a), .int(let b)): return .int(a + b)
-        case (.string(let a), .string(let b)): return .string(a + b)
-        default: return .float(inkValueToDouble(lhs) + inkValueToDouble(rhs))
-        }
-    }
-
-    private func subtractInkValues(_ lhs: InkValue, _ rhs: InkValue) -> InkValue {
-        switch (lhs, rhs) {
-        case (.int(let a), .int(let b)): return .int(a - b)
-        default: return .float(inkValueToDouble(lhs) - inkValueToDouble(rhs))
-        }
-    }
-
-    private func multiplyInkValues(_ lhs: InkValue, _ rhs: InkValue) -> InkValue {
-        switch (lhs, rhs) {
-        case (.int(let a), .int(let b)): return .int(a * b)
-        default: return .float(inkValueToDouble(lhs) * inkValueToDouble(rhs))
-        }
-    }
-
-    private func divideInkValues(_ lhs: InkValue, _ rhs: InkValue) -> InkValue {
-        switch (lhs, rhs) {
-        case (.int(let a), .int(let b)) where b != 0: return .int(a / b)
-        default:
-            let denominator = inkValueToDouble(rhs)
-            guard denominator != 0.0 else { return .float(0.0) }
-            return .float(inkValueToDouble(lhs) / denominator)
-        }
-    }
-
-    private func moduloInkValues(_ lhs: InkValue, _ rhs: InkValue) -> InkValue {
-        switch (lhs, rhs) {
-        case (.int(let a), .int(let b)) where b != 0: return .int(a % b)
-        default:
-            let denominator = inkValueToDouble(rhs)
-            guard denominator != 0.0 else { return .float(0.0) }
-            return .float(inkValueToDouble(lhs).truncatingRemainder(dividingBy: denominator))
-        }
-    }
-
-    private func compareInkValues(
-        _ lhs: InkValue,
-        _ rhs: InkValue,
-        op: (Double, Double) -> Bool
-    ) -> InkValue {
-        return .bool(op(inkValueToDouble(lhs), inkValueToDouble(rhs)))
-    }
-
-    private func floorInkValue(_ value: InkValue) -> InkValue {
-        switch value {
-        case .int: return value
-        case .float(let f): return .int(Int(Foundation.floor(f)))
-        default: return value
-        }
-    }
-
-    private func ceilingInkValue(_ value: InkValue) -> InkValue {
-        switch value {
-        case .int: return value
-        case .float(let f): return .int(Int(Foundation.ceil(f)))
-        default: return value
-        }
-    }
-
-    private func toIntInkValue(_ value: InkValue) -> InkValue {
-        switch value {
-        case .int: return value
-        case .float(let f): return .int(Int(f))
-        case .bool(let b): return .int(b ? 1 : 0)
-        case .string(let s): return .int(Int(s) ?? 0)
-        }
-    }
-
-    private func toFloatInkValue(_ value: InkValue) -> InkValue {
-        switch value {
-        case .float: return value
-        case .int(let n): return .float(Double(n))
-        case .bool(let b): return .float(b ? 1.0 : 0.0)
-        case .string(let s): return .float(Double(s) ?? 0.0)
-        }
     }
 }

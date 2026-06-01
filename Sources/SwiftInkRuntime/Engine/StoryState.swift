@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - Supporting types
+// MARK: - InkValue
 
 enum InkValue: Codable, Equatable {
     case int(Int)
@@ -51,6 +51,118 @@ enum InkValue: Codable, Equatable {
         }
     }
 }
+
+// MARK: - InkValue arithmetic and conversion
+
+extension InkValue {
+
+    var asDouble: Double {
+        switch self {
+        case .int(let n): return Double(n)
+        case .float(let f): return f
+        case .bool(let b): return b ? 1.0 : 0.0
+        case .string: return 0.0
+        }
+    }
+
+    var asBool: Bool {
+        switch self {
+        case .bool(let b): return b
+        case .int(let n): return n != 0
+        case .float(let f): return f != 0.0
+        case .string(let s): return !s.isEmpty
+        }
+    }
+
+    var asString: String {
+        switch self {
+        case .int(let n): return String(n)
+        case .float(let f): return String(f)
+        case .string(let s): return s
+        case .bool(let b): return b ? "true" : "false"
+        }
+    }
+
+    func adding(_ rhs: InkValue) -> InkValue {
+        switch (self, rhs) {
+        case (.int(let a), .int(let b)): return .int(a + b)
+        case (.string(let a), .string(let b)): return .string(a + b)
+        default: return .float(asDouble + rhs.asDouble)
+        }
+    }
+
+    func subtracting(_ rhs: InkValue) -> InkValue {
+        switch (self, rhs) {
+        case (.int(let a), .int(let b)): return .int(a - b)
+        default: return .float(asDouble - rhs.asDouble)
+        }
+    }
+
+    func multiplying(_ rhs: InkValue) -> InkValue {
+        switch (self, rhs) {
+        case (.int(let a), .int(let b)): return .int(a * b)
+        default: return .float(asDouble * rhs.asDouble)
+        }
+    }
+
+    func dividing(by rhs: InkValue) -> InkValue {
+        switch (self, rhs) {
+        case (.int(let a), .int(let b)) where b != 0: return .int(a / b)
+        default:
+            let divisor = rhs.asDouble
+            guard divisor != 0.0 else { return .float(0.0) }
+            return .float(asDouble / divisor)
+        }
+    }
+
+    func modulo(_ rhs: InkValue) -> InkValue {
+        switch (self, rhs) {
+        case (.int(let a), .int(let b)) where b != 0: return .int(a % b)
+        default:
+            let divisor = rhs.asDouble
+            guard divisor != 0.0 else { return .float(0.0) }
+            return .float(asDouble.truncatingRemainder(dividingBy: divisor))
+        }
+    }
+
+    func comparing(to rhs: InkValue, using op: (Double, Double) -> Bool) -> InkValue {
+        return .bool(op(asDouble, rhs.asDouble))
+    }
+
+    var floored: InkValue {
+        switch self {
+        case .float(let f): return .int(Int(Foundation.floor(f)))
+        default: return self
+        }
+    }
+
+    var ceiled: InkValue {
+        switch self {
+        case .float(let f): return .int(Int(Foundation.ceil(f)))
+        default: return self
+        }
+    }
+
+    var toInt: InkValue {
+        switch self {
+        case .int: return self
+        case .float(let f): return .int(Int(f))
+        case .bool(let b): return .int(b ? 1 : 0)
+        case .string(let s): return .int(Int(s) ?? 0)
+        }
+    }
+
+    var toFloat: InkValue {
+        switch self {
+        case .float: return self
+        case .int(let n): return .float(Double(n))
+        case .bool(let b): return .float(b ? 1.0 : 0.0)
+        case .string(let s): return .float(Double(s) ?? 0.0)
+        }
+    }
+}
+
+// MARK: - Supporting types
 
 struct ChoiceData: Codable {
     let text: String
