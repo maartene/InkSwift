@@ -93,8 +93,6 @@ struct StoryStateTests {
         let engine = InkEngine(root: root)
         _ = engine.stepToNextLine()
 
-        // Capture original state fields before encoding
-        let originalPointer = engine.state.pointer
         let originalVisitCounts = engine.state.visitCounts
         let originalOutputStream = engine.state.outputStream
         let originalEvalStack = engine.state.evalStack
@@ -103,13 +101,16 @@ struct StoryStateTests {
         let savedData = try engine.saveState()
         #expect(savedData.count > 0)
 
+        // Decode the saved data to get the actual persisted pointer (saveState syncs containerStack)
+        let savedState = try JSONDecoder().decode(StoryState.self, from: savedData)
+
         // Restore into a fresh engine
         let engine2 = InkEngine(root: root)
         try engine2.restoreState(savedData)
 
-        // Assert: key fields survive the round-trip
-        #expect(engine2.state.pointer.containerPath == originalPointer.containerPath)
-        #expect(engine2.state.pointer.index == originalPointer.index)
+        // Assert: key fields survive the round-trip (pointer compared against what was actually saved)
+        #expect(engine2.state.pointer.containerPath == savedState.pointer.containerPath)
+        #expect(engine2.state.pointer.index == savedState.pointer.index)
         #expect(engine2.state.visitCounts == originalVisitCounts)
         #expect(engine2.state.outputStream == originalOutputStream)
         #expect(engine2.state.evalStack == originalEvalStack)

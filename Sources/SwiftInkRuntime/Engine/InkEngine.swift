@@ -91,7 +91,7 @@ final class InkEngine {
             containerStack[containerStack.count - 1].index += 1
 
             // Dispatch the node
-            var walker = TreeWalker()
+            let walker = TreeWalker()
             walker.dispatchNode(currentChild, state: &state)
 
             // Handle divert: apply new path to container stack
@@ -177,6 +177,8 @@ final class InkEngine {
             let components = choice.targetPath.split(separator: ".").map(String.init)
             if let container = resolveNamedPath(components) {
                 containerStack = [ContainerFrame(container: container, index: 0)]
+                state.pointer.containerPath = components
+                state.pointer.index = 0
             }
         }
     }
@@ -184,7 +186,10 @@ final class InkEngine {
     // MARK: - Save / restore
 
     func saveState() throws -> Data {
-        return try JSONEncoder().encode(state)
+        // Build a snapshot with containerStack position synced into pointer
+        var snapshot = state
+        snapshot.pointer.index = containerStack.last?.index ?? 0
+        return try JSONEncoder().encode(snapshot)
     }
 
     func restoreState(_ data: Data) throws {
@@ -193,5 +198,22 @@ final class InkEngine {
         } catch {
             throw StoryError.invalidStateData
         }
+        rebuildContainerStack()
+    }
+
+    /// Rebuild containerStack from state.pointer after a state restore.
+    /// Resolves state.pointer.containerPath to find the container, then
+    /// positions the stack at state.pointer.index within that container.
+    private func rebuildContainerStack() {
+        let container: ContainerNode
+        if state.pointer.containerPath.isEmpty {
+            container = root
+        } else if let resolved = resolveNamedPath(state.pointer.containerPath) {
+            container = resolved
+        } else {
+            // Path unresolvable — fall back to root at start
+            container = root
+        }
+        containerStack = [ContainerFrame(container: container, index: state.pointer.index)]
     }
 }
