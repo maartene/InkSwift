@@ -1,4 +1,4 @@
-![Swift 5.6](https://img.shields.io/badge/swift-5.6-orange.svg)[![CircleCI](https://circleci.com/gh/maartene/InkSwift.svg?style=shield)](https://circleci.com/gh/maartene/InkSwift)
+![Swift 5.6](https://img.shields.io/badge/swift-5.6-orange.svg)
 # InkSwift
 
 Swift wrapper for the Ink narrative scripting language. Based on InkJS.
