@@ -74,6 +74,17 @@ struct StoryState: Codable {
     var isEnded: Bool
     var currentChoices: [ChoiceData]
 
+    // Evaluation stack for expression evaluation
+    var evalStack: [InkValue]
+
+    // Tag accumulation state
+    var inTagMode: Bool
+    var tagAccumulator: String
+
+    // String accumulation mode (for "str"/"/str" control commands)
+    var inStringMode: Bool
+    var stringAccumulator: String
+
     init() {
         pointer = StoryPointer(containerPath: [], index: 0)
         outputStream = []
@@ -82,5 +93,10 @@ struct StoryState: Codable {
         currentTags = []
         isEnded = false
         currentChoices = []
+        evalStack = []
+        inTagMode = false
+        tagAccumulator = ""
+        inStringMode = false
+        stringAccumulator = ""
     }
 }
