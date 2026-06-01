@@ -6,7 +6,7 @@ public struct Choice {
     public let tags: [String]
 }
 
-public enum StoryError: Error {
+public enum StoryError: Error, Equatable {
     case decoderProbeFailure(reason: String)
     case invalidJSON
     case unsupportedInkVersion(Int)
