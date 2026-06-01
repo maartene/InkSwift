@@ -71,68 +71,55 @@ final class InkEngine {
         while !state.isEnded {
             guard let top = containerStack.last else { break }
 
-            // Container exhausted — pop and continue in parent
             if top.index >= top.container.children.count {
                 popContainer()
                 if containerStack.isEmpty { break }
                 continue
             }
 
-            // Peek at current child
             let currentChild = top.container.children[top.index]
 
             if case .container(let sub) = currentChild {
-                // Enter anonymous sub-container inline
                 containerStack[containerStack.count - 1].index += 1
                 enterContainer(sub)
                 continue
             }
 
-            // Advance the index before dispatch
             containerStack[containerStack.count - 1].index += 1
-
             walker.dispatchNode(currentChild, state: &state)
 
-            // Handle divert: apply new path to container stack
             if case .divert(let target, _) = currentChild {
                 applyDivert(target: target)
                 continue
             }
 
-            // Stop when choices are accumulated — user must choose
-            if case .choicePoint = currentChild {
-                // Continue collecting additional choices (multiple * in a row)
-                continue
-            }
+            if case .choicePoint = currentChild { continue }
 
-            // Stop when story ends
             if state.isEnded { break }
 
-            // Check for newline sentinel in output stream
-            if let newlineIndex = state.outputStream.firstIndex(of: "\n") {
-                let lineContent = state.outputStream[..<newlineIndex].joined()
-                state.outputStream = Array(state.outputStream[(newlineIndex + 1)...])
-                // Skip empty lines (paragraph separators with no visible text)
-                if !lineContent.isEmpty {
-                    return lineContent + "\n"
-                }
-                // Empty line: continue processing
-                continue
-            }
+            if let line = consumeNextLine() { return line }
 
-            // If choices were just collected (via stream of choice points), stop
             if !state.currentChoices.isEmpty { break }
         }
 
-        // Flush any remaining buffered output
-        if !state.outputStream.isEmpty {
-            let remaining = state.outputStream.filter { $0 != "\n" }.joined()
-            state.outputStream.removeAll()
-            if !remaining.isEmpty {
-                return remaining + "\n"
-            }
-        }
-        return nil
+        return flushRemainingOutput()
+    }
+
+    /// Extract one complete line from the output stream, or nil if no newline is present yet.
+    private func consumeNextLine() -> String? {
+        guard let newlineIndex = state.outputStream.firstIndex(of: "\n") else { return nil }
+        let lineContent = state.outputStream[..<newlineIndex].joined()
+        state.outputStream = Array(state.outputStream[(newlineIndex + 1)...])
+        guard !lineContent.isEmpty else { return nil }
+        return lineContent + "\n"
+    }
+
+    /// Flush any buffered output that remains after the step loop exits.
+    private func flushRemainingOutput() -> String? {
+        guard !state.outputStream.isEmpty else { return nil }
+        let remaining = state.outputStream.filter { $0 != "\n" }.joined()
+        state.outputStream.removeAll()
+        return remaining.isEmpty ? nil : remaining + "\n"
     }
 
     /// Advance one line and store the result in lastCompletedLine.
@@ -199,24 +186,14 @@ final class InkEngine {
     }
 
     /// Builds a serialisable representation of the current containerStack.
-    /// Frame 0 is always the root (childIndex = nil).  Subsequent frames record
+    /// Frame 0 is always the root (childIndex = nil). Subsequent frames record
     /// the index into the parent's children array that was used to enter them.
+    /// Note: the parent incremented its index BEFORE entering, so the entry child is at parent.index - 1.
     private func buildStackFrameSnapshot() -> [ContainerStackFrame] {
-        var frames: [ContainerStackFrame] = []
-        for (depth, frame) in containerStack.enumerated() {
-            if depth == 0 {
-                // Root frame
-                frames.append(ContainerStackFrame(childIndex: nil, executionIndex: frame.index))
-            } else {
-                // Find which child of the parent led to this container.
-                // The parent incremented its index BEFORE entering, so the child
-                // is at parent.index - 1.
-                let parentFrame = containerStack[depth - 1]
-                let entryIndex = parentFrame.index - 1
-                frames.append(ContainerStackFrame(childIndex: entryIndex, executionIndex: frame.index))
-            }
+        return containerStack.enumerated().map { depth, frame in
+            let childIndex = depth == 0 ? nil : Optional(containerStack[depth - 1].index - 1)
+            return ContainerStackFrame(childIndex: childIndex, executionIndex: frame.index)
         }
-        return frames
     }
 
     func restoreState(_ data: Data) throws {
@@ -233,40 +210,33 @@ final class InkEngine {
     /// (for backwards compatibility with states saved before this field was added).
     private func rebuildContainerStack() {
         guard !state.stackFrames.isEmpty else {
-            // Legacy path: single pointer restore (named-path diverts only)
-            let container: ContainerNode
-            if state.pointer.containerPath.isEmpty {
-                container = root
-            } else if let resolved = resolveNamedPath(state.pointer.containerPath) {
-                container = resolved
-            } else {
-                container = root
-            }
-            containerStack = [ContainerFrame(container: container, index: state.pointer.index)]
+            containerStack = [ContainerFrame(container: legacyRestoredContainer(), index: state.pointer.index)]
             return
         }
+        containerStack = rebuildStackFromFrames()
+    }
 
-        // Reconstruct the full stack from saved frames.
+    /// Resolve the container for a legacy (pre-stackFrames) save file.
+    private func legacyRestoredContainer() -> ContainerNode {
+        guard !state.pointer.containerPath.isEmpty else { return root }
+        return resolveNamedPath(state.pointer.containerPath) ?? root
+    }
+
+    /// Reconstruct a ContainerFrame stack from the serialised stack frames.
+    private func rebuildStackFromFrames() -> [ContainerFrame] {
         var rebuilt: [ContainerFrame] = []
         for (depth, frame) in state.stackFrames.enumerated() {
             if depth == 0 {
-                // Root frame — use root container directly.
                 rebuilt.append(ContainerFrame(container: root, index: frame.executionIndex))
             } else if let childIdx = frame.childIndex {
-                // Enter the child container at childIdx of the current container.
                 let parentContainer = rebuilt[depth - 1].container
-                if childIdx < parentContainer.children.count,
-                   case .container(let child) = parentContainer.children[childIdx] {
-                    rebuilt.append(ContainerFrame(container: child, index: frame.executionIndex))
-                } else {
-                    // Unresolvable child — truncate and stop
-                    break
+                guard childIdx < parentContainer.children.count,
+                      case .container(let child) = parentContainer.children[childIdx] else {
+                    break  // Unresolvable child — truncate and stop
                 }
+                rebuilt.append(ContainerFrame(container: child, index: frame.executionIndex))
             }
         }
-
-        containerStack = rebuilt.isEmpty
-            ? [ContainerFrame(container: root, index: 0)]
-            : rebuilt
+        return rebuilt.isEmpty ? [ContainerFrame(container: root, index: 0)] : rebuilt
     }
 }

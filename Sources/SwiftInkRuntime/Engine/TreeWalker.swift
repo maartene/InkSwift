@@ -196,8 +196,9 @@ struct TreeWalker {
         case "<=":
             applyBinaryOp(state: &state) { lhs, rhs in compareInkValues(lhs, rhs, op: <=) }
         case "!":
-            if let top = state.evalStack.popLast(), case .bool(let b) = top {
-                state.evalStack.append(.bool(!b))
+            applyUnaryOp(state: &state) { value in
+                guard case .bool(let b) = value else { return value }
+                return .bool(!b)
             }
         case "&&":
             applyBinaryOp(state: &state) { lhs, rhs in
@@ -210,21 +211,13 @@ struct TreeWalker {
         case "srnd":
             _ = state.evalStack.popLast()  // pop seed, result is implementation-defined
         case "floor":
-            if let top = state.evalStack.popLast() {
-                state.evalStack.append(floorInkValue(top))
-            }
+            applyUnaryOp(state: &state, op: floorInkValue)
         case "ceiling":
-            if let top = state.evalStack.popLast() {
-                state.evalStack.append(ceilingInkValue(top))
-            }
+            applyUnaryOp(state: &state, op: ceilingInkValue)
         case "int":
-            if let top = state.evalStack.popLast() {
-                state.evalStack.append(toIntInkValue(top))
-            }
+            applyUnaryOp(state: &state, op: toIntInkValue)
         case "float":
-            if let top = state.evalStack.popLast() {
-                state.evalStack.append(toFloatInkValue(top))
-            }
+            applyUnaryOp(state: &state, op: toFloatInkValue)
         default:
             break  // unsupported native functions are no-ops for this implementation
         }
@@ -257,6 +250,11 @@ struct TreeWalker {
         case .bool(let b): return b ? 1.0 : 0.0
         case .string: return 0.0
         }
+    }
+
+    private func applyUnaryOp(state: inout StoryState, op: (InkValue) -> InkValue) {
+        guard let top = state.evalStack.popLast() else { return }
+        state.evalStack.append(op(top))
     }
 
     private func applyBinaryOp(
