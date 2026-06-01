@@ -186,10 +186,35 @@ final class InkEngine {
     // MARK: - Save / restore
 
     func saveState() throws -> Data {
-        // Build a snapshot with containerStack position synced into pointer
+        // Snapshot the full container execution stack so restore can rebuild it exactly.
+        // Each frame records which child-index was followed from the parent (nil = root)
+        // and the current execution position within that container.
         var snapshot = state
+        snapshot.stackFrames = buildStackFrameSnapshot()
+        // Keep pointer.index in sync for backwards compatibility with unit tests.
         snapshot.pointer.index = containerStack.last?.index ?? 0
         return try JSONEncoder().encode(snapshot)
+    }
+
+    /// Builds a serialisable representation of the current containerStack.
+    /// Frame 0 is always the root (childIndex = nil).  Subsequent frames record
+    /// the index into the parent's children array that was used to enter them.
+    private func buildStackFrameSnapshot() -> [ContainerStackFrame] {
+        var frames: [ContainerStackFrame] = []
+        for (depth, frame) in containerStack.enumerated() {
+            if depth == 0 {
+                // Root frame
+                frames.append(ContainerStackFrame(childIndex: nil, executionIndex: frame.index))
+            } else {
+                // Find which child of the parent led to this container.
+                // The parent incremented its index BEFORE entering, so the child
+                // is at parent.index - 1.
+                let parentFrame = containerStack[depth - 1]
+                let entryIndex = parentFrame.index - 1
+                frames.append(ContainerStackFrame(childIndex: entryIndex, executionIndex: frame.index))
+            }
+        }
+        return frames
     }
 
     func restoreState(_ data: Data) throws {
@@ -201,19 +226,45 @@ final class InkEngine {
         rebuildContainerStack()
     }
 
-    /// Rebuild containerStack from state.pointer after a state restore.
-    /// Resolves state.pointer.containerPath to find the container, then
-    /// positions the stack at state.pointer.index within that container.
+    /// Rebuild containerStack from state.stackFrames after a state restore.
+    /// Falls back to the legacy state.pointer approach when stackFrames is empty
+    /// (for backwards compatibility with states saved before this field was added).
     private func rebuildContainerStack() {
-        let container: ContainerNode
-        if state.pointer.containerPath.isEmpty {
-            container = root
-        } else if let resolved = resolveNamedPath(state.pointer.containerPath) {
-            container = resolved
-        } else {
-            // Path unresolvable — fall back to root at start
-            container = root
+        guard !state.stackFrames.isEmpty else {
+            // Legacy path: single pointer restore (named-path diverts only)
+            let container: ContainerNode
+            if state.pointer.containerPath.isEmpty {
+                container = root
+            } else if let resolved = resolveNamedPath(state.pointer.containerPath) {
+                container = resolved
+            } else {
+                container = root
+            }
+            containerStack = [ContainerFrame(container: container, index: state.pointer.index)]
+            return
         }
-        containerStack = [ContainerFrame(container: container, index: state.pointer.index)]
+
+        // Reconstruct the full stack from saved frames.
+        var rebuilt: [ContainerFrame] = []
+        for (depth, frame) in state.stackFrames.enumerated() {
+            if depth == 0 {
+                // Root frame — use root container directly.
+                rebuilt.append(ContainerFrame(container: root, index: frame.executionIndex))
+            } else if let childIdx = frame.childIndex {
+                // Enter the child container at childIdx of the current container.
+                let parentContainer = rebuilt[depth - 1].container
+                if childIdx < parentContainer.children.count,
+                   case .container(let child) = parentContainer.children[childIdx] {
+                    rebuilt.append(ContainerFrame(container: child, index: frame.executionIndex))
+                } else {
+                    // Unresolvable child — truncate and stop
+                    break
+                }
+            }
+        }
+
+        containerStack = rebuilt.isEmpty
+            ? [ContainerFrame(container: root, index: 0)]
+            : rebuilt
     }
 }

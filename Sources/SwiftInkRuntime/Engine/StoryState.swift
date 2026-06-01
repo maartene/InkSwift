@@ -63,6 +63,15 @@ struct StoryPointer: Codable {
     var index: Int
 }
 
+/// One frame of the container execution stack, serialised for save/restore.
+/// `childIndex` is the index into the parent's children array used to enter
+/// this frame (nil for the root frame). `executionIndex` is the next-to-process
+/// position within the container at this depth.
+struct ContainerStackFrame: Codable {
+    var childIndex: Int?   // nil = root container; otherwise parent.children[childIndex]
+    var executionIndex: Int
+}
+
 // MARK: - StoryState
 
 struct StoryState: Codable {
@@ -85,6 +94,11 @@ struct StoryState: Codable {
     var inStringMode: Bool
     var stringAccumulator: String
 
+    // Full container execution stack for save/restore.
+    // Each frame holds the child-index used to enter it (nil = root) and the
+    // current execution index within that container.
+    var stackFrames: [ContainerStackFrame]
+
     init() {
         pointer = StoryPointer(containerPath: [], index: 0)
         outputStream = []
@@ -98,5 +112,6 @@ struct StoryState: Codable {
         tagAccumulator = ""
         inStringMode = false
         stringAccumulator = ""
+        stackFrames = []
     }
 }
