@@ -5,7 +5,9 @@
 import Testing
 import Foundation
 @testable import SwiftInkRuntime
+#if os(macOS)
 import InkSwift
+#endif
 
 @Suite struct Milestone2_StoryExecutionTests {
 
@@ -50,6 +52,7 @@ import InkSwift
     // WHEN: both stories are continued through the first passage without making choices
     // THEN: both produce identical text output, line by line
 
+    #if os(macOS)
     @Test
     func `SwiftInkRuntime output matches InkSwift oracle for the test fixture`() throws {
         let url = try #require(Bundle.module.url(forResource: "test.ink", withExtension: "json"))
@@ -86,6 +89,7 @@ import InkSwift
         #expect(!nativeLines.isEmpty)
         #expect(nativeLines == oracleLines)
     }
+    #endif
 
     // GIVEN: a story that reaches a choice point after the first passage
     // WHEN: continue() is called until canContinue is false

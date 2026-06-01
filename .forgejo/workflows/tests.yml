@@ -1,0 +1,22 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test-macos:
+    name: macOS
+    runs-on: macos-arm64
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift test
+
+  test-linux:
+    name: Linux
+    runs-on: macos-arm64
+    container:
+      image: swift:latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift test --filter SwiftInkRuntimeTests

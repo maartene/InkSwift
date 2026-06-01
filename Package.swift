@@ -54,7 +54,11 @@ let package = Package(
         ),
         .testTarget(
             name: "SwiftInkRuntimeTests",
-            dependencies: ["SwiftInkRuntime", "InkSwift", "JSONEquality"],
+            dependencies: [
+                "SwiftInkRuntime",
+                .target(name: "InkSwift", condition: .when(platforms: [.macOS])),
+                "JSONEquality"
+            ],
             resources: [
                 .process("test.ink.json")
             ]

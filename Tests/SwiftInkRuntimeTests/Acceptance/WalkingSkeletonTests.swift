@@ -5,7 +5,9 @@
 import Testing
 import Foundation
 @testable import SwiftInkRuntime
+#if os(macOS)
 import InkSwift
+#endif
 
 @Suite struct WalkingSkeletonTests {
 
