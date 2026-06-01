@@ -140,9 +140,8 @@ import InkSwift
                 break
             }
         }
-        // test.ink.json root passage has no tags — tags exist in named knots.
-        // This test verifies the tags API returns an empty array when no tags present.
-        #expect(!foundTags || foundTags)  // always true — verifies API is accessible
+        // test.ink.json root passage has no tags — verify no false positives.
+        #expect(!foundTags)
     }
 
     // GIVEN: a story continued to its end

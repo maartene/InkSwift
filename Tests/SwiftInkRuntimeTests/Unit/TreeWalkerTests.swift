@@ -46,6 +46,7 @@ struct TreeWalkerTests {
         var state = StoryState()
         _ = walker.step(in: container, state: &state)
         #expect(state.outputStream == ["Hello, world!"])
+        #expect(state.pointer.index == 1)
     }
 
     @Test("step appends multiple text nodes in order")
