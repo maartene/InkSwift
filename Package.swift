@@ -15,12 +15,15 @@ let package = Package(
         .library(
             name: "InkSwift",
             targets: ["InkSwift"]),
+        .library(
+            name: "SwiftInkRuntime",
+            targets: ["SwiftInkRuntime"]),
     ],
     dependencies: [
         // Dependencies declare other packages that this package depends on.
         // .package(url: /* package url */, from: "1.0.0"),
-         .package(url: "https://github.com/jectivex/JXKit.git", .upToNextMajor(from: "3.0.0")),
-         .package(url: "https://github.com/neallester/JSONEquality.git", branch: "master"),
+        .package(url: "https://github.com/jectivex/JXKit.git", .upToNextMajor(from: "3.0.0")),
+        .package(url: "https://github.com/neallester/JSONEquality.git", branch: "master"),
     ],
     targets: [
         // Targets are the basic building blocks of a package. A target can define a module or a test suite.
@@ -29,7 +32,8 @@ let package = Package(
             name: "InkSwift",
             dependencies: ["JXKit"],
             resources: [
-                .process("ink-full.js")]
+                .process("ink-full.js")
+            ]
         ),
         .testTarget(
             name: "InkSwiftTests",
@@ -40,6 +44,20 @@ let package = Package(
                 .process("compare.json"),
                 .process("TheIntercept.ink"),
             ]
-        )
+        ),
+        .target(
+            name: "SwiftInkRuntime",
+            dependencies: [],
+            resources: [
+                .process("test.ink.json")
+            ]
+        ),
+        .testTarget(
+            name: "SwiftInkRuntimeTests",
+            dependencies: ["SwiftInkRuntime", "InkSwift", "JSONEquality"],
+            resources: [
+                .process("test.ink.json")
+            ]
+        ),
     ]
 )

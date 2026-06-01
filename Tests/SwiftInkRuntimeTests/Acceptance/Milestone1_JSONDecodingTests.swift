@@ -24,15 +24,28 @@ import Testing
     // WHEN: probe() is called
     // THEN: no error is thrown
 
-    @Test(.disabled("enable during DELIVER Milestone 1"))
-    func `InkDecoder probe passes for the bundled test fixture`() throws {}
+    @Test
+    func `InkDecoder probe passes for the bundled test fixture`() throws {
+        let decoder = InkDecoder()
+        try decoder.probe()
+    }
 
     // GIVEN: a JSON string with inkVersion set to an unsupported value
     // WHEN: Story(json:) is called
     // THEN: StoryError.unsupportedInkVersion is thrown
 
-    @Test(.disabled("enable during DELIVER Milestone 1"))
-    func `Story init throws for an unsupported ink version`() throws {}
+    @Test
+    func `Story init throws for an unsupported ink version`() throws {
+        let json = #"{"inkVersion":19,"root":[["\n",null],null],"listDefs":{}}"#
+        #expect {
+            try Story(json: json)
+        } throws: { error in
+            guard case StoryError.unsupportedInkVersion(let version) = error else {
+                return false
+            }
+            return version == 19
+        }
+    }
 
     // GIVEN: an Ink JSON container whose last element is null
     // WHEN: InkDecoder decodes it

@@ -30,7 +30,18 @@ struct InkDecoder {
     }
 
     func probe() throws {
-        fatalError("__SCAFFOLD__: Not yet implemented -- RED scaffold")
+        guard let url = Bundle.module.url(forResource: "test.ink", withExtension: "json") else {
+            throw InkDecodeError.malformedJSON
+        }
+        let data = try Data(contentsOf: url)
+        let root = try decode(data)
+        guard !root.children.isEmpty else {
+            throw InkDecodeError.malformedJSON
+        }
+        // Round-trip: verify JSONSerialization can re-parse the fixture without data loss
+        let rawObject = try JSONSerialization.jsonObject(with: data, options: [])
+        let reEncoded = try JSONSerialization.data(withJSONObject: rawObject, options: [])
+        _ = try JSONSerialization.jsonObject(with: reEncoded, options: [])
     }
 
     // MARK: - Container parsing
