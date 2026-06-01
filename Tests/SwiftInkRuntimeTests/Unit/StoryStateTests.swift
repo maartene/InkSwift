@@ -2,6 +2,14 @@ import Testing
 import Foundation
 @testable import SwiftInkRuntime
 
+// Test Budget: 5 distinct behaviors x 2 = 10 max unit tests
+// Behaviors:
+//   B1 — default StoryState initialises with zero/empty fields
+//   B2 — StoryState encodes to JSON without throwing
+//   B3 — StoryState round-trips through JSONEncoder/JSONDecoder (static fixture)
+//   B4 — InkValue cases encode/decode correctly (parametrized over 4 cases)
+//   B5 — mid-story StoryState (after stepping a real engine) round-trips through saveState/restoreState
+
 @Suite("StoryState")
 struct StoryStateTests {
 
@@ -69,5 +77,41 @@ struct StoryStateTests {
         let decoder = JSONDecoder()
         let decoded = try decoder.decode(InkValue.self, from: data)
         #expect(decoded == value)
+    }
+
+    // Behavior 5: mid-story StoryState round-trips through saveState/restoreState
+    // Enters through InkEngine driving port (saveState/restoreState), loads a real fixture,
+    // steps at least one passage, then verifies the Codable round-trip preserves key fields.
+    @Test("mid-story StoryState round-trips through saveState and restoreState")
+    func midStoryStateRoundTrips() throws {
+        // Arrange: load test.ink.json from bundle and decode into a ContainerNode
+        let url = try #require(Bundle.module.url(forResource: "test.ink", withExtension: "json"))
+        let data = try Data(contentsOf: url)
+        let root = try InkDecoder().decode(data)
+
+        // Act: step through at least one passage to populate state
+        let engine = InkEngine(root: root)
+        _ = engine.stepToNextLine()
+
+        // Capture original state fields before encoding
+        let originalPointer = engine.state.pointer
+        let originalVisitCounts = engine.state.visitCounts
+        let originalOutputStream = engine.state.outputStream
+        let originalEvalStack = engine.state.evalStack
+
+        // Save state through driving port
+        let savedData = try engine.saveState()
+        #expect(savedData.count > 0)
+
+        // Restore into a fresh engine
+        let engine2 = InkEngine(root: root)
+        try engine2.restoreState(savedData)
+
+        // Assert: key fields survive the round-trip
+        #expect(engine2.state.pointer.containerPath == originalPointer.containerPath)
+        #expect(engine2.state.pointer.index == originalPointer.index)
+        #expect(engine2.state.visitCounts == originalVisitCounts)
+        #expect(engine2.state.outputStream == originalOutputStream)
+        #expect(engine2.state.evalStack == originalEvalStack)
     }
 }
