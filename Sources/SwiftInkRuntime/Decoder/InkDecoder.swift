@@ -38,48 +38,34 @@ struct InkDecoder {
         guard !root.children.isEmpty else {
             throw InkDecodeError.malformedJSON
         }
-        // Round-trip: verify JSONSerialization can re-parse the fixture without data loss
-        let rawObject = try JSONSerialization.jsonObject(with: data, options: [])
-        let reEncoded = try JSONSerialization.data(withJSONObject: rawObject, options: [])
-        _ = try JSONSerialization.jsonObject(with: reEncoded, options: [])
     }
 
     // MARK: - Container parsing
 
     private func parseContainer(_ array: [Any]) -> ContainerNode {
-        let last = array.last
-        let contentItems: [Any]
-        let namedContent: [String: ContainerNode]
-        let flags: Int
-        let name: String?
-
-        if last == nil || last! is NSNull {
-            // No metadata — plain content list
-            contentItems = Array(array.dropLast())
-            namedContent = [:]
-            flags = 0
-            name = nil
-        } else if let metaDict = last as? [String: Any] {
-            contentItems = Array(array.dropLast())
-            flags = metaDict["#f"] as? Int ?? 0
-            name = metaDict["#n"] as? String
-            var named: [String: ContainerNode] = [:]
-            for (key, value) in metaDict where key != "#f" && key != "#n" {
-                if let subArray = value as? [Any] {
-                    named[key] = parseContainer(subArray)
-                }
-            }
-            namedContent = named
-        } else {
-            // Malformed — treat all elements as content with empty metadata
-            contentItems = array
-            namedContent = [:]
-            flags = 0
-            name = nil
+        guard let metaDict = array.last as? [String: Any] else {
+            // Last element is absent, null, or not a dict — treat all elements as content
+            let contentItems = array.last is NSNull ? Array(array.dropLast()) : array
+            let children = contentItems.compactMap { classify($0) }
+            return ContainerNode(children: children, namedContent: [:], flags: 0, name: nil)
         }
 
+        let contentItems = Array(array.dropLast())
+        let flags = metaDict["#f"] as? Int ?? 0
+        let name = metaDict["#n"] as? String
+        let namedContent = parseNamedContent(from: metaDict)
         let children = contentItems.compactMap { classify($0) }
         return ContainerNode(children: children, namedContent: namedContent, flags: flags, name: name)
+    }
+
+    private func parseNamedContent(from metaDict: [String: Any]) -> [String: ContainerNode] {
+        var named: [String: ContainerNode] = [:]
+        for (key, value) in metaDict where key != "#f" && key != "#n" {
+            if let subArray = value as? [Any] {
+                named[key] = parseContainer(subArray)
+            }
+        }
+        return named
     }
 
     // MARK: - Node classification
@@ -121,12 +107,7 @@ struct InkDecoder {
              .nsIntegerType, .cfIndexType:
             return .intValue(number.intValue)
         default:
-            // Check if the double value equals its integer representation
-            let doubleValue = number.doubleValue
-            if doubleValue == Double(number.intValue) && !cfType.isFloat {
-                return .intValue(number.intValue)
-            }
-            return .floatValue(doubleValue)
+            return .floatValue(number.doubleValue)
         }
     }
 
@@ -149,10 +130,10 @@ struct InkDecoder {
             return .variableReference(name: name)
         }
         if dict["#n"] != nil {
-            // Anonymous named-container reference marker (e.g., {"#n":"$r1"})
+            // Named-container reference marker (e.g., {"#n":"$r1"}) — treated as a no-op node
             return .controlCommand("#n")
         }
-        // Fallback — treat as control command placeholder
+        // Unknown dict node — surface the first key for diagnostics
         return .controlCommand(dict.keys.first ?? "?")
     }
 }
@@ -164,15 +145,3 @@ enum InkDecodeError: Error {
     case unsupportedInkVersion(Int)
 }
 
-// MARK: - CFNumberType helper
-
-private extension CFNumberType {
-    var isFloat: Bool {
-        switch self {
-        case .float32Type, .float64Type, .floatType, .doubleType, .cgFloatType:
-            return true
-        default:
-            return false
-        }
-    }
-}

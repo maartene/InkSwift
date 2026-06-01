@@ -14,8 +14,8 @@ enum InkValue: Codable, Equatable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let type_ = try container.decode(String.self, forKey: .type)
-        switch type_ {
+        let typeName = try container.decode(String.self, forKey: .type)
+        switch typeName {
         case "int":
             self = .int(try container.decode(Int.self, forKey: .intValue))
         case "float":
@@ -28,7 +28,7 @@ enum InkValue: Codable, Equatable {
             throw DecodingError.dataCorruptedError(
                 forKey: .type,
                 in: container,
-                debugDescription: "Unknown InkValue type: \(type_)"
+                debugDescription: "Unknown InkValue type: \(typeName)"
             )
         }
     }

@@ -67,6 +67,7 @@ final class InkEngine {
     /// Advance the walker until a complete line of output is ready, then return it.
     /// Returns nil when there is no more output to produce.
     func stepToNextLine() -> String? {
+        let walker = TreeWalker()
         while !state.isEnded {
             guard let top = containerStack.last else { break }
 
@@ -90,8 +91,6 @@ final class InkEngine {
             // Advance the index before dispatch
             containerStack[containerStack.count - 1].index += 1
 
-            // Dispatch the node
-            let walker = TreeWalker()
             walker.dispatchNode(currentChild, state: &state)
 
             // Handle divert: apply new path to container stack
@@ -141,27 +140,30 @@ final class InkEngine {
         lastCompletedLine = stepToNextLine() ?? ""
     }
 
-    // MARK: - Divert handling
+    // MARK: - Path resolution
 
-    private func applyDivert(target: String) {
-        let components = target.split(separator: ".").map(String.init)
-        if let container = resolveNamedPath(components) {
-            containerStack = [ContainerFrame(container: container, index: 0)]
-        }
-        // If unresolvable, leave stack as-is (will exhaust and stop)
+    private func pathComponents(from dottedPath: String) -> [String] {
+        dottedPath.split(separator: ".").map(String.init)
     }
 
     private func resolveNamedPath(_ components: [String]) -> ContainerNode? {
         guard !components.isEmpty else { return nil }
         var container = root
         for component in components {
-            if let named = container.namedContent[component] {
-                container = named
-            } else {
-                return nil
-            }
+            guard let named = container.namedContent[component] else { return nil }
+            container = named
         }
         return container
+    }
+
+    // MARK: - Divert handling
+
+    private func applyDivert(target: String) {
+        let components = pathComponents(from: target)
+        if let container = resolveNamedPath(components) {
+            containerStack = [ContainerFrame(container: container, index: 0)]
+        }
+        // If unresolvable, leave stack as-is (will exhaust and stop)
     }
 
     // MARK: - Choice handling
@@ -174,7 +176,7 @@ final class InkEngine {
         state.currentChoices = []
         state.currentTags = []
         if !choice.targetPath.isEmpty {
-            let components = choice.targetPath.split(separator: ".").map(String.init)
+            let components = pathComponents(from: choice.targetPath)
             if let container = resolveNamedPath(components) {
                 containerStack = [ContainerFrame(container: container, index: 0)]
                 state.pointer.containerPath = components

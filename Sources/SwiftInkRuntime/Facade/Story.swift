@@ -33,9 +33,11 @@ public final class Story {
             throw StoryError.unsupportedInkVersion(inkVersion)
         }
 
+        let decoder = InkDecoder()
+
         // Run decoder probe to validate bundle fixture
         do {
-            try InkDecoder().probe()
+            try decoder.probe()
         } catch {
             throw StoryError.decoderProbeFailure(reason: error.localizedDescription)
         }
@@ -43,7 +45,7 @@ public final class Story {
         // Decode the story JSON
         let root: ContainerNode
         do {
-            root = try InkDecoder().decode(data)
+            root = try decoder.decode(data)
         } catch {
             throw StoryError.invalidJSON
         }
