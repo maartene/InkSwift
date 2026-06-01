@@ -22,8 +22,13 @@ struct InkDecoder {
 
     func decode(_ data: Data) throws -> ContainerNode {
         let rawObject = try JSONSerialization.jsonObject(with: data, options: [])
-        guard let topLevel = rawObject as? [String: Any],
-              let rootArray = topLevel["root"] as? [Any] else {
+        guard let topLevel = rawObject as? [String: Any] else {
+            throw InkDecodeError.malformedJSON
+        }
+        if let inkVersion = topLevel["inkVersion"] as? Int, inkVersion < 20 {
+            throw InkDecodeError.unsupportedInkVersion(inkVersion)
+        }
+        guard let rootArray = topLevel["root"] as? [Any] else {
             throw InkDecodeError.malformedJSON
         }
         return parseContainer(rootArray)
@@ -95,7 +100,7 @@ struct InkDecoder {
         if string.hasPrefix("^") { return .text(String(string.dropFirst())) }
         if Self.controlCommands.contains(string) { return .controlCommand(string) }
         if Self.nativeFunctions.contains(string) { return .nativeFunction(string) }
-        // Unknown strings — treat as text with empty prefix stripped
+        // Unknown string token — surface as plain text
         return .text(string)
     }
 

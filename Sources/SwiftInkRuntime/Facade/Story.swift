@@ -23,16 +23,6 @@ public final class Story {
             throw StoryError.invalidJSON
         }
 
-        // Validate inkVersion
-        guard let rawObject = try? JSONSerialization.jsonObject(with: data, options: []),
-              let topLevel = rawObject as? [String: Any] else {
-            throw StoryError.invalidJSON
-        }
-
-        if let inkVersion = topLevel["inkVersion"] as? Int, inkVersion < 20 {
-            throw StoryError.unsupportedInkVersion(inkVersion)
-        }
-
         let decoder = InkDecoder()
 
         // Run decoder probe to validate bundle fixture
@@ -46,6 +36,13 @@ public final class Story {
         let root: ContainerNode
         do {
             root = try decoder.decode(data)
+        } catch let error as InkDecodeError {
+            switch error {
+            case .unsupportedInkVersion(let version):
+                throw StoryError.unsupportedInkVersion(version)
+            case .malformedJSON:
+                throw StoryError.invalidJSON
+            }
         } catch {
             throw StoryError.invalidJSON
         }
