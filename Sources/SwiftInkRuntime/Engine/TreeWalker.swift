@@ -14,6 +14,12 @@ struct TreeWalker {
         return child
     }
 
+    // MARK: - Dispatch (internal entry point for InkEngine)
+
+    func dispatchNode(_ node: NodeKind, state: inout StoryState) {
+        dispatch(node, state: &state)
+    }
+
     // MARK: - Private dispatch
 
     private func dispatch(_ node: NodeKind, state: inout StoryState) {
@@ -30,8 +36,8 @@ struct TreeWalker {
         case .divert(let target, _):
             handleDivert(target: target, state: &state)
 
-        case .choicePoint(let flags):
-            handleChoicePoint(flags: flags, state: &state)
+        case .choicePoint(let target, let flags):
+            handleChoicePoint(target: target, flags: flags, state: &state)
 
         case .variableAssignment(let name, _):
             handleVariableAssignment(name: name, state: &state)
@@ -139,12 +145,11 @@ struct TreeWalker {
 
     // MARK: - Choice point handling
 
-    private func handleChoicePoint(flags: Int, state: inout StoryState) {
+    private func handleChoicePoint(target: String, flags: Int, state: inout StoryState) {
         // Collect current outputStream content as choice label
         let choiceText = state.outputStream.filter { $0 != "\n" }.joined()
         let choiceIndex = state.currentChoices.count
-        // Target path will be resolved by InkEngine — use empty string as placeholder
-        let choice = ChoiceData(text: choiceText, targetPath: "", index: choiceIndex)
+        let choice = ChoiceData(text: choiceText, targetPath: target, index: choiceIndex)
         state.currentChoices.append(choice)
         // Clear accumulated output that was used as choice text
         state.outputStream.removeAll { $0 != "\n" }

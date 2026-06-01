@@ -4,7 +4,7 @@ internal enum NodeKind {
     case text(String)
     case newline
     case divert(target: String, isConditional: Bool)
-    case choicePoint(flags: Int)
+    case choicePoint(target: String, flags: Int)
     case controlCommand(String)
     case nativeFunction(String)
     case intValue(Int)

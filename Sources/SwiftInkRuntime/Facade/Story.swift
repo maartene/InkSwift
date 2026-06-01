@@ -16,9 +16,7 @@ public enum StoryError: Error, Equatable {
 
 public final class Story {
 
-    private let root: ContainerNode
-    private var _canContinue: Bool
-    private var _currentText: String
+    private let engine: InkEngine
 
     public init(json: String) throws {
         guard let data = json.data(using: .utf8) else {
@@ -43,82 +41,55 @@ public final class Story {
         }
 
         // Decode the story JSON
-        let decoder = InkDecoder()
+        let root: ContainerNode
         do {
-            root = try decoder.decode(data)
+            root = try InkDecoder().decode(data)
         } catch {
             throw StoryError.invalidJSON
         }
 
-        // Minimal walking skeleton: find first text node
-        let firstText = Story.findFirstText(in: root)
-        _currentText = firstText ?? ""
-        _canContinue = firstText != nil
+        engine = InkEngine(root: root)
     }
 
     public var canContinue: Bool {
-        return _canContinue
+        engine.canContinue
     }
 
     public var currentText: String {
-        return _currentText
+        engine.currentText
     }
 
     public var currentChoices: [Choice] {
-        return []
+        engine.currentChoices
     }
 
     public var currentTags: [String] {
-        return []
+        engine.currentTags
     }
 
     public var globalTags: [String] {
-        return []
+        engine.globalTags
     }
 
     public var currentErrors: [String] {
-        return []
+        engine.currentErrors
     }
 
     @discardableResult
     public func `continue`() -> String {
-        let text = _currentText
-        _canContinue = false
-        _currentText = ""
-        return text
+        engine.step()
+        return engine.currentText
     }
 
     public func chooseChoice(at index: Int) throws {
-        throw StoryError.invalidChoiceIndex(index)
+        try engine.chooseChoice(at: index)
     }
 
     public func saveState() throws -> Data {
-        throw StoryError.invalidStateData
+        try engine.saveState()
     }
 
     public func restoreState(_ data: Data) throws {
-        throw StoryError.invalidStateData
-    }
-
-    // MARK: - Minimal walking skeleton helper
-
-    private static func findFirstText(in node: ContainerNode) -> String? {
-        for child in node.children {
-            if let text = extractText(from: child) {
-                return text
-            }
-        }
-        return nil
-    }
-
-    private static func extractText(from kind: NodeKind) -> String? {
-        switch kind {
-        case .text(let value):
-            return value
-        case .container(let container):
-            return findFirstText(in: container)
-        default:
-            return nil
-        }
+        try engine.restoreState(data)
     }
 }

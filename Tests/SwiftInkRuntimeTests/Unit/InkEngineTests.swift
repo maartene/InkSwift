@@ -36,22 +36,22 @@ struct InkEngineTests {
         #expect(engine.canContinue == false)
     }
 
-    // B2a: stepToNextLine returns text from a .text + .newline sequence
+    // B2a: stepToNextLine returns text from a .text + .newline sequence (includes trailing \n)
     @Test("stepToNextLine returns text from text and newline nodes")
     func stepToNextLineReturnsText() {
         let container = makeContainer(.text("Hello, world"), .newline)
         let engine = InkEngine(root: container)
         let line = engine.stepToNextLine()
-        #expect(line == "Hello, world")
+        #expect(line == "Hello, world\n")
     }
 
-    // B2b: currentText reflects the last completed line after step()
+    // B2b: currentText reflects the last completed line after step() (includes trailing \n)
     @Test("step advances and currentText is the last completed line")
     func stepAdvancesAndCurrentTextIsLastCompletedLine() {
         let container = makeContainer(.text("First line"), .newline)
         let engine = InkEngine(root: container)
         engine.step()
-        #expect(engine.currentText == "First line")
+        #expect(engine.currentText == "First line\n")
     }
 
     // B3a: isEnded is true after a "done" control command; canContinue is false
