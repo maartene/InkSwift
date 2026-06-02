@@ -18,36 +18,12 @@ public final class Story {
 
     private let engine: InkEngine
 
-    public init(json: String) throws {
-        guard let data = json.data(using: .utf8) else {
-            throw StoryError.invalidJSON
-        }
+    public init(blueprint: StoryBlueprint) {
+        engine = InkEngine(root: blueprint.root)
+    }
 
-        let decoder = InkDecoder()
-
-        // Run decoder probe to validate bundle fixture
-        do {
-            try decoder.probe()
-        } catch {
-            throw StoryError.decoderProbeFailure(reason: error.localizedDescription)
-        }
-
-        // Decode the story JSON
-        let root: ContainerNode
-        do {
-            root = try decoder.decode(data)
-        } catch let error as InkDecodeError {
-            switch error {
-            case .unsupportedInkVersion(let version):
-                throw StoryError.unsupportedInkVersion(version)
-            case .malformedJSON:
-                throw StoryError.invalidJSON
-            }
-        } catch {
-            throw StoryError.invalidJSON
-        }
-
-        engine = InkEngine(root: root)
+    public convenience init(json: String) throws {
+        self.init(blueprint: try StoryBlueprint(json: json))
     }
 
     public var canContinue: Bool {

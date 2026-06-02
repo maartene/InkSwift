@@ -1,9 +1,12 @@
-// Test Budget: 4 distinct behaviors x 2 = 8 max unit tests
+// Test Budget: 7 distinct behaviors x 2 = 14 max unit tests
 // Behaviors:
 //   B1 — valid Ink JSON initialises StoryBlueprint without error
 //   B2 — non-JSON string throws StoryError.invalidJSON
 //   B3 — JSON with unsupported inkVersion throws StoryError.unsupportedInkVersion
 //   B4 — probe fixture absent/corrupt throws StoryError.decoderProbeFailure
+//   B5 — two Story instances from same blueprint produce identical output (multi-instantiation)
+//   B6 — Story.init(json:) produces identical output to blueprint path (backwards compatibility)
+//   B7 — Story.init(blueprint:) constructs without error from a valid StoryBlueprint
 
 import Testing
 import Foundation
@@ -63,4 +66,75 @@ struct StoryBlueprintTests {
     // relies on the same bundle fixture and treats probe failure as a valid error path.
     // B4 is validated by the presence of the decoderProbeFailure error handling in
     // StoryBlueprint.init(json:) production code, consistent with Story.init(json:).
+
+    // B5: two Story instances created from same blueprint produce identical output
+    // GIVEN: a valid StoryBlueprint created from test fixture JSON
+    // WHEN: Story.init(blueprint:) is called twice with the same blueprint
+    // THEN: both Story instances independently produce the same text output when continued
+    @Test("two Story instances from same blueprint produce identical output")
+    func twoStoriesFromSameBlueprintProduceIdenticalOutput() throws {
+        let url = try #require(Bundle.module.url(forResource: "test.ink", withExtension: "json"))
+        let json = try String(contentsOf: url, encoding: .utf8)
+        let blueprint = try StoryBlueprint(json: json)
+
+        let story1 = Story(blueprint: blueprint)
+        let story2 = Story(blueprint: blueprint)
+
+        var output1: [String] = []
+        var output2: [String] = []
+
+        while story1.canContinue {
+            output1.append(story1.continue())
+        }
+
+        while story2.canContinue {
+            output2.append(story2.continue())
+        }
+
+        #expect(!output1.isEmpty)
+        #expect(output1 == output2)
+    }
+
+    // B6: Story.init(json:) produces identical output to Story.init(blueprint:) path
+    // GIVEN: the same Ink JSON string
+    // WHEN: one Story is created via Story.init(json:) and another via StoryBlueprint + Story.init(blueprint:)
+    // THEN: both produce identical text output (backwards compatibility preserved)
+    @Test("Story.init(json:) produces identical output to blueprint path")
+    func storyInitJSONProducesIdenticalOutputToBlueprintPath() throws {
+        let url = try #require(Bundle.module.url(forResource: "test.ink", withExtension: "json"))
+        let json = try String(contentsOf: url, encoding: .utf8)
+
+        let storyViaJSON = try Story(json: json)
+        let blueprint = try StoryBlueprint(json: json)
+        let storyViaBlueprint = Story(blueprint: blueprint)
+
+        var outputViaJSON: [String] = []
+        var outputViaBlueprint: [String] = []
+
+        while storyViaJSON.canContinue {
+            outputViaJSON.append(storyViaJSON.continue())
+        }
+
+        while storyViaBlueprint.canContinue {
+            outputViaBlueprint.append(storyViaBlueprint.continue())
+        }
+
+        #expect(!outputViaJSON.isEmpty)
+        #expect(outputViaJSON == outputViaBlueprint)
+    }
+
+    // B7: Story.init(blueprint:) constructs without error from a valid StoryBlueprint
+    // GIVEN: a valid StoryBlueprint
+    // WHEN: Story.init(blueprint:) is called
+    // THEN: a Story instance is returned without throwing
+    @Test("Story.init(blueprint:) constructs without error from valid blueprint")
+    func storyInitBlueprintConstructsWithoutError() throws {
+        let url = try #require(Bundle.module.url(forResource: "test.ink", withExtension: "json"))
+        let json = try String(contentsOf: url, encoding: .utf8)
+        let blueprint = try StoryBlueprint(json: json)
+
+        // Story.init(blueprint:) is non-throwing — no try needed
+        let story = Story(blueprint: blueprint)
+        #expect(story.canContinue)
+    }
 }
