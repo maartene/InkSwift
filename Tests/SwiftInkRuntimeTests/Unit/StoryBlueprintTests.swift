@@ -15,14 +15,26 @@ import Foundation
 @Suite("StoryBlueprint initialisation")
 struct StoryBlueprintTests {
 
+    private func loadFixtureJSON() throws -> String {
+        let url = try #require(Bundle.module.url(forResource: "test.ink", withExtension: "json"))
+        return try String(contentsOf: url, encoding: .utf8)
+    }
+
+    private func drainOutput(from story: Story) -> [String] {
+        var output: [String] = []
+        while story.canContinue {
+            output.append(story.continue())
+        }
+        return output
+    }
+
     // B1: valid Ink JSON string initialises without error
     // GIVEN: a valid Ink JSON string loaded from the test bundle fixture
     // WHEN: StoryBlueprint.init(json:) is called
     // THEN: no error is thrown and a StoryBlueprint value is returned
     @Test("init with valid Ink JSON does not throw")
     func initWithValidInkJSONDoesNotThrow() throws {
-        let url = try #require(Bundle.module.url(forResource: "test.ink", withExtension: "json"))
-        let json = try String(contentsOf: url, encoding: .utf8)
+        let json = try loadFixtureJSON()
         #expect(throws: Never.self) {
             try StoryBlueprint(json: json)
         }
@@ -73,23 +85,10 @@ struct StoryBlueprintTests {
     // THEN: both Story instances independently produce the same text output when continued
     @Test("two Story instances from same blueprint produce identical output")
     func twoStoriesFromSameBlueprintProduceIdenticalOutput() throws {
-        let url = try #require(Bundle.module.url(forResource: "test.ink", withExtension: "json"))
-        let json = try String(contentsOf: url, encoding: .utf8)
-        let blueprint = try StoryBlueprint(json: json)
+        let blueprint = try StoryBlueprint(json: loadFixtureJSON())
 
-        let story1 = Story(blueprint: blueprint)
-        let story2 = Story(blueprint: blueprint)
-
-        var output1: [String] = []
-        var output2: [String] = []
-
-        while story1.canContinue {
-            output1.append(story1.continue())
-        }
-
-        while story2.canContinue {
-            output2.append(story2.continue())
-        }
+        let output1 = drainOutput(from: Story(blueprint: blueprint))
+        let output2 = drainOutput(from: Story(blueprint: blueprint))
 
         #expect(!output1.isEmpty)
         #expect(output1 == output2)
@@ -101,23 +100,10 @@ struct StoryBlueprintTests {
     // THEN: both produce identical text output (backwards compatibility preserved)
     @Test("Story.init(json:) produces identical output to blueprint path")
     func storyInitJSONProducesIdenticalOutputToBlueprintPath() throws {
-        let url = try #require(Bundle.module.url(forResource: "test.ink", withExtension: "json"))
-        let json = try String(contentsOf: url, encoding: .utf8)
+        let json = try loadFixtureJSON()
 
-        let storyViaJSON = try Story(json: json)
-        let blueprint = try StoryBlueprint(json: json)
-        let storyViaBlueprint = Story(blueprint: blueprint)
-
-        var outputViaJSON: [String] = []
-        var outputViaBlueprint: [String] = []
-
-        while storyViaJSON.canContinue {
-            outputViaJSON.append(storyViaJSON.continue())
-        }
-
-        while storyViaBlueprint.canContinue {
-            outputViaBlueprint.append(storyViaBlueprint.continue())
-        }
+        let outputViaJSON = drainOutput(from: try Story(json: json))
+        let outputViaBlueprint = drainOutput(from: Story(blueprint: try StoryBlueprint(json: json)))
 
         #expect(!outputViaJSON.isEmpty)
         #expect(outputViaJSON == outputViaBlueprint)
@@ -129,9 +115,7 @@ struct StoryBlueprintTests {
     // THEN: a Story instance is returned without throwing
     @Test("Story.init(blueprint:) constructs without error from valid blueprint")
     func storyInitBlueprintConstructsWithoutError() throws {
-        let url = try #require(Bundle.module.url(forResource: "test.ink", withExtension: "json"))
-        let json = try String(contentsOf: url, encoding: .utf8)
-        let blueprint = try StoryBlueprint(json: json)
+        let blueprint = try StoryBlueprint(json: loadFixtureJSON())
 
         // Story.init(blueprint:) is non-throwing — no try needed
         let story = Story(blueprint: blueprint)

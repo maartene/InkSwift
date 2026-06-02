@@ -1,0 +1,118 @@
+{
+  "schema_version": "3.0",
+  "feature_id": "story-blueprint-init",
+  "events": [
+    {
+      "sid": "01-01",
+      "p": "PREPARE",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-06-02T17:00:14Z"
+    },
+    {
+      "sid": "01-01",
+      "p": "RED_ACCEPTANCE",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-06-02T17:00:18Z"
+    },
+    {
+      "sid": "01-01",
+      "p": "RED_UNIT",
+      "s": "SKIPPED",
+      "d": "NOT_APPLICABLE: acceptance test covers all 3 testable behaviors (B1 valid JSON, B2 invalid JSON, B3 unsupported version); B4 probe-failure has no injection seam, consistent with Story.init pattern",
+      "t": "2026-06-02T17:00:24Z"
+    },
+    {
+      "sid": "01-01",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-06-02T17:00:27Z"
+    },
+    {
+      "sid": "01-01",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-06-02T17:00:39Z"
+    },
+    {
+      "sid": "01-02",
+      "p": "PREPARE",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-06-02T17:02:15Z"
+    },
+    {
+      "sid": "01-02",
+      "p": "RED_ACCEPTANCE",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-06-02T17:02:51Z"
+    },
+    {
+      "sid": "01-02",
+      "p": "RED_UNIT",
+      "s": "SKIPPED",
+      "d": "NOT_APPLICABLE: acceptance tests at Story driving port already cover all behavioral boundaries (B5, B6, B7) \u2014 no additional unit decomposition needed",
+      "t": "2026-06-02T17:02:59Z"
+    },
+    {
+      "sid": "01-02",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-06-02T17:03:34Z"
+    },
+    {
+      "sid": "01-02",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-06-02T17:03:46Z"
+    },
+    {
+      "sid": "02-01",
+      "p": "PREPARE",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-06-02T17:04:47Z"
+    },
+    {
+      "sid": "02-01",
+      "p": "RED_ACCEPTANCE",
+      "s": "SKIPPED",
+      "d": "NOT_APPLICABLE: verification-only step, no new failing test needed",
+      "t": "2026-06-02T17:04:51Z"
+    },
+    {
+      "sid": "02-01",
+      "p": "RED_UNIT",
+      "s": "SKIPPED",
+      "d": "NOT_APPLICABLE: no new production code in this step",
+      "t": "2026-06-02T17:04:52Z"
+    },
+    {
+      "sid": "02-01",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS: 55/55 tests passed \u2014 WalkingSkeletonTests, Milestone1_JSONDecodingTests, Milestone2_StoryExecutionTests, Milestone3_SaveRestoreTests all green",
+      "t": "2026-06-02T17:05:03Z"
+    },
+    {
+      "sid": "02-01",
+      "p": "COMMIT",
+      "s": "SKIPPED",
+      "d": "APPROVED_SKIP: no changes in this step \u2014 regression gate passed at 55/55 tests",
+      "t": "2026-06-02T17:05:07Z"
+    },
+    {
+      "sid": "02-01",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-06-02T17:05:17Z"
+    }
+  ]
+}

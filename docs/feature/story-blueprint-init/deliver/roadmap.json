@@ -1,0 +1,78 @@
+{
+  "roadmap": {
+    "project_id": "story-blueprint-init",
+    "created_at": "2026-06-02T16:53:02Z",
+    "total_steps": 3,
+    "phases": 2
+  },
+  "phases": [
+    {
+      "id": "01",
+      "name": "StoryBlueprint type and Story convenience wrapper",
+      "steps": [
+        {
+          "id": "01-01",
+          "name": "Create StoryBlueprint with init(json:) and unit tests",
+          "description": "Introduce the public StoryBlueprint type in Sources/SwiftInkRuntime/Facade/StoryBlueprint.swift. StoryBlueprint.init(json:) must run InkDecoder.probe() and InkDecoder.decode(), store the resulting ContainerNode internally, and surface the same StoryError variants that Story.init(json:) already throws. ContainerNode must remain internal; StoryBlueprint exposes no details about its parsed content. No JSONSerialization call may appear in Facade/ files (R3).",
+          "criteria": "Given a valid Ink JSON string with a supported inkVersion, when StoryBlueprint.init(json:) is called, then no error is thrown and a StoryBlueprint value is returned. Given a string that is not valid JSON, when StoryBlueprint.init(json:) is called, then StoryError.invalidJSON is thrown. Given an Ink JSON string with inkVersion 19, when StoryBlueprint.init(json:) is called, then StoryError.unsupportedInkVersion(19) is thrown. Given the InkDecoder probe fixture is absent or corrupt, when StoryBlueprint.init(json:) is called, then StoryError.decoderProbeFailure is thrown.",
+          "time_estimate_minutes": 30,
+          "dependencies": [],
+          "implementation_scope": [
+            "Sources/SwiftInkRuntime/Facade/StoryBlueprint.swift"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Unit/StoryBlueprintTests.swift",
+          "scenario_name": "StoryBlueprint initialisation"
+        },
+        {
+          "id": "01-02",
+          "name": "Add Story.init(blueprint:) and refactor Story.init(json:) as convenience wrapper",
+          "description": "Add Story.init(blueprint: StoryBlueprint) throws as the designated initialiser on Story. It must initialise InkEngine directly from the ContainerNode held in the blueprint and must NOT call InkDecoder.probe() again. Refactor Story.init(json:) into a convenience initialiser that delegates to StoryBlueprint.init(json:) then Story.init(blueprint:). Story must remain a final class; Swift requires convenience initialisers to call a designated initialiser on the same class, so Story.init(blueprint:) becomes the single designated initialiser. Verify that a single StoryBlueprint instance can be used to create multiple Story objects and that each instance produces identical output when continued independently.",
+          "criteria": "Given a valid StoryBlueprint, when Story.init(blueprint:) is called twice with the same blueprint, then both Story instances independently produce the same text output when continued through the full story. Given a valid Ink JSON string, when Story.init(json:) is called, then the story behaves identically to a story created via the blueprint path (backwards compatibility preserved). When Story.init(blueprint:) is called, then JSON fixture validation occurs only once per blueprint lifecycle (no redundant validation).",
+          "time_estimate_minutes": 40,
+          "dependencies": ["01-01"],
+          "implementation_scope": [
+            "Sources/SwiftInkRuntime/Facade/Story.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/StoryBlueprintTests.swift"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Unit/StoryBlueprintTests.swift",
+          "scenario_name": "Story multi-instantiation from blueprint"
+        }
+      ]
+    },
+    {
+      "id": "02",
+      "name": "Acceptance and regression gate",
+      "steps": [
+        {
+          "id": "02-01",
+          "name": "Verify all existing tests remain green after the refactor",
+          "description": "Run the full SwiftInkRuntimeTests suite (unit and acceptance) to confirm that the introduction of StoryBlueprint and the refactor of Story.init(json:) into a convenience wrapper have not broken any existing behaviour. All tests in WalkingSkeletonTests, Milestone1_JSONDecodingTests, Milestone2_StoryExecutionTests, and Milestone3_SaveRestoreTests must pass. No changes to those test files are permitted in this step.",
+          "criteria": "Given the complete SwiftInkRuntimeTests suite is executed with swift test --filter SwiftInkRuntimeTests, then every test that passed before this feature branch passes after it. Specifically: WalkingSkeletonTests story loads from a real bundle fixture and canContinue is true passes without modification. Milestone1_JSONDecodingTests Story init throws for an unsupported ink version passes without modification. Milestone2_StoryExecutionTests linear story can be continued through all text without error passes without modification. Milestone3_SaveRestoreTests (all scenarios) pass without modification.",
+          "time_estimate_minutes": 15,
+          "dependencies": ["01-02"],
+          "implementation_scope": [],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/WalkingSkeletonTests.swift",
+          "scenario_name": "Full regression — all SwiftInkRuntimeTests green"
+        }
+      ]
+    }
+  ],
+  "implementation_scope": {
+    "source_directories": [
+      "Sources/SwiftInkRuntime/Facade/"
+    ],
+    "test_directories": [
+      "Tests/SwiftInkRuntimeTests/Unit/",
+      "Tests/SwiftInkRuntimeTests/Acceptance/"
+    ],
+    "excluded_patterns": [
+      "Sources/SwiftInkRuntime/Decoder/",
+      "Sources/SwiftInkRuntime/Engine/"
+    ]
+  },
+  "validation": {
+    "status": "approved",
+    "reviewer": "solution-architect-reviewer",
+    "approved_at": "2026-06-02"
+  }
+}
