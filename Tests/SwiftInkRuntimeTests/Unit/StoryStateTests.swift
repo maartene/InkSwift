@@ -14,8 +14,7 @@ import Foundation
 struct StoryStateTests {
 
     // Behavior 1: StoryState can be initialized with default values
-    @Test("default StoryState has expected initial values")
-    func defaultStoryStateHasExpectedInitialValues() {
+    @Test func `default StoryState has expected initial values`() {
         let state = StoryState()
         #expect(state.pointer.containerPath == [])
         #expect(state.pointer.index == 0)
@@ -28,16 +27,14 @@ struct StoryStateTests {
     }
 
     // Behavior 2: StoryState encodes to JSON without throwing
-    @Test("StoryState encodes to JSON without throwing")
-    func storyStateEncodesToJSONWithoutThrowing() throws {
+    @Test func `StoryState encodes to JSON without throwing`() throws {
         let state = StoryState()
         let encoder = JSONEncoder()
         _ = try encoder.encode(state)
     }
 
     // Behavior 3: StoryState round-trips through JSONEncoder/JSONDecoder
-    @Test("StoryState round-trips through JSONEncoder and JSONDecoder")
-    func storyStateRoundTrips() throws {
+    @Test func `StoryState round-trips through JSONEncoder and JSONDecoder`() throws {
         var state = StoryState()
         state.pointer = StoryPointer(containerPath: ["root", "knot1"], index: 3)
         state.outputStream = ["Hello, ", "world!"]
@@ -65,13 +62,13 @@ struct StoryStateTests {
     }
 
     // Behavior 4: InkValue cases encode/decode correctly
-    @Test("InkValue cases encode and decode correctly", arguments: [
+    @Test(arguments: [
         InkValue.int(7),
         InkValue.float(3.14),
         InkValue.string("hello"),
         InkValue.bool(true)
     ])
-    func inkValueCasesRoundTrip(value: InkValue) throws {
+    func `InkValue cases encode and decode correctly`(value: InkValue) throws {
         let encoder = JSONEncoder()
         let data = try encoder.encode(value)
         let decoder = JSONDecoder()
@@ -82,8 +79,7 @@ struct StoryStateTests {
     // Behavior 5: mid-story StoryState round-trips through saveState/restoreState
     // Enters through InkEngine driving port (saveState/restoreState), loads a real fixture,
     // steps at least one passage, then verifies the Codable round-trip preserves key fields.
-    @Test("mid-story StoryState round-trips through saveState and restoreState")
-    func midStoryStateRoundTrips() throws {
+    @Test func `mid-story StoryState round-trips through saveState and restoreState`() throws {
         // Arrange: load test.ink.json from bundle and decode into a ContainerNode
         let url = try #require(Bundle.module.url(forResource: "test.ink", withExtension: "json"))
         let data = try Data(contentsOf: url)

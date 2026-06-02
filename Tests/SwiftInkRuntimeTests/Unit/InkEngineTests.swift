@@ -23,24 +23,21 @@ private func makeContainer(_ children: NodeKind...) -> ContainerNode {
 struct InkEngineTests {
 
     // B1a: init does not crash and canContinue is true for a non-empty root
-    @Test("init with non-empty root does not crash and canContinue is true")
-    func initWithNonEmptyRootCanContinue() {
+    @Test func `init with non-empty root does not crash and canContinue is true`() {
         let container = makeContainer(.text("Hello"), .newline)
         let engine = InkEngine(root: container)
         #expect(engine.canContinue == true)
     }
 
     // B1b: canContinue is false for an empty root container
-    @Test("canContinue is false for empty root container")
-    func canContinueIsFalseForEmptyRoot() {
+    @Test func `canContinue is false for empty root container`() {
         let container = makeContainer()
         let engine = InkEngine(root: container)
         #expect(engine.canContinue == false)
     }
 
     // B2a: stepToNextLine returns text from a .text + .newline sequence (includes trailing \n)
-    @Test("stepToNextLine returns text from text and newline nodes")
-    func stepToNextLineReturnsText() {
+    @Test func `stepToNextLine returns text from text and newline nodes`() {
         let container = makeContainer(.text("Hello, world"), .newline)
         let engine = InkEngine(root: container)
         let line = engine.stepToNextLine()
@@ -48,8 +45,7 @@ struct InkEngineTests {
     }
 
     // B2b: currentText reflects the last completed line after step() (includes trailing \n)
-    @Test("step advances and currentText is the last completed line")
-    func stepAdvancesAndCurrentTextIsLastCompletedLine() {
+    @Test func `step advances and currentText is the last completed line`() {
         let container = makeContainer(.text("First line"), .newline)
         let engine = InkEngine(root: container)
         engine.step()
@@ -57,8 +53,7 @@ struct InkEngineTests {
     }
 
     // B3a: isEnded is true after a "done" control command; canContinue is false
-    @Test("canContinue is false after done control command")
-    func canContinueIsFalseAfterDone() {
+    @Test func `canContinue is false after done control command`() {
         let container = makeContainer(.controlCommand("done"))
         let engine = InkEngine(root: container)
         engine.step()
@@ -66,8 +61,7 @@ struct InkEngineTests {
     }
 
     // B3b: canContinue is false after an "end" control command
-    @Test("canContinue is false after end control command")
-    func canContinueIsFalseAfterEnd() {
+    @Test func `canContinue is false after end control command`() {
         let container = makeContainer(.controlCommand("end"))
         let engine = InkEngine(root: container)
         engine.step()
@@ -75,8 +69,7 @@ struct InkEngineTests {
     }
 
     // B4a: chooseChoice(at:) throws invalidChoiceIndex for index beyond range
-    @Test("chooseChoice throws invalidChoiceIndex for out-of-range index")
-    func chooseChoiceThrowsForOutOfRangeIndex() throws {
+    @Test func `chooseChoice throws invalidChoiceIndex for out-of-range index`() throws {
         let container = makeContainer(.text("Start"), .newline)
         let engine = InkEngine(root: container)
         #expect(throws: StoryError.invalidChoiceIndex(99)) {
@@ -85,8 +78,7 @@ struct InkEngineTests {
     }
 
     // B4b: chooseChoice(at:) throws invalidChoiceIndex for negative index
-    @Test("chooseChoice throws invalidChoiceIndex for negative index")
-    func chooseChoiceThrowsForNegativeIndex() throws {
+    @Test func `chooseChoice throws invalidChoiceIndex for negative index`() throws {
         let container = makeContainer(.text("Start"), .newline)
         let engine = InkEngine(root: container)
         #expect(throws: StoryError.invalidChoiceIndex(-1)) {
@@ -95,8 +87,7 @@ struct InkEngineTests {
     }
 
     // B5: saveState() returns non-empty Data after at least one step has been taken
-    @Test("saveState returns non-empty Data after one step")
-    func saveStateReturnsNonEmptyDataAfterStep() throws {
+    @Test func `saveState returns non-empty Data after one step`() throws {
         let container = makeContainer(.text("Hello"), .newline, .controlCommand("done"))
         let engine = InkEngine(root: container)
         engine.step()
@@ -105,8 +96,7 @@ struct InkEngineTests {
     }
 
     // B6: restoreState(_:) throws invalidStateData for garbage bytes
-    @Test("restoreState throws invalidStateData for undecodable input")
-    func restoreStateThrowsForGarbageBytes() {
+    @Test func `restoreState throws invalidStateData for undecodable input`() {
         let container = makeContainer(.text("Hello"), .newline)
         let engine = InkEngine(root: container)
         let garbage = Data([0xFF, 0xFE, 0xAB, 0xCD])
@@ -119,8 +109,7 @@ struct InkEngineTests {
     // Uses two-line container: after reading first line, save state.
     // Restore into fresh engine — it must NOT re-output the first line.
     // If containerStack is not rebuilt, the fresh engine restarts from the beginning.
-    @Test("restoreState from saveState does not re-emit already-consumed text")
-    func restoreStateDoesNotReEmitConsumedText() throws {
+    @Test func `restoreState from saveState does not re-emit already-consumed text`() throws {
         // Two-line story: "Line A" then "Line B" then done
         let container = makeContainer(
             .text("Line A"), .newline,
@@ -146,8 +135,7 @@ struct InkEngineTests {
     }
 
     // B8: restoreState(_:) throws invalidStateData for valid JSON that doesn't decode to StoryState
-    @Test("restoreState throws invalidStateData for valid JSON not matching StoryState schema")
-    func restoreStateThrowsForValidJSONNotMatchingStoryState() {
+    @Test func `restoreState throws invalidStateData for valid JSON not matching StoryState schema`() {
         let container = makeContainer(.text("Hello"), .newline)
         let engine = InkEngine(root: container)
         // Valid JSON object that is not a StoryState

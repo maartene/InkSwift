@@ -13,8 +13,7 @@ import Testing
 struct TreeWalkerTests {
 
     // B1: Container exhaustion returns nil
-    @Test("step returns nil when container is exhausted")
-    func stepReturnsNilWhenContainerIsExhausted() {
+    @Test func `step returns nil when container is exhausted`() {
         let container = ContainerNode(children: [], namedContent: [:], flags: 0, name: nil)
         let walker = TreeWalker()
         var state = StoryState()
@@ -22,8 +21,7 @@ struct TreeWalkerTests {
         #expect(result == nil)
     }
 
-    @Test("step returns nil when pointer index equals children count")
-    func stepReturnsNilWhenPointerAtEnd() {
+    @Test func `step returns nil when pointer index equals children count`() {
         let container = ContainerNode(
             children: [.text("hello")],
             namedContent: [:], flags: 0, name: nil
@@ -36,8 +34,7 @@ struct TreeWalkerTests {
     }
 
     // B2: .text node appends to outputStream
-    @Test("step appends text node content to outputStream")
-    func stepAppendsTextNodeToOutputStream() {
+    @Test func `step appends text node content to outputStream`() {
         let container = ContainerNode(
             children: [.text("Hello, world!")],
             namedContent: [:], flags: 0, name: nil
@@ -49,8 +46,7 @@ struct TreeWalkerTests {
         #expect(state.pointer.index == 1)
     }
 
-    @Test("step appends multiple text nodes in order")
-    func stepAppendsMultipleTextNodesInOrder() {
+    @Test func `step appends multiple text nodes in order`() {
         let container = ContainerNode(
             children: [.text("Line "), .text("one")],
             namedContent: [:], flags: 0, name: nil
@@ -63,8 +59,7 @@ struct TreeWalkerTests {
     }
 
     // B3: .newline appends "\n" to outputStream
-    @Test("step appends newline sentinel to outputStream for newline node")
-    func stepAppendsNewlineSentinelForNewlineNode() {
+    @Test func `step appends newline sentinel to outputStream for newline node`() {
         let container = ContainerNode(
             children: [.newline],
             namedContent: [:], flags: 0, name: nil
@@ -76,9 +71,8 @@ struct TreeWalkerTests {
     }
 
     // B4: controlCommand "done"/"end" sets isEnded = true
-    @Test("step sets isEnded to true for done or end control command",
-          arguments: ["done", "end"])
-    func stepSetsIsEndedForDoneOrEnd(command: String) {
+    @Test(arguments: ["done", "end"])
+    func `step sets isEnded to true for done or end control command`(command: String) {
         let container = ContainerNode(
             children: [.controlCommand(command)],
             namedContent: [:], flags: 0, name: nil
@@ -90,8 +84,7 @@ struct TreeWalkerTests {
     }
 
     // B5: .divert updates containerPath and resets index to 0
-    @Test("step updates containerPath from divert target")
-    func stepUpdateContainerPathFromDivert() {
+    @Test func `step updates containerPath from divert target`() {
         let container = ContainerNode(
             children: [.divert(target: "Knot1", isConditional: false)],
             namedContent: [:], flags: 0, name: nil
@@ -103,8 +96,7 @@ struct TreeWalkerTests {
         #expect(state.pointer.index == 0)
     }
 
-    @Test("step updates containerPath for dotted divert target")
-    func stepUpdateContainerPathFromDottedDivert() {
+    @Test func `step updates containerPath for dotted divert target`() {
         let container = ContainerNode(
             children: [.divert(target: "Knot2.stitch1", isConditional: false)],
             namedContent: [:], flags: 0, name: nil

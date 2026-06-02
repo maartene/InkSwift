@@ -32,8 +32,7 @@ struct StoryBlueprintTests {
     // GIVEN: a valid Ink JSON string loaded from the test bundle fixture
     // WHEN: StoryBlueprint.init(json:) is called
     // THEN: no error is thrown and a StoryBlueprint value is returned
-    @Test("init with valid Ink JSON does not throw")
-    func initWithValidInkJSONDoesNotThrow() throws {
+    @Test func `init with valid Ink JSON does not throw`() throws {
         let json = try loadFixtureJSON()
         #expect(throws: Never.self) {
             try StoryBlueprint(json: json)
@@ -44,8 +43,7 @@ struct StoryBlueprintTests {
     // GIVEN: a string that is not valid JSON
     // WHEN: StoryBlueprint.init(json:) is called
     // THEN: StoryError.invalidJSON is thrown
-    @Test("init with non-JSON string throws invalidJSON")
-    func initWithNonJSONThrowsInvalidJSON() {
+    @Test func `init with non-JSON string throws invalidJSON`() {
         #expect {
             try StoryBlueprint(json: "not valid json at all")
         } throws: { error in
@@ -57,8 +55,7 @@ struct StoryBlueprintTests {
     // GIVEN: an Ink JSON string with inkVersion 19
     // WHEN: StoryBlueprint.init(json:) is called
     // THEN: StoryError.unsupportedInkVersion(19) is thrown
-    @Test("init with inkVersion 19 throws unsupportedInkVersion")
-    func initWithUnsupportedInkVersionThrows() {
+    @Test func `init with inkVersion 19 throws unsupportedInkVersion`() {
         let json = #"{"inkVersion":19,"root":[["\n",null],null],"listDefs":{}}"#
         #expect {
             try StoryBlueprint(json: json)
@@ -83,8 +80,7 @@ struct StoryBlueprintTests {
     // GIVEN: a valid StoryBlueprint created from test fixture JSON
     // WHEN: Story.init(blueprint:) is called twice with the same blueprint
     // THEN: both Story instances independently produce the same text output when continued
-    @Test("two Story instances from same blueprint produce identical output")
-    func twoStoriesFromSameBlueprintProduceIdenticalOutput() throws {
+    @Test func `two Story instances from same blueprint produce identical output`() throws {
         let blueprint = try StoryBlueprint(json: loadFixtureJSON())
 
         let output1 = drainOutput(from: Story(blueprint: blueprint))
@@ -98,8 +94,7 @@ struct StoryBlueprintTests {
     // GIVEN: the same Ink JSON string
     // WHEN: one Story is created via Story.init(json:) and another via StoryBlueprint + Story.init(blueprint:)
     // THEN: both produce identical text output (backwards compatibility preserved)
-    @Test("Story.init(json:) produces identical output to blueprint path")
-    func storyInitJSONProducesIdenticalOutputToBlueprintPath() throws {
+    @Test func `Story.init(json:) produces identical output to blueprint path`() throws {
         let json = try loadFixtureJSON()
 
         let outputViaJSON = drainOutput(from: try Story(json: json))
@@ -113,8 +108,7 @@ struct StoryBlueprintTests {
     // GIVEN: a valid StoryBlueprint
     // WHEN: Story.init(blueprint:) is called
     // THEN: a Story instance is returned without throwing
-    @Test("Story.init(blueprint:) constructs without error from valid blueprint")
-    func storyInitBlueprintConstructsWithoutError() throws {
+    @Test func `Story.init(blueprint:) constructs without error from valid blueprint`() throws {
         let blueprint = try StoryBlueprint(json: loadFixtureJSON())
 
         // Story.init(blueprint:) is non-throwing — no try needed

@@ -15,8 +15,7 @@ struct NodeKindTests {
 
     // MARK: - Behavior 1: All node kinds are present
 
-    @Test("all ink node kinds are representable")
-    func allNodeKindsAreRepresentable() {
+    @Test func `all ink node kinds are representable`() {
         // Exhaustive switch — compiler enforces completeness at build time.
         // If any required case is missing, this file will not compile.
         let nodes: [NodeKind] = [
@@ -60,8 +59,7 @@ struct NodeKindTests {
 
     // MARK: - Behavior 2: Associated values carry correct payload types
 
-    @Test("associated values carry correct payloads")
-    func associatedValuesCarryCorrectPayloads() {
+    @Test func `associated values carry correct payloads`() {
         let textNode = NodeKind.text("hello world")
         if case .text(let value) = textNode {
             #expect(value == "hello world")
