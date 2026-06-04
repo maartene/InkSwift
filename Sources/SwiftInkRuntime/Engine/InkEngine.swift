@@ -103,8 +103,12 @@ final class InkEngine {
 
             walker.dispatchNode(currentChild, state: &state)
 
-            if case .divert(let target, _, _) = currentChild {
-                applyDivert(target: target)
+            if case .divert(let target, _, let isVariable) = currentChild {
+                if isVariable, !state.returnStack.isEmpty {
+                    applyDivert(target: state.returnStack.removeLast())
+                } else if !isVariable {
+                    applyDivert(target: target)
+                }
                 continue
             }
 
@@ -165,9 +169,30 @@ final class InkEngine {
 
     // MARK: - Divert handling
 
+    /// Resolve an anchor path whose last component starts with "$".
+    /// Splits the path into prefix (resolved via resolveNamedPath) and anchor component,
+    /// scans the resolved parent container's children for a sub-container whose .name
+    /// equals the anchor component, and returns (parentContainer, anchorChildIndex + 1).
+    private func resolveAnchor(inPath components: [String]) -> (ContainerNode, Int)? {
+        guard let anchorComponent = components.last, anchorComponent.hasPrefix("$") else { return nil }
+        let prefixComponents = Array(components.dropLast())
+        guard let parentContainer = resolveNamedPath(prefixComponents) else { return nil }
+        for (i, child) in parentContainer.children.enumerated() {
+            if case .container(let sub) = child, sub.name == anchorComponent {
+                return (parentContainer, i + 1)
+            }
+        }
+        return nil
+    }
+
     private func applyDivert(target: String) {
         let components = pathComponents(from: target)
-        if let container = resolveNamedPath(components) {
+        if components.last?.hasPrefix("$") == true {
+            if let (parentContainer, startIndex) = resolveAnchor(inPath: components) {
+                containerStack = [ContainerFrame(container: parentContainer, index: startIndex)]
+            }
+            // If unresolvable, leave stack as-is (silent no-op)
+        } else if let container = resolveNamedPath(components) {
             containerStack = [ContainerFrame(container: container, index: 0)]
         }
         // If unresolvable, leave stack as-is (will exhaust and stop)

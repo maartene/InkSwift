@@ -117,6 +117,25 @@ import InkSwift
         #expect(story.canContinue || !story.currentChoices.isEmpty)
     }
 
+    // GIVEN: a story with real-compiler-format JSON (numeric-prefixed paths like "0.c-0")
+    // WHEN: chooseChoice(at: 0) is called, then continue() is called
+    // THEN: canContinue is true and continuation text is non-empty
+    // Regression for: resolveNamedPath silently failing on numeric path components
+
+    @Test
+    func `choosing a choice in a real-compiler story produces continuation text`() throws {
+        let json = #"""
+        {"inkVersion":21,"root":[["^A simple story","\n","^Once upon a time...","\n",["ev",{"^->":"0.4.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":"0.c-0","flg":18},{"s":["^There were two choices.",{"->":"$r","var":true},null]}],["ev",{"^->":"0.5.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":"0.c-1","flg":18},{"s":["^There were four lines of content.",{"->":"$r","var":true},null]}],{"c-0":["ev",{"^->":"0.c-0.$r2"},"/ev",{"temp=":"$r"},{"->":"0.4.s"},[{"#n":"$r2"}],"\n",{"->":"0.g-0"},{"#f":5}],"c-1":["ev",{"^->":"0.c-1.$r2"},"/ev",{"temp=":"$r"},{"->":"0.5.s"},[{"#n":"$r2"}],"\n",{"->":"0.g-0"},{"#f":5}],"g-0":["^They lived happily ever after.","\n","end",["done",{"#f":5,"#n":"g-1"}],{"#f":5}]}],"done",{"#f":1}],"listDefs":{}}
+        """#
+        let story = try Story(json: json)
+        while story.canContinue { _ = story.`continue`() }
+        try #require(story.currentChoices.count == 2)
+        try story.chooseChoice(at: 0)
+        #expect(story.canContinue)
+        let text = story.`continue`()
+        #expect(!text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
     // GIVEN: a story at a choice point with 2 available choices
     // WHEN: chooseChoice(at: 99) is called
     // THEN: StoryError.invalidChoiceIndex is thrown
@@ -146,6 +165,46 @@ import InkSwift
         }
         // test.ink.json root passage has no tags — verify no false positives.
         #expect(!foundTags)
+    }
+
+    // GIVEN: a story whose choices are encoded with 's' named sub-containers (flg:18, the real Ink compiler format)
+    // WHEN: continue() is called until canContinue is false
+    // THEN: both choices appear with their correct text (regression for: only first choice shown, empty choice text)
+
+    @Test
+    func `story with s-sub-container choices exposes all choices with correct text`() throws {
+        let json = #"""
+        {"inkVersion":21,"root":[["^A simple story","\n","^Once upon a time...","\n",["ev",{"^->":"0.4.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":"0.c-0","flg":18},{"s":["^There were two choices.",{"->":"$r","var":true},null]}],["ev",{"^->":"0.5.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":"0.c-1","flg":18},{"s":["^There were four lines of content.",{"->":"$r","var":true},null]}],{"c-0":["ev",{"^->":"0.c-0.$r2"},"/ev",{"temp=":"$r"},{"->":"0.4.s"},[{"#n":"$r2"}],"\n",{"->":"0.g-0"},{"#f":5}],"c-1":["ev",{"^->":"0.c-1.$r2"},"/ev",{"temp=":"$r"},{"->":"0.5.s"},[{"#n":"$r2"}],"\n",{"->":"0.g-0"},{"#f":5}],"g-0":["^They lived happily ever after.","\n","end",["done",{"#f":5,"#n":"g-1"}],{"#f":5}]}],"done",{"#f":1}],"listDefs":{}}
+        """#
+        let story = try Story(json: json)
+        while story.canContinue { _ = story.`continue`() }
+        #expect(story.currentChoices.count == 2)
+        #expect(story.currentChoices[0].text == "There were two choices.")
+        #expect(story.currentChoices[1].text == "There were four lines of content.")
+    }
+
+    // GIVEN: a story with real-compiler-format JSON (numeric-prefixed paths, anchor $r2, variable divert)
+    // WHEN: chooseChoice(at: 0) is called, then continue() is called until canContinue is false
+    // THEN: collected lines contain both the choice text and the gather text "They lived happily ever after."
+
+    @Test
+    func `choosing a choice in a real-compiler story shows gather text after choice text`() throws {
+        let json = #"""
+        {"inkVersion":21,"root":[["^A simple story","\n","^Once upon a time...","\n",["ev",{"^->":"0.4.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":"0.c-0","flg":18},{"s":["^There were two choices.",{"->":"$r","var":true},null]}],["ev",{"^->":"0.5.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":"0.c-1","flg":18},{"s":["^There were four lines of content.",{"->":"$r","var":true},null]}],{"c-0":["ev",{"^->":"0.c-0.$r2"},"/ev",{"temp=":"$r"},{"->":"0.4.s"},[{"#n":"$r2"}],"\n",{"->":"0.g-0"},{"#f":5}],"c-1":["ev",{"^->":"0.c-1.$r2"},"/ev",{"temp=":"$r"},{"->":"0.5.s"},[{"#n":"$r2"}],"\n",{"->":"0.g-0"},{"#f":5}],"g-0":["^They lived happily ever after.","\n","end",["done",{"#f":5,"#n":"g-1"}],{"#f":5}]}],"done",{"#f":1}],"listDefs":{}}
+        """#
+        let story = try Story(json: json)
+        while story.canContinue { _ = story.`continue`() }
+        try #require(story.currentChoices.count == 2)
+        try story.chooseChoice(at: 0)
+        var lines: [String] = []
+        while story.canContinue {
+            let line = story.`continue`()
+            if !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                lines.append(line)
+            }
+        }
+        #expect(lines.contains { $0.contains("There were two choices.") })
+        #expect(lines.contains { $0.contains("They lived happily ever after.") })
     }
 
     // GIVEN: a story continued to its end
