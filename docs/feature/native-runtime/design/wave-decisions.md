@@ -143,3 +143,113 @@ The DISCUSS wave was skipped for this feature. The following items would normall
 3. **`listDefs` is a known gap**: The spike found no Ink list definitions in the test fixture. Behaviour of the tree-walker when encountering `listDefs` is not specified. A user story covering Ink list variables should be added before the feature is considered complete.
 
 4. **Tag retention policy (`retainTags`)**: `InkStory` exposes a `retainTags: [String]` property (default: `["IMAGE"]`). Whether `Story` should expose an equivalent is an API design decision that should be captured in a user story. The architecture document currently defers this to the facade design.
+
+---
+
+## DESIGN Addendum — ink-callreturn-mechanism
+
+**Date**: 2026-06-04
+**Mode**: Propose (autonomous analysis)
+**Architect**: Morgan (nw-solution-architect)
+
+---
+
+### Context
+
+The Ink call/return mechanism is required to implement correct choice text display and gather navigation. The Ink compiler emits `{"^->":"path"}` (push return address), `{"->":"$r","var":true}` (pop and navigate), and anchors (`$r2`) as a cooperative triple. All three are currently misclassified by the Decoder and unhandled by the Engine.
+
+---
+
+### Decision CR-1 — NodeKind representation
+
+**Chosen**: Add `.pushDivertTarget(String)` as a new `NodeKind` case. Extend `.divert` with `isVariable: Bool` as a third associated value.
+
+```
+NodeKind:
+  add: case pushDivertTarget(String)
+  modify: case divert(target: String, isConditional: Bool, isVariable: Bool)
+```
+
+**Rationale**: Two options were evaluated. Adding a `DivertKind` enum to replace both booleans (Option B) would be cleaner in isolation but breaks every existing pattern match on `.divert` — a high-surface refactor for a feature that is currently working. Handling variable diverts by `$`-prefix inspection in InkEngine (Option C) moves classification logic out of the Decoder, which is the designated classifier layer. Option A is additive: one new case, one new boolean consistent with the existing `isConditional` precedent.
+
+**InkDecoder.classifyDict changes**:
+- Detect `dict["^->"] as? String` → `.pushDivertTarget(path)`
+- Detect `dict["->"] as? String` where `dict["var"] as? Bool == true` → `.divert(target: varName, isConditional: false, isVariable: true)`
+- Remove fall-through: `{"^->": ...}` currently produces `.controlCommand("^->")` — this must be handled before the generic fall-through
+
+**NodeKindTests impact**: One new case in the array (count 13 → 14), one new switch arm, and the existing `.divert` arm arity changes from two to three associated values (compiler-enforced update).
+
+---
+
+### Decision CR-2 — Anchor resolution location
+
+**Chosen**: Dedicated `resolveAnchor(inPath:)` method in `InkEngine`, called only from `applyDivert`.
+
+Signature contract: `resolveAnchor(inPath components: [String]) -> (container: ContainerNode, startIndex: Int)?`
+
+Behaviour: split `components` into the non-anchor prefix (all but the last component) and the anchor component (last component, starting with `$`). Resolve the prefix via the existing `resolveNamedPath`. Then linearly scan the resolved container's `children` for a sub-container whose `.name` matches the anchor component. Return the parent container plus `(anchor child index + 1)` as `startIndex`.
+
+`applyDivert` dispatch logic:
+- If the last path component starts with `$`: call `resolveAnchor`, set `containerStack` to the result container at `startIndex`.
+- Otherwise: call `resolveNamedPath` as today, set `containerStack` at index 0.
+
+**Rejected alternatives**:
+- Eager Decoder-side promotion of anchors into `namedContent` (Option B): creates synthetic containers that make the in-memory AST diverge from the JSON structure — directly harms debuggability (ADR-001 primary driver) and interacts poorly with the save/restore stack-frame serialisation (ADR-003).
+- Changing `resolveNamedPath` return type to a tuple (Option A): ripples into `chooseChoice(at:)` which must not change — it targets choice body containers, not anchors.
+
+**Note on the `$` convention**: Anchor names are compiler-generated (not author-written) and always prefixed with `$` in inkVersion 21 story files. The `resolveAnchor` method must include a code comment documenting this reliance.
+
+**Fallback behaviour**: If the `$`-prefixed anchor component is not found in the resolved container's `children`, `resolveAnchor` returns `nil` and `applyDivert` leaves `containerStack` as-is — the same silent no-op behaviour as an unresolvable path today. This is consistent with the existing error-tolerance posture of `applyDivert`.
+
+---
+
+### Decision CR-3 — Call frame concept
+
+**Chosen**: `var returnStack: [String]` added to `StoryState`. See ADR-004 for full alternatives analysis.
+
+Summary: `evalStack` (Option A) risks silent contamination of arithmetic operands with control-flow addresses. A nullable field (Option C) is a dead-end for tunnels. An array-based stack (Option B) is minimal, correctly typed, and additive for future tunnel support.
+
+`Codable` impact: use `decodeIfPresent` with `[]` default so existing save files continue to decode correctly. A save taken while `returnStack` is non-empty (i.e., mid-call, with a pending return address) restores correctly — `returnStack` is a `Codable` field and its contents are preserved across the save/restore cycle.
+
+---
+
+### Decision CR-4 — InkDecoder scope
+
+**Chosen**: InkDecoder changes are confined to `classifyDict`. No eager anchor indexing. No new parsing logic.
+
+The Decoder's responsibility is classification of JSON dict nodes into `NodeKind` values. Anchor resolution requires runtime context (the resolved parent container and its children) that the Decoder does not have at parse time. Keeping anchor resolution in InkEngine preserves the Decoder/Engine seam established in Decision 2a/R1.
+
+---
+
+### Reuse Analysis
+
+| Existing component | Location | Overlap | Decision | Justification |
+|---|---|---|---|---|
+| `NodeKind.divert` | `NodeKind.swift:6` | Adjacent to variable divert — both describe navigation | EXTEND (add `isVariable: Bool`) | Additive. Consistent with existing `isConditional` precedent. No new case needed for variable diverts. |
+| `NodeKind.controlCommand` | `NodeKind.swift:10` | Currently absorbs `^->` as `.controlCommand("^->")` | FIX (add `.pushDivertTarget` case, remove fall-through) | `^->` is not a control command — it is a push onto the return address stack. Classifying it as a control command is a classification error. |
+| `resolveNamedPath` | `InkEngine.swift:148` | Resolves dotted paths — does not handle trailing `$` anchors | UNCHANGED (used by `resolveAnchor` as a subroutine) | The method signature and contract do not change. `resolveAnchor` calls it for the non-anchor prefix. |
+| `applyDivert` | `InkEngine.swift:168` | Rebuilds `containerStack` — needs anchor-aware dispatch | EXTEND (add `$`-prefix branch) | Two-line conditional addition. The non-anchor path is unchanged. |
+| `evalStack` in `StoryState` | `StoryState.swift:199` | General-purpose value stack | UNCHANGED | Return addresses are not values — `returnStack` is the correct carrier. `evalStack` remains clean. |
+| `InkDecoder.classifyDict` | `InkDecoder.swift:119` | Entry point for all dict nodes | EXTEND (two new `if-let` branches) | Minimal, additive. Method contract unchanged. |
+| `NodeKindTests` exhaustive switch | `NodeKindTests.swift:39` | Compiler-enforced completeness gate | UPDATE REQUIRED | Adding `.pushDivertTarget` and changing `.divert` arity are compiler-enforced — the test will not compile until updated. This is the desired behaviour documented in the constraints. |
+
+---
+
+### Component boundaries — no new components
+
+All changes are intra-component modifications to existing files. The L3 C4 diagram in `brief.md` remains structurally valid. The `StoryState` description has been updated to include `returnStack`. The `NodeKind` description has been updated to note call/return support.
+
+---
+
+### Quality gates — self-check
+
+- [x] All changes confined to `Decoder/` and `Engine/` layers — R1 preserved
+- [x] `NodeKind` remains `internal` — R2 preserved
+- [x] No new `JSONSerialization` calls — R3 preserved
+- [x] No new runtime dependencies
+- [x] `StoryState` remains `Codable` with backward-compatible defaults
+- [x] No synthetic AST nodes (anchor resolution is purely runtime)
+- [x] `resolveNamedPath` signature unchanged — `chooseChoice(at:)` unaffected
+- [x] `NodeKindTests` will fail to compile until updated — intended compiler-enforced gate
+- [x] ADR-004 written for the `returnStack` decision
+- [x] Reuse analysis table complete — all existing components assessed before any new design

@@ -1,0 +1,88 @@
+{
+  "roadmap": {
+    "project_id": "ink-callreturn-mechanism",
+    "created_at": "2026-06-04T00:00:00Z",
+    "total_steps": 2,
+    "phases": 1
+  },
+  "phases": [
+    {
+      "id": "01",
+      "name": "Call/Return Mechanism",
+      "description": "Implement the three interrelated mechanisms from ADR-004: push-divert-target, variable diverts, and anchor resolution. Enables gather text to appear after a choice is made.",
+      "steps": [
+        {
+          "id": "01-01",
+          "name": "Foundation: NodeKind + InkDecoder + StoryState + TreeWalker",
+          "description": "Add the two new NodeKind cases and update all type-level consumers so the project compiles. Four changes in lockstep: (1) NodeKind gets case pushDivertTarget(String) and .divert gains a third Bool isVariable; (2) InkDecoder.classifyDict detects {\"^->\":path} and {\"->\":var, \"var\":true}; (3) StoryState gains var returnStack: [String] with Codable decodeIfPresent fallback; (4) TreeWalker.dispatch adds the .pushDivertTarget arm and updates the .divert arm for three-value arity. NodeKindTests must be updated to add the new case and fix the exhaustive switch — the file will not compile otherwise.",
+          "criteria": [
+            "NodeKind has case pushDivertTarget(String) — internal, no public modifier",
+            "NodeKind.divert has three associated values: target String, isConditional Bool, isVariable Bool",
+            "InkDecoder.classifyDict returns .pushDivertTarget(path) for dict with key \"^->\"",
+            "InkDecoder.classifyDict returns .divert(target:, isConditional: false, isVariable: true) for dict with key \"->\" and key \"var\" present",
+            "StoryState has var returnStack: [String], initialised to []",
+            "StoryState Codable decodes returnStack via decodeIfPresent with [] fallback so existing save files remain valid",
+            "TreeWalker.dispatch handles .pushDivertTarget by appending path to state.returnStack",
+            "TreeWalker.dispatch .divert arm compiles with three-value arity (isVariable flag passed through — InkEngine handles navigation)",
+            "NodeKindTests all-kinds-representable test includes .pushDivertTarget and its exhaustive switch compiles",
+            "swift test exits 0 — all existing tests remain green"
+          ],
+          "time_estimate_minutes": 40,
+          "dependencies": [],
+          "implementation_scope": [
+            "Sources/SwiftInkRuntime/Decoder/NodeKind.swift",
+            "Sources/SwiftInkRuntime/Decoder/InkDecoder.swift",
+            "Sources/SwiftInkRuntime/Engine/StoryState.swift",
+            "Sources/SwiftInkRuntime/Engine/TreeWalker.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/NodeKindTests.swift"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Unit/NodeKindTests.swift",
+          "scenario_name": "`all ink node kinds are representable`",
+          "notes": "All four production files must be committed together — NodeKind changes break TreeWalker compilation until TreeWalker is updated. No new production behaviour in this step; only type and classification scaffolding."
+        },
+        {
+          "id": "01-02",
+          "name": "Navigator: InkEngine anchor resolution + variable divert + gather acceptance test",
+          "description": "Implement the InkEngine changes from ADR-004 and add a new acceptance test that proves gather text appears after a choice. Three engine changes: (1) new private resolveAnchor(inPath:) method that splits a dotted path, resolves the non-anchor prefix via resolveNamedPath, then scans the resolved parent container's children for a sub-container whose .name equals the anchor component (last path component starting with $), returning (parentContainer, anchorChildIndex + 1); (2) applyDivert gains a branch: if the last path component starts with $, call resolveAnchor and set containerStack at startIndex, otherwise keep existing resolveNamedPath behaviour; (3) stepToNextLine handles the new .divert(isVariable: true) case by popping from state.returnStack and calling applyDivert with the popped path. The acceptance test verifies that after chooseChoice and multiple continue() calls, both the choice text AND the gather text (They lived happily ever after.) are returned.",
+          "criteria": [
+            "resolveAnchor(inPath:) returns (c0Container, 6) for path [\"0\",\"c-0\",\"$r2\"] given the real-compiler story JSON (anchor $r2 is at children[5] of c-0, so startIndex is 6)",
+            "resolveAnchor returns nil for paths where the anchor component is not found in the resolved parent's children — applyDivert leaves containerStack as-is (silent no-op, consistent with existing error-tolerance)",
+            "applyDivert navigates to the anchor's parent container at startIndex when the last component starts with $",
+            "stepToNextLine pops from state.returnStack and calls applyDivert when a .divert(isVariable: true) node is encountered",
+            "New acceptance test `choosing a choice in a real-compiler story shows gather text after choice text` passes: after chooseChoice(at:0) and exhausting continue(), collected non-empty lines contain both the choice text and 'They lived happily ever after.'",
+            "Existing test `choosing a choice in a real-compiler story produces continuation text` remains green",
+            "swift test exits 0 — all 59 tests pass"
+          ],
+          "time_estimate_minutes": 60,
+          "dependencies": ["01-01"],
+          "implementation_scope": [
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Milestone2_StoryExecutionTests.swift"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Milestone2_StoryExecutionTests.swift",
+          "scenario_name": "`choosing a choice in a real-compiler story shows gather text after choice text`",
+          "notes": "The direct namedContent[\"s\"] workaround in stepToNextLine is NOT removed in this step — relative path resolution (.^.s) is a separate future feature. Removing the workaround now would break choice text extraction. Document this deviation in upstream-issues.md."
+        }
+      ]
+    }
+  ],
+  "implementation_scope": {
+    "source_directories": [
+      "Sources/SwiftInkRuntime/Decoder/",
+      "Sources/SwiftInkRuntime/Engine/"
+    ],
+    "test_directories": [
+      "Tests/SwiftInkRuntimeTests/"
+    ],
+    "excluded_patterns": [
+      "Sources/InkSwift/**",
+      "Tests/InkSwiftTests/**"
+    ]
+  },
+  "validation": {
+    "status": "approved",
+    "reviewer": "orchestrator",
+    "approved_at": "2026-06-04",
+    "review_notes": "2-step roadmap derived directly from ADR-004 component impact table. Step 01-01 keeps the build green by updating all NodeKind consumers atomically. Step 01-02 adds runtime behaviour and the gather acceptance test."
+  }
+}

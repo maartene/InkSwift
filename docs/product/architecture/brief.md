@@ -1,7 +1,7 @@
 # InkSwift — Architecture Brief
 
 **Document status**: Active — DESIGN wave complete  
-**Last updated**: 2026-06-01  
+**Last updated**: 2026-06-04  
 **Branch**: native-runtime  
 **Architect**: Morgan (nw-solution-architect)
 
@@ -76,10 +76,10 @@ C4Component
   Container_Boundary(sir, "SwiftInkRuntime") {
     Component(facade, "Story (Facade)", "Facade/ layer", "Public API. Owns no state. Delegates to InkEngine. Exposes: init(json:), continue(), chooseChoice(at:), currentText, canContinue, currentChoices, currentTags, globalTags, currentErrors, saveState(), restoreState(_:).")
     Component(engine, "InkEngine", "Engine/ layer", "final class. Owns var state: StoryState. Drives tree-walker. Enforces execution invariants. Internal only.")
-    Component(storystate, "StoryState", "Engine/ layer", "struct, Codable. Holds callstack, visitCounts, currentPointer, variablesState, outputStream. Owned by InkEngine.")
+    Component(storystate, "StoryState", "Engine/ layer", "struct, Codable. Holds callstack, visitCounts, currentPointer, variablesState, outputStream, returnStack. Owned by InkEngine.")
     Component(walker, "TreeWalker", "Engine/ layer", "Recursive node visitor. Reads NodeKind, advances pointer, pushes output. Internal only.")
     Component(decoder, "InkDecoder", "Decoder/ layer", "Converts raw JSON (via JSONSerialization) into ContainerNode tree. The only layer permitted to call JSONSerialization. Internal only.")
-    Component(nodetypes, "Node Types (ContainerNode, NodeKind)", "Decoder/ layer", "Value types representing parsed Ink AST. NodeKind is internal. ContainerNode is internal.")
+    Component(nodetypes, "Node Types (ContainerNode, NodeKind)", "Decoder/ layer", "Value types representing parsed Ink AST. NodeKind is internal. ContainerNode is internal. NodeKind includes pushDivertTarget and isVariable-flagged divert for call/return support.")
     Component(tagparser, "TagParser", "Engine/ layer", "Pure function. Parses raw tag strings (\"key: value\" or bare \"key\") into [String: String]. Internal only.")
   }
 
@@ -192,6 +192,74 @@ The oracle pattern in tests is a one-directional import: `SwiftInkRuntimeTests` 
 
 ---
 
+### Ink Feature Coverage
+
+This section tracks which Ink language features the `SwiftInkRuntime` engine supports, using **The Intercept** (inkle, MIT) as the upper-bound reference story. The Intercept exercises Parts 1–4 of the official Ink specification (28 knots, 47 stitches, 21 variables, 156+ choices, 8 tunnels) without using sequences, lists, threads, or RANDOM — making it a well-bounded, achievable ceiling.
+
+Feature tiers follow inkle's own documentation structure:
+- **CORE** — required by every non-trivial story (Parts 1–2)
+- **STANDARD** — needed for real games with variables and logic (Part 3)
+- **ADVANCED** — complex flow control used in The Intercept (Part 4)
+- **BEYOND** — not used in The Intercept; lowest priority
+
+#### Feature Coverage Matrix
+
+| # | Feature | Tier | In The Intercept | Engine Status | Notes |
+|---|---------|------|-----------------|---------------|-------|
+| 1 | Text output / newlines | CORE | Yes | **WORKS** | |
+| 2 | Knots (`=== name`) | CORE | Yes (28) | **WORKS** | |
+| 3 | Stitches (`= name`) | CORE | Yes (47) | **WORKS** | |
+| 4 | Diverts (`->`) | CORE | Yes (110+) | **WORKS** (absolute paths) | Relative paths broken — see #5 |
+| 5 | Relative paths (`.^.x`) | CORE | Yes (all within-knot) | **BROKEN** | `resolveNamedPath` has no `^` support; iklecate always emits relative paths in knots |
+| 6 | Plain choices (`* text`) | CORE | Yes | **WORKS** | |
+| 7 | Bracketed choices (`* [text]`) | CORE | Yes (majority of 156+) | **BROKEN** | `flg=20`: choice text on `evalStack` via `str`/`/str`; engine reads `namedContent["s"]` only |
+| 8 | Sticky choices (`+ text`) | CORE | Yes | **UNKNOWN** | `flg` field parsed but not dispatched |
+| 9 | Once-only suppression (`flg=8`) | CORE | Yes | **UNKNOWN** | Flag ignored; choice always shown |
+| 10 | Invisible defaults (`flg=4`) | CORE | Yes | **UNKNOWN** | Flag ignored; gather shown as choice |
+| 11 | Conditional choices (`* {cond}`) | CORE | Yes | **PARTIAL** | `isConditional` parsed; never gated at runtime |
+| 12 | Gathers (`-`) | CORE | Yes | **PARTIAL** | Anchors exist; nested depth untested |
+| 13 | Labeled gathers / options `(label)` | CORE | Yes | **PARTIAL** | Anchor resolution implemented; not fully tested |
+| 14 | Read counts (knot visit counters) | CORE | Yes | **MISSING** | `CNT?` native function deferred; `visitCounts` map exists |
+| 15 | Glue (`<>`) | CORE | Likely | **UNKNOWN** | No test coverage |
+| 16 | VAR global variables | STANDARD | Yes (21) | **WORKS** | |
+| 17 | CONST declarations | STANDARD | Yes (6) | **UNKNOWN** | Parsed? No test |
+| 18 | Temp variables (`~ temp`) | STANDARD | Yes | **WORKS** | |
+| 19 | Variable assignment (`~ x =`) | STANDARD | Yes | **WORKS** | |
+| 20 | Variable read in output (`{x}`) | STANDARD | Yes | **WORKS** | |
+| 21 | Arithmetic / logic operators | STANDARD | Yes | **WORKS** | `+`,`-`,`*`,`/`,`%`,`==`,`!=`,`>`,`<`,`&&`,`||`,`!` |
+| 22 | Inline conditionals (`{c: a\|b}`) | STANDARD | Yes (95+) | **UNKNOWN** | No test at all |
+| 23 | Block conditionals (if / else if) | STANDARD | Yes | **UNKNOWN** | No test |
+| 24 | Switch-style conditionals | STANDARD | Yes (CONST dispatch) | **UNKNOWN** | No test |
+| 25 | Variable text: sequences (`{a\|b\|c}`) | STANDARD | No | **UNKNOWN** | `"seq"` command listed; no handler |
+| 26 | Variable text: cycles (`{&}`) | STANDARD | No | **UNKNOWN** | No handler |
+| 27 | Variable text: once-only (`{!}`) | STANDARD | No | **UNKNOWN** | No handler |
+| 28 | Variable text: shuffle (`{~}`) | STANDARD | No | **UNKNOWN** | No handler |
+| 29 | Functions (`=== f(params) ===`) | STANDARD | Yes (2) | **UNKNOWN** | No test |
+| 30 | Inline function calls `{f()}` | STANDARD | Yes | **UNKNOWN** | No test |
+| 31 | String interpolation | STANDARD | Yes | **WORKS** | `str`/`/str` handler correct in TreeWalker |
+| 32 | Tags (`#tag`) | STANDARD | No | **WORKS** | Implemented ahead of need |
+| 33 | Save / restore | STANDARD | — | **WORKS** | `StoryState` is `Codable` |
+| 34 | Tunnels (`-> knot ->`) | ADVANCED | Yes (8) | **MISSING** | ADR-004 defers; needs nested call frames |
+| 35 | Reference parameters (`ref x`) | ADVANCED | Yes | **MISSING** | Not modelled |
+| 36 | Threads | BEYOND | No | **MISSING** | Lowest priority |
+| 37 | LIST declarations | BEYOND | No | **MISSING** | `listDefs` placeholder only |
+| 38 | RANDOM / SEED_RANDOM | BEYOND | No | **MISSING** | Not started |
+| 39 | External functions | BEYOND | No | **MISSING** | `exArgs` deferred |
+
+#### Implementation Roadmap by Tier
+
+**Tier 1 (immediate — unblocks any real story):**
+Rows 5, 7 — relative path resolution + bracketed choice text. Root cause: engine choice-text shortcut (`namedContent["s"]`) must be replaced with `evalStack` consumption; `resolveNamedPath` must gain `^` parent-traversal support. See RCA in `docs/feature/fix-choice-text-path-resolution/design/wave-decisions.md`.
+
+**Tier 2 (core completeness — before a representative story runs):**
+Rows 8–11, 14 — choice flag bitmask (sticky, once-only, invisible defaults), conditional choice gating, read counts.
+
+**Tier 3 (The Intercept ceiling):**
+Rows 22–24, 29–30 — conditional text, functions.
+Rows 34–35 — tunnels, reference parameters.
+
+---
+
 ### ADR Index
 
 | ADR | Title | Status |
@@ -199,6 +267,7 @@ The oracle pattern in tests is a one-directional import: `SwiftInkRuntimeTests` 
 | [ADR-001](./adr-001-execution-model.md) | Execution Model: Tree-Walker vs Stack Machine | Accepted |
 | [ADR-002](./adr-002-api-contract.md) | API Contract: Clean Redesign, Story Type Name, InkStory Frozen | Accepted |
 | [ADR-003](./adr-003-state-serialization.md) | State Serialization: Codable Format, No inkjs Compatibility | Accepted |
+| [ADR-004](./adr-004-callreturn-mechanism.md) | Call/Return Mechanism: Return Address Stack in StoryState | Accepted |
 
 ---
 
