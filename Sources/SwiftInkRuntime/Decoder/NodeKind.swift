@@ -3,7 +3,8 @@ internal enum NodeKind {
     case container(ContainerNode)
     case text(String)
     case newline
-    case divert(target: String, isConditional: Bool)
+    case divert(target: String, isConditional: Bool, isVariable: Bool)
+    case pushDivertTarget(String)
     case choicePoint(target: String, flags: Int)
     case controlCommand(String)
     case nativeFunction(String)

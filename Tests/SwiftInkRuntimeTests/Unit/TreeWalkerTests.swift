@@ -86,7 +86,7 @@ struct TreeWalkerTests {
     // B5: .divert updates containerPath and resets index to 0
     @Test func `step updates containerPath from divert target`() {
         let container = ContainerNode(
-            children: [.divert(target: "Knot1", isConditional: false)],
+            children: [.divert(target: "Knot1", isConditional: false, isVariable: false)],
             namedContent: [:], flags: 0, name: nil
         )
         let walker = TreeWalker()
@@ -98,7 +98,7 @@ struct TreeWalkerTests {
 
     @Test func `step updates containerPath for dotted divert target`() {
         let container = ContainerNode(
-            children: [.divert(target: "Knot2.stitch1", isConditional: false)],
+            children: [.divert(target: "Knot2.stitch1", isConditional: false, isVariable: false)],
             namedContent: [:], flags: 0, name: nil
         )
         let walker = TreeWalker()

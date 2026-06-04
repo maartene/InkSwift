@@ -117,9 +117,13 @@ struct InkDecoder {
     }
 
     private func classifyDict(_ dict: [String: Any]) -> NodeKind {
+        if let path = dict["^->"] as? String {
+            return .pushDivertTarget(path)
+        }
         if let target = dict["->"] as? String {
             let isConditional = dict["c"] as? Bool ?? false
-            return .divert(target: target, isConditional: isConditional)
+            let isVariable = dict["var"] != nil
+            return .divert(target: target, isConditional: isConditional, isVariable: isVariable)
         }
         if let target = dict["*"] as? String {
             let flags = dict["flg"] as? Int ?? 0

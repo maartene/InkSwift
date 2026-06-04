@@ -25,13 +25,14 @@ struct NodeKindTests {
             .floatValue(1.5),
             .controlCommand("ev"),
             .nativeFunction("+"),
-            .divert(target: "knot", isConditional: false),
+            .divert(target: "knot", isConditional: false, isVariable: false),
             .choicePoint(target: "c-0", flags: 0),
             .variableAssignment(name: "x", isGlobal: true),
             .variableReference(name: "x"),
             .tagOpen,
             .tagClose,
             .voidValue,
+            .pushDivertTarget("test"),
         ]
 
         // Exhaustive switch proves every case compiles
@@ -51,10 +52,11 @@ struct NodeKindTests {
             case .tagClose:        break
             case .voidValue:       break
             case .container:       break
+            case .pushDivertTarget: break
             }
         }
 
-        #expect(nodes.count == 13)
+        #expect(nodes.count == 14)
     }
 
     // MARK: - Behavior 2: Associated values carry correct payload types
@@ -81,10 +83,11 @@ struct NodeKindTests {
             Issue.record("Expected .floatValue node")
         }
 
-        let divertNode = NodeKind.divert(target: "knot.stitch", isConditional: true)
-        if case .divert(let target, let isConditional) = divertNode {
+        let divertNode = NodeKind.divert(target: "knot.stitch", isConditional: true, isVariable: false)
+        if case .divert(let target, let isConditional, let isVariable) = divertNode {
             #expect(target == "knot.stitch")
             #expect(isConditional == true)
+            #expect(isVariable == false)
         } else {
             Issue.record("Expected .divert node")
         }

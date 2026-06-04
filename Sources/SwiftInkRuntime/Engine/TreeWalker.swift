@@ -31,8 +31,11 @@ struct TreeWalker {
         case .controlCommand(let cmd):
             handleControlCommand(cmd, state: &state)
 
-        case .divert(let target, _):
+        case .divert(let target, _, _):
             handleDivert(target: target, state: &state)
+
+        case .pushDivertTarget(let path):
+            state.returnStack.append(path)
 
         case .choicePoint(let target, let flags):
             handleChoicePoint(target: target, flags: flags, state: &state)

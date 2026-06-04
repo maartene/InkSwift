@@ -206,10 +206,15 @@ struct StoryState: Codable {
     var inStringMode: Bool
     var stringAccumulator: String
 
+    var lastCompletedLine: String
+
     // Full container execution stack for save/restore.
     // Each frame holds the child-index used to enter it (nil = root) and the
     // current execution index within that container.
     var stackFrames: [ContainerStackFrame]
+
+    // Call/return stack: push-divert-target nodes write here; variable-divert nodes pop from here.
+    var returnStack: [String]
 
     init() {
         pointer = StoryPointer(containerPath: [], index: 0)
@@ -224,6 +229,55 @@ struct StoryState: Codable {
         tagAccumulator = ""
         inStringMode = false
         stringAccumulator = ""
+        lastCompletedLine = ""
         stackFrames = []
+        returnStack = []
+    }
+
+    // MARK: - Codable
+
+    private enum CodingKeys: String, CodingKey {
+        case pointer, outputStream, variablesState, visitCounts, currentTags
+        case isEnded, currentChoices, evalStack
+        case inTagMode, tagAccumulator, inStringMode, stringAccumulator
+        case lastCompletedLine, stackFrames, returnStack
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        pointer           = try container.decode(StoryPointer.self,         forKey: .pointer)
+        outputStream      = try container.decode([String].self,             forKey: .outputStream)
+        variablesState    = try container.decode([String: InkValue].self,   forKey: .variablesState)
+        visitCounts       = try container.decode([String: Int].self,        forKey: .visitCounts)
+        currentTags       = try container.decode([String].self,             forKey: .currentTags)
+        isEnded           = try container.decode(Bool.self,                 forKey: .isEnded)
+        currentChoices    = try container.decode([ChoiceData].self,         forKey: .currentChoices)
+        evalStack         = try container.decode([InkValue].self,           forKey: .evalStack)
+        inTagMode         = try container.decode(Bool.self,                 forKey: .inTagMode)
+        tagAccumulator    = try container.decode(String.self,               forKey: .tagAccumulator)
+        inStringMode      = try container.decode(Bool.self,                 forKey: .inStringMode)
+        stringAccumulator = try container.decode(String.self,               forKey: .stringAccumulator)
+        lastCompletedLine = try container.decode(String.self,               forKey: .lastCompletedLine)
+        stackFrames       = try container.decode([ContainerStackFrame].self, forKey: .stackFrames)
+        returnStack       = try container.decodeIfPresent([String].self,    forKey: .returnStack) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(pointer,           forKey: .pointer)
+        try container.encode(outputStream,      forKey: .outputStream)
+        try container.encode(variablesState,    forKey: .variablesState)
+        try container.encode(visitCounts,       forKey: .visitCounts)
+        try container.encode(currentTags,       forKey: .currentTags)
+        try container.encode(isEnded,           forKey: .isEnded)
+        try container.encode(currentChoices,    forKey: .currentChoices)
+        try container.encode(evalStack,         forKey: .evalStack)
+        try container.encode(inTagMode,         forKey: .inTagMode)
+        try container.encode(tagAccumulator,    forKey: .tagAccumulator)
+        try container.encode(inStringMode,      forKey: .inStringMode)
+        try container.encode(stringAccumulator, forKey: .stringAccumulator)
+        try container.encode(lastCompletedLine, forKey: .lastCompletedLine)
+        try container.encode(stackFrames,       forKey: .stackFrames)
+        try container.encode(returnStack,       forKey: .returnStack)
     }
 }

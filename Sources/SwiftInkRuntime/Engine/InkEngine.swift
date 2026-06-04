@@ -86,20 +86,31 @@ final class InkEngine {
             }
 
             containerStack[containerStack.count - 1].index += 1
+
+            // Choice text lives in the 's' named sub-container of the choice wrapper container.
+            // The str/divert/str mechanism that would normally populate the eval stack requires
+            // call/return semantics not yet implemented, so we read the text directly.
+            if case .choicePoint(let target, _) = currentChild {
+                let choiceText = containerStack.last?.container.namedContent["s"]?.children
+                    .compactMap { if case .text(let t) = $0 { return t } else { return nil } }
+                    .joined() ?? ""
+                state.currentChoices.append(
+                    ChoiceData(text: choiceText, targetPath: target, index: state.currentChoices.count)
+                )
+                state.outputStream.removeAll { $0 != "\n" }
+                continue
+            }
+
             walker.dispatchNode(currentChild, state: &state)
 
-            if case .divert(let target, _) = currentChild {
+            if case .divert(let target, _, _) = currentChild {
                 applyDivert(target: target)
                 continue
             }
 
-            if case .choicePoint = currentChild { continue }
-
             if state.isEnded { break }
 
             if let line = consumeNextLine() { return line }
-
-            if !state.currentChoices.isEmpty { break }
         }
 
         return flushRemainingOutput()
@@ -125,6 +136,7 @@ final class InkEngine {
     /// Advance one line and store the result in lastCompletedLine.
     func step() {
         lastCompletedLine = stepToNextLine() ?? ""
+        state.lastCompletedLine = lastCompletedLine
     }
 
     // MARK: - Path resolution
@@ -137,8 +149,16 @@ final class InkEngine {
         guard !components.isEmpty else { return nil }
         var container = root
         for component in components {
-            guard let named = container.namedContent[component] else { return nil }
-            container = named
+            if let index = Int(component) {
+                // Numeric component: positional index into the container's ordered children array.
+                guard index < container.children.count,
+                      case .container(let child) = container.children[index]
+                else { return nil }
+                container = child
+            } else {
+                guard let named = container.namedContent[component] else { return nil }
+                container = named
+            }
         }
         return container
     }
@@ -162,6 +182,7 @@ final class InkEngine {
         let choice = state.currentChoices[index]
         state.currentChoices = []
         state.currentTags = []
+        state.isEnded = false
         if !choice.targetPath.isEmpty {
             let components = pathComponents(from: choice.targetPath)
             if let container = resolveNamedPath(components) {
@@ -202,6 +223,7 @@ final class InkEngine {
         } catch {
             throw StoryError.invalidStateData
         }
+        lastCompletedLine = state.lastCompletedLine
         rebuildContainerStack()
     }
 
