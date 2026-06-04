@@ -188,12 +188,15 @@ final class InkEngine {
     private func applyDivert(target: String) {
         let components = pathComponents(from: target)
         if components.last?.hasPrefix("$") == true {
+            let prefixComponents = Array(components.dropLast())
             if let (parentContainer, startIndex) = resolveAnchor(inPath: components) {
                 containerStack = [ContainerFrame(container: parentContainer, index: startIndex)]
+                state.pointer.containerPath = prefixComponents
             }
             // If unresolvable, leave stack as-is (silent no-op)
         } else if let container = resolveNamedPath(components) {
             containerStack = [ContainerFrame(container: container, index: 0)]
+            state.pointer.containerPath = components
         }
         // If unresolvable, leave stack as-is (will exhaust and stop)
     }
@@ -270,11 +273,19 @@ final class InkEngine {
     }
 
     /// Reconstruct a ContainerFrame stack from the serialised stack frames.
+    /// Frame 0 uses state.pointer.containerPath to resolve its container so that
+    /// states saved after a divert (where frame 0 is a non-root container) restore correctly.
     private func rebuildStackFromFrames() -> [ContainerFrame] {
         var rebuilt: [ContainerFrame] = []
         for (depth, frame) in state.stackFrames.enumerated() {
             if depth == 0 {
-                rebuilt.append(ContainerFrame(container: root, index: frame.executionIndex))
+                let baseContainer: ContainerNode
+                if !state.pointer.containerPath.isEmpty {
+                    baseContainer = resolveNamedPath(state.pointer.containerPath) ?? root
+                } else {
+                    baseContainer = root
+                }
+                rebuilt.append(ContainerFrame(container: baseContainer, index: frame.executionIndex))
             } else if let childIdx = frame.childIndex {
                 let parentContainer = rebuilt[depth - 1].container
                 guard childIdx < parentContainer.children.count,

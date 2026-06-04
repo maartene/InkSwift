@@ -65,6 +65,57 @@ import Foundation
         }
     }
 
+    // GIVEN: a story has been continued so currentText is non-empty
+    // WHEN: state is saved and restored into a fresh Story
+    // THEN: currentText on the restored story equals the original story's currentText
+
+    @Test
+    func `currentText is preserved across save and restore`() throws {
+        let story = try loadStory()
+        _ = story.continue()
+        let textBeforeSave = story.currentText
+
+        let savedData = try story.saveState()
+        let restored = try loadStory()
+        try restored.restoreState(savedData)
+
+        #expect(restored.currentText == textBeforeSave)
+    }
+
+    // GIVEN: a real-compiler story where a choice has been made and partially continued
+    // WHEN: state is saved after the first continue() post-choice, then restored
+    // THEN: continuing the restored story still produces the gather text
+    // Regression for: rebuildStackFromFrames always used root for frame 0, losing the
+    // non-root container set by applyDivert after choice navigation.
+
+    @Test
+    func `gather text appears after save-restore between choice and gather`() throws {
+        let json = #"""
+        {"inkVersion":21,"root":[["^Once upon a time...","\n",["ev",{"^->":"0.2.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":"0.c-0","flg":18},{"s":["^There were two choices.",{"->":"$r","var":true},null]}],["ev",{"^->":"0.3.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":"0.c-1","flg":18},{"s":["^There were four lines of content.",{"->":"$r","var":true},null]}],{"c-0":["ev",{"^->":"0.c-0.$r2"},"/ev",{"temp=":"$r"},{"->":"0.2.s"},[{"#n":"$r2"}],"\n",{"->":"0.g-0"},{"#f":5}],"c-1":["ev",{"^->":"0.c-1.$r2"},"/ev",{"temp=":"$r"},{"->":"0.3.s"},[{"#n":"$r2"}],"\n",{"->":"0.g-0"},{"#f":5}],"g-0":["^They lived happily ever after.","\n","end",["done",{"#f":5,"#n":"g-1"}],{"#f":5}]}],"done",{"#f":1}],"listDefs":{}}
+        """#
+
+        let story = try Story(json: json)
+        while story.canContinue { _ = story.`continue`() }
+        try #require(story.currentChoices.count == 2)
+        try story.chooseChoice(at: 0)
+
+        // Simulate what SharedWorldYourStory does: one continue() then save, then restore, then continue()
+        _ = story.`continue`()   // produces choice text, leaves engine positioned for gather divert
+        let savedData = try story.saveState()
+
+        let restored = try Story(json: json)
+        try restored.restoreState(savedData)
+
+        var lines: [String] = []
+        while restored.canContinue {
+            let line = restored.`continue`()
+            if !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                lines.append(line)
+            }
+        }
+        #expect(lines.contains { $0.contains("They lived happily ever after.") })
+    }
+
     // GIVEN: a story mid-playback with state saved twice at the same point
     // WHEN: both snapshots are restored and continued
     // THEN: both produce identical continuation state
