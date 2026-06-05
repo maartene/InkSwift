@@ -162,6 +162,25 @@ extension InkValue {
     }
 }
 
+// MARK: - ChoiceFlags
+
+/// Typed bitmask for the `flg` field emitted by inklecate in choice-point JSON.
+/// Encodes as its raw `Int` value so saved states remain wire-compatible.
+struct ChoiceFlags: OptionSet, Codable {
+    let rawValue: Int
+
+    /// Bit 0: a boolean on the evalStack gates whether this choice is shown.
+    static let hasCondition      = ChoiceFlags(rawValue: 0x01)
+    /// Bit 3: invisible-default / gather fallback — never shown to the user.
+    static let isInvisibleDefault = ChoiceFlags(rawValue: 0x08)
+    /// Bit 4: once-only choice — suppressed after the first pick.
+    static let isOnceOnly        = ChoiceFlags(rawValue: 0x10)
+
+    /// Mask covering all bits that make a choice point visible to the user.
+    /// A choice with none of these set is treated as an invisible default.
+    static let visibleChoiceMask = ChoiceFlags(rawValue: 0x17)
+}
+
 // MARK: - Supporting types
 
 struct ChoiceData: Codable {
@@ -172,18 +191,15 @@ struct ChoiceData: Codable {
     /// save/restore round-trip (when in-memory resolution caches are gone).
     let continuationFrames: [ContainerStackFrame]
     let index: Int
-    /// Raw choice flags from the Ink JSON bitmask (inklecate `flg` field).
-    /// Bit 0 (0x01): hasCondition — a boolean on the evalStack gates this choice.
-    /// Bit 3 (0x08): isInvisibleDefault — never shown; used for auto-divert fallback.
-    /// Bit 4 (0x10): isOnceOnly — suppressed after the first time it is chosen.
-    /// Decoded with `decodeIfPresent` so legacy saves without this key default to 0.
-    let flags: Int
+    /// Typed choice flags from the inklecate `flg` bitmask.
+    /// Decoded with `decodeIfPresent` so legacy saves without this key default to empty.
+    let flags: ChoiceFlags
 
     private enum CodingKeys: String, CodingKey {
         case text, targetPath, continuationFrames, index, flags
     }
 
-    init(text: String, targetPath: String, continuationFrames: [ContainerStackFrame], index: Int, flags: Int = 0) {
+    init(text: String, targetPath: String, continuationFrames: [ContainerStackFrame], index: Int, flags: ChoiceFlags = []) {
         self.text = text
         self.targetPath = targetPath
         self.continuationFrames = continuationFrames
@@ -197,7 +213,8 @@ struct ChoiceData: Codable {
         targetPath         = try container.decode(String.self,               forKey: .targetPath)
         continuationFrames = try container.decode([ContainerStackFrame].self, forKey: .continuationFrames)
         index              = try container.decode(Int.self,                  forKey: .index)
-        flags              = try container.decodeIfPresent(Int.self,         forKey: .flags) ?? 0
+        let rawFlags       = try container.decodeIfPresent(Int.self,         forKey: .flags) ?? 0
+        flags              = ChoiceFlags(rawValue: rawFlags)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -206,7 +223,7 @@ struct ChoiceData: Codable {
         try container.encode(targetPath,         forKey: .targetPath)
         try container.encode(continuationFrames, forKey: .continuationFrames)
         try container.encode(index,              forKey: .index)
-        try container.encode(flags,              forKey: .flags)
+        try container.encode(flags.rawValue,     forKey: .flags)
     }
 }
 

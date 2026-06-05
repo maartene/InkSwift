@@ -2,22 +2,10 @@ import Foundation
 
 final class InkEngine {
 
-    // MARK: - Choice flag bitmask constants (inklecate `flg` field)
-
-    /// Bit 0: a boolean on the evalStack gates whether this choice is shown.
-    private static let flagHasCondition: Int = 0x01
-    /// Bit 3: invisible-default / gather fallback — never shown to the user.
-    private static let flagIsInvisibleDefault: Int = 0x08
-    /// Bit 4: once-only choice — suppressed after the first pick.
-    private static let flagIsOnceOnly: Int = 0x10
-    /// Bits 0, 1, 2, 4 — the "visible choice" bits: a choice point is invisible-default
-    /// when none of these are set (inklecate v0.9 compiles `+ [] -> target` as flg:0).
-    private static let flagVisibleChoiceMask: Int = 0x17
-
     /// Bit 0 of a container's `#f` flags: the container tracks visit counts.
     private static let containerFlagCountVisits: Int = 0x1
 
-    var state: StoryState
+var state: StoryState
     let root: ContainerNode
     private var lastCompletedLine: String = ""
 
@@ -155,36 +143,36 @@ final class InkEngine {
     /// or captures the invisible-default path for later auto-divert.
     private func collectChoicePoint(
         target: String,
-        flags: Int,
+        flags: ChoiceFlags,
         pendingInvisibleDefaultPath: inout [String]?
     ) {
-        // Bit 3: invisible default / gather fallback — never shown to user.
-        guard (flags & Self.flagIsInvisibleDefault) == 0 else { return }
+        // isInvisibleDefault: gather fallback — never shown to user.
+        guard !flags.contains(.isInvisibleDefault) else { return }
 
         // Invisible default predicate: none of the visible-choice bits are set.
-        // inklecate v0.9 compiles `+ [] -> target` as flg:0, so bit 3 alone
-        // is insufficient. Resolve the path NOW while the current container
+        // inklecate v0.9 compiles `+ [] -> target` as flg:0, so isInvisibleDefault
+        // alone is insufficient. Resolve the path NOW while the current container
         // is still on the stack, then store for auto-divert after exhaustion.
-        if (flags & Self.flagVisibleChoiceMask) == 0 {
+        if flags.intersection(.visibleChoiceMask).isEmpty {
             if pendingInvisibleDefaultPath == nil {
                 pendingInvisibleDefaultPath = resolveInvisibleDefaultPath(target)
             }
             return
         }
 
-        // Bit 0: hasCondition — a preceding ev.../ev block has left a boolean
-        // on the evalStack. Pop it unconditionally to keep the stack balanced;
+        // hasCondition: a preceding ev.../ev block has left a boolean on the
+        // evalStack. Pop it unconditionally to keep the stack balanced;
         // skip this choice if the result is false.
-        if (flags & Self.flagHasCondition) != 0 {
+        if flags.contains(.hasCondition) {
             let conditionResult = state.evalStack.popLast() ?? .bool(false)
             guard conditionResult.asBool else { return }
         }
 
-        // Bit 4: once-only choice — suppress if already chosen.
+        // isOnceOnly: suppress if already chosen.
         // Use the resolved absolute path as the suppression key so that
         // identically-named relative paths in different containers do not
         // incorrectly collide.
-        if (flags & Self.flagIsOnceOnly) != 0 {
+        if flags.contains(.isOnceOnly) {
             if let absolutePath = resolveAbsoluteTargetPath(for: target),
                state.chosenChoiceTargets.contains(absolutePath) { return }
         }
@@ -561,7 +549,7 @@ final class InkEngine {
             throw StoryError.invalidChoiceIndex(index)
         }
         let choice = state.currentChoices[index]
-        if (choice.flags & Self.flagIsOnceOnly) != 0 {
+        if choice.flags.contains(.isOnceOnly) {
             // Record the absolute path of the chosen target so the suppression
             // check in stepToNextLine can match it reliably across contexts.
             // Exception: do NOT track loop-back choices — continuations that divert

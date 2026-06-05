@@ -26,7 +26,7 @@ struct NodeKindTests {
             .controlCommand("ev"),
             .nativeFunction("+"),
             .divert(target: "knot", isConditional: false, isVariable: false),
-            .choicePoint(target: "c-0", flags: 0),
+            .choicePoint(target: "c-0", flags: []),
             .variableAssignment(name: "x", isGlobal: true),
             .variableReference(name: "x"),
             .tagOpen,
@@ -94,10 +94,10 @@ struct NodeKindTests {
             Issue.record("Expected .divert node")
         }
 
-        let choiceNode = NodeKind.choicePoint(target: "c-0", flags: 18)
+        let choiceNode = NodeKind.choicePoint(target: "c-0", flags: ChoiceFlags(rawValue: 18))
         if case .choicePoint(let target, let flags) = choiceNode {
             #expect(target == "c-0")
-            #expect(flags == 18)
+            #expect(flags == ChoiceFlags(rawValue: 18))
         } else {
             Issue.record("Expected .choicePoint node")
         }

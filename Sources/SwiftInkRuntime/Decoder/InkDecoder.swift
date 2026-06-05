@@ -126,8 +126,8 @@ struct InkDecoder {
             return .divert(target: target, isConditional: isConditional, isVariable: isVariable)
         }
         if let target = dict["*"] as? String {
-            let flags = dict["flg"] as? Int ?? 0
-            return .choicePoint(target: target, flags: flags)
+            let rawFlags = dict["flg"] as? Int ?? 0
+            return .choicePoint(target: target, flags: ChoiceFlags(rawValue: rawFlags))
         }
         if let name = dict["VAR="] as? String {
             return .variableAssignment(name: name, isGlobal: dict["re"] != nil)

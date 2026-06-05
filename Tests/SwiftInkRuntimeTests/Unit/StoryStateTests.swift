@@ -144,14 +144,14 @@ struct StoryStateTests {
 
     // Behavior 8: ChoiceData round-trips flags through encode/decode
     @Test func `ChoiceData round-trips flags through encode and decode`() throws {
-        let choice = ChoiceData(text: "Go left", targetPath: "root.left", continuationFrames: [], index: 0, flags: 3)
+        let choice = ChoiceData(text: "Go left", targetPath: "root.left", continuationFrames: [], index: 0, flags: ChoiceFlags(rawValue: 3))
 
         let encoder = JSONEncoder()
         let data = try encoder.encode(choice)
         let decoder = JSONDecoder()
         let decoded = try decoder.decode(ChoiceData.self, from: data)
 
-        #expect(decoded.flags == 3)
+        #expect(decoded.flags == ChoiceFlags(rawValue: 3))
         #expect(decoded.text == "Go left")
         #expect(decoded.targetPath == "root.left")
         #expect(decoded.index == 0)
@@ -159,14 +159,14 @@ struct StoryStateTests {
 
     // Behavior 9: ChoiceData decodes from JSON missing flags without error (backward compat)
     @Test func `ChoiceData decodes from JSON missing flags without throwing`() throws {
-        let choice = ChoiceData(text: "Go right", targetPath: "root.right", continuationFrames: [], index: 1, flags: 0)
+        let choice = ChoiceData(text: "Go right", targetPath: "root.right", continuationFrames: [], index: 1, flags: [])
         let encoder = JSONEncoder()
         var jsonObject = try JSONSerialization.jsonObject(with: encoder.encode(choice)) as! [String: Any]
         jsonObject.removeValue(forKey: "flags")
         let legacyData = try JSONSerialization.data(withJSONObject: jsonObject)
 
         let decoded = try JSONDecoder().decode(ChoiceData.self, from: legacyData)
-        #expect(decoded.flags == 0)
+        #expect(decoded.flags == ChoiceFlags(rawValue: 0))
         #expect(decoded.text == "Go right")
     }
 }
