@@ -140,6 +140,24 @@ var state: StoryState
                 continue
             }
 
+            // ->t->: tunnel entry — push return address and jump to tunnel target.
+            // The return address encodes the current container path and the next
+            // execution index (already incremented past the ->t-> node).
+            if case .tunnelDivert(let target) = currentChild {
+                let returnAddr = buildTunnelReturnAddress()
+                state.returnStack.append(returnAddr)
+                applyDivert(target: target)
+                continue
+            }
+
+            // ->->: tunnel return — pop return address and resume at that position.
+            if case .controlCommand("->->") = currentChild {
+                if let returnAddr = state.returnStack.popLast() {
+                    applyDivert(target: returnAddr)
+                }
+                continue
+            }
+
             walker.dispatchNode(currentChild, state: &state)
 
             if case .divert(let target, let isConditional, let isVariable) = currentChild {
@@ -289,6 +307,19 @@ var state: StoryState
     }
 
     // MARK: - Function call / return
+
+    /// Build a return-address string for tunnel entry.
+    /// Format: "path.N" where path is the dot-joined containerStack pathFromRoot
+    /// and N is the current execution index (already incremented past the ->t-> node).
+    /// This format is resolved by applyDivert via the numeric-last-component path.
+    private func buildTunnelReturnAddress() -> String {
+        guard let top = containerStack.last else { return "0" }
+        let pathStr = top.pathFromRoot.joined(separator: ".")
+        if pathStr.isEmpty {
+            return "\(top.index)"
+        }
+        return "\(pathStr).\(top.index)"
+    }
 
     /// Build a return-address string for the current execution position.
     /// Format: "fnret:path|index" where path is the joined containerStack pathFromRoot

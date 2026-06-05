@@ -120,6 +120,9 @@ struct InkDecoder {
         if let path = dict["^->"] as? String {
             return .pushDivertTarget(path)
         }
+        if let target = dict["->t->"] as? String {
+            return .tunnelDivert(target: target)
+        }
         if let target = dict["->"] as? String {
             let isConditional = dict["c"] as? Bool ?? false
             let isVariable = dict["var"] != nil

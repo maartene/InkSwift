@@ -1,4 +1,4 @@
-// Test Budget: 9 distinct behaviors x 2 = 18 max unit tests
+// Test Budget: 11 distinct behaviors x 2 = 22 max unit tests
 // Behaviors:
 //   B1 — init(root:) does not crash; canContinue is true for non-empty root
 //   B2 — stepToNextLine() returns text collected from .text + .newline nodes
@@ -9,6 +9,8 @@
 //   B7 — restoreState(saveState()) restores engine to an equivalent state
 //   B8 — restoreState(_:) throws StoryError.invalidStateData for valid JSON not decoding to StoryState
 //   B9 — function call via f() divert returns to caller and leaves return value on eval stack
+//   B10 — tunnel entry (->t->) jumps to sub_room and produces sub_room content
+//   B11 — tunnel return (->->) resumes execution after the tunnel divert in the caller
 
 import Testing
 import Foundation
@@ -179,5 +181,30 @@ struct InkEngineTests {
         }
         #expect(lines.contains { $0.contains("Done.") })
         #expect(!lines.contains { $0.lowercased().contains("void") })
+    }
+
+    // B10: tunnel entry (->t->) diverts to sub_room and sub_room content is produced
+    // Tested via Story facade using the real T1 fixture.
+    @Test func `tunnel entry diverts to sub room and produces sub room content`() throws {
+        let url = try #require(Bundle.module.url(forResource: "slice-t1-tunnels", withExtension: "ink.json"))
+        let json = try String(contentsOf: url, encoding: .utf8)
+        let story = try Story(json: json)
+        _ = story.`continue`()  // "Before tunnel."
+        let line2 = story.`continue`()  // must be "Sub room content."
+        #expect(line2.contains("Sub room content."),
+                "Tunnel entry must divert to sub_room and produce sub_room content")
+    }
+
+    // B11: tunnel return (->->) resumes execution after the ->t-> node in the caller
+    // After tunnel body completes, "After tunnel." is the next line (not end-of-story).
+    @Test func `tunnel return resumes caller execution and produces after-tunnel text`() throws {
+        let url = try #require(Bundle.module.url(forResource: "slice-t1-tunnels", withExtension: "ink.json"))
+        let json = try String(contentsOf: url, encoding: .utf8)
+        let story = try Story(json: json)
+        _ = story.`continue`()  // "Before tunnel."
+        _ = story.`continue`()  // "Sub room content."
+        let line3 = story.`continue`()  // must be "After tunnel."
+        #expect(line3.contains("After tunnel."),
+                "Tunnel return (->->) must resume caller context and produce after-tunnel text")
     }
 }

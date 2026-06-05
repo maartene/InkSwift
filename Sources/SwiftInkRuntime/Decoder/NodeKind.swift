@@ -5,6 +5,7 @@ internal enum NodeKind {
     case newline
     case divert(target: String, isConditional: Bool, isVariable: Bool)
     case pushDivertTarget(String)
+    case tunnelDivert(target: String)
     case choicePoint(target: String, flags: ChoiceFlags)
     case controlCommand(String)
     case nativeFunction(String)

@@ -40,6 +40,9 @@ struct TreeWalker {
         case .choicePoint:
             break  // handled by InkEngine before dispatchNode is reached
 
+        case .tunnelDivert:
+            break  // handled by InkEngine before dispatchNode is reached
+
         case .variableAssignment(let name, _):
             handleVariableAssignment(name: name, state: &state)
 

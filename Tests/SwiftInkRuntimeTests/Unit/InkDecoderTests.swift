@@ -12,7 +12,8 @@ struct InkDecoderTests {
     // Test Budget:
     // Behavior 1: CNT? dict node is classified as .readCount(key), not .controlCommand("CNT?")
     // Behavior 2: f() dict node is classified as .divert, not .controlCommand
-    // Budget = 2 behaviors × 2 = 4 unit tests max
+    // Behavior 3: ->t-> dict node is classified as .tunnelDivert(target:)
+    // Budget = 3 behaviors × 2 = 6 unit tests max
 
     // MARK: - Behavior 1: CNT? dict classified as readCount
 
@@ -86,6 +87,38 @@ struct InkDecoderTests {
         let firstChild = try #require(root.children.first)
         if case .controlCommand = firstChild {
             Issue.record("f() must not be classified as .controlCommand — got \(firstChild)")
+        }
+    }
+
+    // MARK: - Behavior 3: ->t-> dict classified as .tunnelDivert
+
+    @Test func `InkDecoder classifies tunnel divert dict as tunnelDivert with correct target`() throws {
+        let json = """
+        {"inkVersion":21,"root":[{"->t->":"sub_room"},null]}
+        """
+        let data = try #require(json.data(using: .utf8))
+        let decoder = InkDecoder()
+        let root = try decoder.decode(data)
+
+        let firstChild = try #require(root.children.first)
+        if case .tunnelDivert(let target) = firstChild {
+            #expect(target == "sub_room")
+        } else {
+            Issue.record("Expected .tunnelDivert(target: \"sub_room\") but got \(firstChild)")
+        }
+    }
+
+    @Test func `InkDecoder does not classify tunnel divert dict as controlCommand`() throws {
+        let json = """
+        {"inkVersion":21,"root":[{"->t->":"some_knot"},null]}
+        """
+        let data = try #require(json.data(using: .utf8))
+        let decoder = InkDecoder()
+        let root = try decoder.decode(data)
+
+        let firstChild = try #require(root.children.first)
+        if case .controlCommand = firstChild {
+            Issue.record("->t-> must not be classified as .controlCommand — got \(firstChild)")
         }
     }
 }

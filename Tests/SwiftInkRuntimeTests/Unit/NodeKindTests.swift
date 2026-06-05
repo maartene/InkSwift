@@ -26,6 +26,7 @@ struct NodeKindTests {
             .controlCommand("ev"),
             .nativeFunction("+"),
             .divert(target: "knot", isConditional: false, isVariable: false),
+            .tunnelDivert(target: "sub_room"),
             .choicePoint(target: "c-0", flags: []),
             .variableAssignment(name: "x", isGlobal: true),
             .variableReference(name: "x"),
@@ -46,6 +47,7 @@ struct NodeKindTests {
             case .controlCommand:  break
             case .nativeFunction:  break
             case .divert:          break
+            case .tunnelDivert:    break
             case .choicePoint:     break
             case .variableAssignment: break
             case .variableReference:  break
@@ -58,7 +60,7 @@ struct NodeKindTests {
             }
         }
 
-        #expect(nodes.count == 15)
+        #expect(nodes.count == 16)
     }
 
     // MARK: - Behavior 2: Associated values carry correct payload types
