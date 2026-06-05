@@ -99,7 +99,11 @@ struct TreeWalker {
 
         case "out":
             if let top = state.evalStack.popLast() {
-                state.outputStream.append(top.asString)
+                // Suppress the void sentinel pushed by implicit function returns
+                guard case .string(let s) = top, s == "void" else {
+                    state.outputStream.append(top.asString)
+                    break
+                }
             }
 
         case "str":

@@ -97,6 +97,15 @@ var state: StoryState
 
             if top.index >= top.container.children.count {
                 if top.isChoiceContinuationRoot { break }
+                // Implicit void return: function body exhausted with a pending function
+                // return address (identified by "fnret:" prefix).
+                // Push void sentinel so the caller's "out" command has something to consume.
+                if let returnAddr = state.returnStack.last, returnAddr.hasPrefix("fnret:") {
+                    state.returnStack.removeLast()
+                    state.evalStack.append(.string("void"))
+                    applyFunctionReturn(returnAddr: returnAddr)
+                    continue
+                }
                 popContainer()
                 if state.currentChoices.isEmpty, let autoPath = pendingInvisibleDefaultPath {
                     pendingInvisibleDefaultPath = nil
@@ -122,9 +131,26 @@ var state: StoryState
                 continue
             }
 
+            // ~ret: pop function return address (fnret: prefix) and jump back to caller.
+            if case .controlCommand("~ret") = currentChild {
+                if let returnAddr = state.returnStack.last, returnAddr.hasPrefix("fnret:") {
+                    state.returnStack.removeLast()
+                    applyFunctionReturn(returnAddr: returnAddr)
+                }
+                continue
+            }
+
             walker.dispatchNode(currentChild, state: &state)
 
             if case .divert(let target, let isConditional, let isVariable) = currentChild {
+                // f():-prefixed targets are function calls: push return address first.
+                if target.hasPrefix("f():") {
+                    let actualTarget = String(target.dropFirst(4))
+                    let returnAddr = buildFunctionReturnAddress()
+                    state.returnStack.append(returnAddr)
+                    applyDivert(target: actualTarget)
+                    continue
+                }
                 let (shouldReturn, line) = handleDivertNode(target: target, isConditional: isConditional, isVariable: isVariable)
                 if shouldReturn { return line }
                 continue
@@ -260,6 +286,50 @@ var state: StoryState
         let remaining = state.outputStream.filter { $0 != "\n" }.joined()
         state.outputStream.removeAll()
         return remaining.isEmpty ? nil : remaining + "\n"
+    }
+
+    // MARK: - Function call / return
+
+    /// Build a return-address string for the current execution position.
+    /// Format: "fnret:path|index" where path is the joined containerStack pathFromRoot
+    /// and index is the current execution index (already past the call node).
+    /// The "fnret:" prefix distinguishes function return addresses from
+    /// choice-text push-divert-target entries in the returnStack.
+    private func buildFunctionReturnAddress() -> String {
+        guard let top = containerStack.last else { return "fnret:|0" }
+        let pathStr = top.pathFromRoot.joined(separator: ".")
+        return "fnret:\(pathStr)|\(top.index)"
+    }
+
+    /// Restore execution to the position encoded in a function return address.
+    /// Expected format: "fnret:path|index" where path is the dot-joined
+    /// containerStack pathFromRoot and index is the execution index after the call.
+    private func applyFunctionReturn(returnAddr: String) {
+        // Strip the "fnret:" prefix
+        let addr = returnAddr.hasPrefix("fnret:") ? String(returnAddr.dropFirst(6)) : returnAddr
+        guard let pipeIdx = addr.lastIndex(of: "|") else {
+            applyDivert(target: addr)
+            return
+        }
+        let pathStr = String(addr[addr.startIndex..<pipeIdx])
+        let idxStr  = String(addr[addr.index(after: pipeIdx)...])
+        let targetIndex = Int(idxStr) ?? 0
+
+        if pathStr.isEmpty {
+            // Root container return: rebuild from root at targetIndex
+            containerStack = [ContainerFrame(container: root, index: targetIndex, pathFromRoot: [])]
+            state.pointer.containerPath = []
+        } else {
+            let components = pathStr.split(separator: ".").map(String.init)
+            if let container = navigateAbsolute(components) {
+                containerStack = [ContainerFrame(container: container, index: targetIndex, pathFromRoot: components)]
+                state.pointer.containerPath = components
+            } else if let startIndex = Int(components.last ?? ""),
+                      let parentContainer = navigateAbsolute(Array(components.dropLast())) {
+                rebuildStackForParentPath(Array(components.dropLast()), container: parentContainer, startIndex: startIndex)
+                containerStack[containerStack.count - 1].index = targetIndex
+            }
+        }
     }
 
     /// Advance one line and store the result in lastCompletedLine.

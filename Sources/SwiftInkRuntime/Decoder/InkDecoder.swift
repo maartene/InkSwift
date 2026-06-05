@@ -125,6 +125,11 @@ struct InkDecoder {
             let isVariable = dict["var"] != nil
             return .divert(target: target, isConditional: isConditional, isVariable: isVariable)
         }
+        if let target = dict["f()"] as? String {
+            // Function-call divert: tagged with "f():" prefix so the engine
+            // knows to push a return address before jumping.
+            return .divert(target: "f():" + target, isConditional: false, isVariable: false)
+        }
         if let target = dict["*"] as? String {
             let rawFlags = dict["flg"] as? Int ?? 0
             return .choicePoint(target: target, flags: ChoiceFlags(rawValue: rawFlags))

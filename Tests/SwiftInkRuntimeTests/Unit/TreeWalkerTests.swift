@@ -1,10 +1,11 @@
-// Test Budget: 5 distinct behaviors x 2 = 10 max unit tests
+// Test Budget: 6 distinct behaviors x 2 = 12 max unit tests
 // Behaviors:
 //   B1 — Container exhaustion returns nil
 //   B2 — .text node appends to outputStream
 //   B3 — .newline appends "\n" to outputStream (line boundary signal)
 //   B4 — .controlCommand "done"/"end" sets isEnded = true
 //   B5 — .divert updates containerPath and resets index to 0
+//   B6 — "out" control command suppresses void sentinel (does not emit "void" text)
 
 import Testing
 @testable import SwiftInkRuntime
@@ -106,5 +107,24 @@ struct TreeWalkerTests {
         _ = walker.step(in: container, state: &state)
         #expect(state.pointer.containerPath == ["Knot2", "stitch1"])
         #expect(state.pointer.index == 0)
+    }
+
+    // B6: "out" suppresses void sentinel — does not emit "void" text to output stream
+    @Test func `out control command suppresses void sentinel and does not emit void to output`() {
+        let walker = TreeWalker()
+        var state = StoryState()
+        // Push the void sentinel (string "void") onto the eval stack
+        state.evalStack.append(.string("void"))
+        walker.dispatchNode(.controlCommand("out"), state: &state)
+        #expect(state.outputStream.isEmpty, "out must not emit the void sentinel to outputStream")
+        #expect(state.evalStack.isEmpty, "void sentinel must be consumed from evalStack by out")
+    }
+
+    @Test func `out control command emits non-void value to output stream`() {
+        let walker = TreeWalker()
+        var state = StoryState()
+        state.evalStack.append(.int(42))
+        walker.dispatchNode(.controlCommand("out"), state: &state)
+        #expect(state.outputStream == ["42"])
     }
 }

@@ -1,4 +1,4 @@
-// Test Budget: 8 distinct behaviors x 2 = 16 max unit tests
+// Test Budget: 9 distinct behaviors x 2 = 18 max unit tests
 // Behaviors:
 //   B1 — init(root:) does not crash; canContinue is true for non-empty root
 //   B2 — stepToNextLine() returns text collected from .text + .newline nodes
@@ -8,6 +8,7 @@
 //   B6 — restoreState(_:) throws StoryError.invalidStateData for undecodable input
 //   B7 — restoreState(saveState()) restores engine to an equivalent state
 //   B8 — restoreState(_:) throws StoryError.invalidStateData for valid JSON not decoding to StoryState
+//   B9 — function call via f() divert returns to caller and leaves return value on eval stack
 
 import Testing
 import Foundation
@@ -143,5 +144,40 @@ struct InkEngineTests {
         #expect(throws: StoryError.invalidStateData) {
             try engine.restoreState(wrongJSON)
         }
+    }
+
+    // B9: function call via f() divert executes function and returns caller output
+    // Verifies that after a function call completes, the return value is available
+    // and execution continues in the caller context.
+    // Tested through the Story facade (driving port) using the real C3 fixture.
+    @Test func `function call via f() divert executes function body and return value is available in caller`() throws {
+        let url = try #require(Bundle.module.url(forResource: "slice-c3-functions", withExtension: "ink.json"))
+        let json = try String(contentsOf: url, encoding: .utf8)
+        let story = try Story(json: json)
+        // Advance past "You enter." and choice presentation
+        while story.canContinue { _ = story.`continue`() }
+        try story.chooseChoice(at: 0)  // "Calculate inline." → double(5) → "The result is 10."
+        var lines: [String] = []
+        while story.canContinue {
+            let trimmed = story.`continue`().trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { lines.append(trimmed) }
+        }
+        #expect(lines.contains { $0.contains("The result is 10.") },
+                "Function double(5) must return 10 and appear in output")
+    }
+
+    @Test func `void function call via f() divert does not emit void text into output`() throws {
+        let url = try #require(Bundle.module.url(forResource: "slice-c3-functions", withExtension: "ink.json"))
+        let json = try String(contentsOf: url, encoding: .utf8)
+        let story = try Story(json: json)
+        while story.canContinue { _ = story.`continue`() }
+        try story.chooseChoice(at: 2)  // "Void call inline." → setSideEffect() → "Done." (no "void")
+        var lines: [String] = []
+        while story.canContinue {
+            let trimmed = story.`continue`().trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { lines.append(trimmed) }
+        }
+        #expect(lines.contains { $0.contains("Done.") })
+        #expect(!lines.contains { $0.lowercased().contains("void") })
     }
 }
