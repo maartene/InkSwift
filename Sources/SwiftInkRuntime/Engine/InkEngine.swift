@@ -108,18 +108,11 @@ final class InkEngine {
             guard let top = containerStack.last else { break }
 
             if top.index >= top.container.children.count {
-                // A chosen-choice continuation acts as a callstack root: when it
-                // exhausts, the engine stops rather than popping into the parent's
-                // remaining content (which would re-generate the outer choices).
                 if top.isChoiceContinuationRoot { break }
                 popContainer()
-                // After popping any container: if an invisible default was collected
-                // and no visible choices were surfaced, auto-divert now rather than
-                // falling through into later content (e.g. a "done" node at root).
                 if state.currentChoices.isEmpty, let autoPath = pendingInvisibleDefaultPath {
                     pendingInvisibleDefaultPath = nil
-                    let absoluteTarget = autoPath.joined(separator: ".")
-                    applyDivert(target: absoluteTarget)
+                    applyDivert(target: autoPath.joined(separator: "."))
                     continue
                 }
                 if containerStack.isEmpty { break }
@@ -137,104 +130,15 @@ final class InkEngine {
             containerStack[containerStack.count - 1].index += 1
 
             if case .choicePoint(let target, let flags) = currentChild {
-                // Bit 3: invisible default / gather fallback — never shown to user.
-                guard (flags & Self.flagIsInvisibleDefault) == 0 else { continue }
-
-                // Invisible default predicate: none of the visible-choice bits are set.
-                // inklecate v0.9 compiles `+ [] -> target` as flg:0, so bit 3 alone
-                // is insufficient. Resolve the path NOW while the current container
-                // is still on the stack, then store for auto-divert after exhaustion.
-                if (flags & Self.flagVisibleChoiceMask) == 0 {
-                    if pendingInvisibleDefaultPath == nil {
-                        pendingInvisibleDefaultPath = resolveInvisibleDefaultPath(target)
-                    }
-                    continue
-                }
-
-                // Bit 0: hasCondition — a preceding ev.../ev block has left a boolean
-                // on the evalStack. Pop it unconditionally to keep the stack balanced;
-                // skip this choice if the result is false.
-                if (flags & Self.flagHasCondition) != 0 {
-                    let conditionResult = state.evalStack.popLast() ?? .bool(false)
-                    guard conditionResult.asBool else { continue }
-                }
-
-                // Bit 4: once-only choice — suppress if already chosen.
-                // Use the resolved absolute path as the suppression key so that
-                // identically-named relative paths in different containers do not
-                // incorrectly collide.
-                if (flags & Self.flagIsOnceOnly) != 0 {
-                    if let absolutePath = resolveAbsoluteTargetPath(for: target),
-                       state.chosenChoiceTargets.contains(absolutePath) { continue }
-                }
-
-                // Choice text sources, in priority order:
-                //   1. Non-empty string on evalStack: placed there by preceding str/[text]/str
-                //      sequence (bracket-only and mixed text choices compiled by inklecate).
-                //   2. namedContent["s"] in current container: direct read shortcut when the
-                //      str/{->".^.s"}/str divert path is not yet resolved.
-                //   3. Accumulated output stream: fallback for hand-crafted / legacy JSON.
-                let choiceText: String
-                if case .string(let s) = state.evalStack.last, !s.isEmpty {
-                    state.evalStack.removeLast()
-                    choiceText = s
-                } else {
-                    if case .string(_) = state.evalStack.last { state.evalStack.removeLast() }
-                    if let sContainer = containerStack.last?.container.namedContent["s"] {
-                        choiceText = sContainer.children
-                            .compactMap { if case .text(let t) = $0 { return t } else { return nil } }
-                            .joined()
-                    } else {
-                        choiceText = state.outputStream.filter { $0 != "\n" }.joined()
-                    }
-                }
-
-                let index = state.currentChoices.count
-                // Capture the continuation stack NOW while containerStack still
-                // has the choice-collection context. This snapshot survives
-                // save/restore and lets chooseChoice resume even on a fresh engine.
-                let continuationFrames = buildContinuationFrames(forTarget: target)
-                state.currentChoices.append(
-                    ChoiceData(
-                        text: choiceText,
-                        targetPath: target,
-                        continuationFrames: continuationFrames,
-                        index: index,
-                        flags: flags
-                    )
-                )
-                state.outputStream.removeAll { $0 != "\n" }
+                collectChoicePoint(target: target, flags: flags, pendingInvisibleDefaultPath: &pendingInvisibleDefaultPath)
                 continue
             }
 
             walker.dispatchNode(currentChild, state: &state)
 
             if case .divert(let target, let isConditional, let isVariable) = currentChild {
-                // Flush any buffered output as a line BEFORE the divert collapses
-                // the stack — Ink commonly emits `text + divert` with the implicit
-                // newline placed AFTER the divert. Without this flush, content
-                // like the inner choice continuation's response text gets wiped
-                // by the choice-collection clear in the divert target.
-                let flushedLine = flushRemainingOutput()
-                // Conditional diverts (c:true in JSON) pop a bool from the eval stack.
-                // If the condition is false, skip the divert entirely.
-                if isConditional {
-                    let condition = state.evalStack.popLast() ?? .bool(false)
-                    guard condition.asBool else {
-                        if let line = flushedLine { return line }
-                        continue
-                    }
-                    // Condition is true: resolve branch target (may be a relative named path).
-                    if let line = flushedLine { return line }
-                    applyConditionalBranch(target: target)
-                    continue
-                }
-                if isVariable, !state.returnStack.isEmpty {
-                    applyDivert(target: state.returnStack.removeLast())
-                } else if !isVariable {
-                    applyDivert(target: target)
-                }
-                if let line = flushedLine { return line }
+                let (shouldReturn, line) = handleDivertNode(target: target, isConditional: isConditional, isVariable: isVariable)
+                if shouldReturn { return line }
                 continue
             }
 
@@ -244,6 +148,113 @@ final class InkEngine {
         }
 
         return flushRemainingOutput()
+    }
+
+    /// Process a `.choicePoint` node encountered during step execution.
+    /// Updates `state.currentChoices` if the choice passes all filters,
+    /// or captures the invisible-default path for later auto-divert.
+    private func collectChoicePoint(
+        target: String,
+        flags: Int,
+        pendingInvisibleDefaultPath: inout [String]?
+    ) {
+        // Bit 3: invisible default / gather fallback — never shown to user.
+        guard (flags & Self.flagIsInvisibleDefault) == 0 else { return }
+
+        // Invisible default predicate: none of the visible-choice bits are set.
+        // inklecate v0.9 compiles `+ [] -> target` as flg:0, so bit 3 alone
+        // is insufficient. Resolve the path NOW while the current container
+        // is still on the stack, then store for auto-divert after exhaustion.
+        if (flags & Self.flagVisibleChoiceMask) == 0 {
+            if pendingInvisibleDefaultPath == nil {
+                pendingInvisibleDefaultPath = resolveInvisibleDefaultPath(target)
+            }
+            return
+        }
+
+        // Bit 0: hasCondition — a preceding ev.../ev block has left a boolean
+        // on the evalStack. Pop it unconditionally to keep the stack balanced;
+        // skip this choice if the result is false.
+        if (flags & Self.flagHasCondition) != 0 {
+            let conditionResult = state.evalStack.popLast() ?? .bool(false)
+            guard conditionResult.asBool else { return }
+        }
+
+        // Bit 4: once-only choice — suppress if already chosen.
+        // Use the resolved absolute path as the suppression key so that
+        // identically-named relative paths in different containers do not
+        // incorrectly collide.
+        if (flags & Self.flagIsOnceOnly) != 0 {
+            if let absolutePath = resolveAbsoluteTargetPath(for: target),
+               state.chosenChoiceTargets.contains(absolutePath) { return }
+        }
+
+        let choiceText = resolveChoiceText()
+        let index = state.currentChoices.count
+        // Capture the continuation stack NOW while containerStack still
+        // has the choice-collection context. This snapshot survives
+        // save/restore and lets chooseChoice resume even on a fresh engine.
+        let continuationFrames = buildContinuationFrames(forTarget: target)
+        state.currentChoices.append(
+            ChoiceData(
+                text: choiceText,
+                targetPath: target,
+                continuationFrames: continuationFrames,
+                index: index,
+                flags: flags
+            )
+        )
+        state.outputStream.removeAll { $0 != "\n" }
+    }
+
+    /// Resolve the display text for a choice point from (in priority order):
+    ///   1. A non-empty string on the evalStack (placed by str/[text]/str sequence).
+    ///   2. The namedContent["s"] sub-container of the current container.
+    ///   3. The accumulated output stream (legacy JSON fallback).
+    private func resolveChoiceText() -> String {
+        if case .string(let s) = state.evalStack.last, !s.isEmpty {
+            state.evalStack.removeLast()
+            return s
+        }
+        if case .string(_) = state.evalStack.last { state.evalStack.removeLast() }
+        if let sContainer = containerStack.last?.container.namedContent["s"] {
+            return sContainer.children
+                .compactMap { if case .text(let t) = $0 { return t } else { return nil } }
+                .joined()
+        }
+        return state.outputStream.filter { $0 != "\n" }.joined()
+    }
+
+    /// Process a `.divert` node encountered during step execution.
+    /// Returns `(shouldReturn: true, line)` when the caller should immediately
+    /// return `line` from the step loop; returns `(false, nil)` to continue.
+    private func handleDivertNode(
+        target: String,
+        isConditional: Bool,
+        isVariable: Bool
+    ) -> (shouldReturn: Bool, line: String?) {
+        // Flush buffered output BEFORE the divert collapses the stack — Ink
+        // commonly emits `text + divert` with the newline after the divert.
+        let flushedLine = flushRemainingOutput()
+
+        if isConditional {
+            // Conditional diverts pop a bool from the eval stack; false = skip divert.
+            let condition = state.evalStack.popLast() ?? .bool(false)
+            guard condition.asBool else {
+                return (shouldReturn: flushedLine != nil, line: flushedLine)
+            }
+            if let line = flushedLine { return (shouldReturn: true, line: line) }
+            applyConditionalBranch(target: target)
+            return (shouldReturn: false, line: nil)
+        }
+
+        if isVariable, !state.returnStack.isEmpty {
+            applyDivert(target: state.returnStack.removeLast())
+        } else if !isVariable {
+            applyDivert(target: target)
+        }
+        if let line = flushedLine { return (shouldReturn: true, line: line) }
+        return (shouldReturn: false, line: nil)
     }
 
     /// Extract one complete line from the output stream, or nil if no newline is present yet.
@@ -346,10 +357,10 @@ final class InkEngine {
         return current
     }
 
-    /// Resolve an invisible-default choice target to its absolute path components
-    /// while the choice-collection container is still on the stack. Returns nil
-    /// when the path cannot be resolved.
-    private func resolveInvisibleDefaultPath(_ target: String) -> [String]? {
+    /// Resolve a choice target path (relative or absolute) to its absolute path
+    /// components, validating that the target container actually exists.
+    /// Returns nil when the path cannot be resolved or the target does not exist.
+    private func resolveToAbsoluteComponents(for target: String) -> [String]? {
         if target.hasPrefix(".") {
             guard let (stackIndex, rest) = parseRelativePath(target),
                   navigate(rest, from: containerStack[stackIndex].container) != nil
@@ -361,21 +372,19 @@ final class InkEngine {
         return components
     }
 
+    /// Resolve an invisible-default choice target to its absolute path components
+    /// while the choice-collection container is still on the stack. Returns nil
+    /// when the path cannot be resolved.
+    private func resolveInvisibleDefaultPath(_ target: String) -> [String]? {
+        return resolveToAbsoluteComponents(for: target)
+    }
+
     /// Resolve a choice target to an absolute dotted-path string suitable for
     /// use as a suppression key in `state.chosenChoiceTargets`. Relative paths
     /// are resolved against the current containerStack; absolute paths are
     /// returned as-is. Returns nil when the path cannot be resolved.
     private func resolveAbsoluteTargetPath(for target: String) -> String? {
-        if target.hasPrefix(".") {
-            guard let (stackIndex, rest) = parseRelativePath(target),
-                  navigate(rest, from: containerStack[stackIndex].container) != nil
-            else { return nil }
-            let absoluteComponents = containerStack[stackIndex].pathFromRoot + rest
-            return absoluteComponents.joined(separator: ".")
-        }
-        let components = pathComponents(from: target)
-        guard navigateAbsolute(components) != nil else { return nil }
-        return target
+        return resolveToAbsoluteComponents(for: target)?.joined(separator: ".")
     }
 
     /// Build a serialisable continuation-stack snapshot for a choice target.
