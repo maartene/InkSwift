@@ -172,7 +172,10 @@ struct ChoiceData: Codable {
     /// save/restore round-trip (when in-memory resolution caches are gone).
     let continuationFrames: [ContainerStackFrame]
     let index: Int
-    /// Raw choice flags from the Ink JSON (bit 0 = once-only, bit 1 = invisible default, etc.).
+    /// Raw choice flags from the Ink JSON bitmask (inklecate `flg` field).
+    /// Bit 0 (0x01): hasCondition — a boolean on the evalStack gates this choice.
+    /// Bit 3 (0x08): isInvisibleDefault — never shown; used for auto-divert fallback.
+    /// Bit 4 (0x10): isOnceOnly — suppressed after the first time it is chosen.
     /// Decoded with `decodeIfPresent` so legacy saves without this key default to 0.
     let flags: Int
 

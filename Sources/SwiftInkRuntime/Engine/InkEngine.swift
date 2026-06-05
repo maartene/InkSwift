@@ -1,6 +1,22 @@
 import Foundation
 
 final class InkEngine {
+
+    // MARK: - Choice flag bitmask constants (inklecate `flg` field)
+
+    /// Bit 0: a boolean on the evalStack gates whether this choice is shown.
+    private static let flagHasCondition: Int = 0x01
+    /// Bit 3: invisible-default / gather fallback — never shown to the user.
+    private static let flagIsInvisibleDefault: Int = 0x08
+    /// Bit 4: once-only choice — suppressed after the first pick.
+    private static let flagIsOnceOnly: Int = 0x10
+    /// Bits 0, 1, 2, 4 — the "visible choice" bits: a choice point is invisible-default
+    /// when none of these are set (inklecate v0.9 compiles `+ [] -> target` as flg:0).
+    private static let flagVisibleChoiceMask: Int = 0x17
+
+    /// Bit 0 of a container's `#f` flags: the container tracks visit counts.
+    private static let containerFlagCountVisits: Int = 0x1
+
     var state: StoryState
     let root: ContainerNode
     private var lastCompletedLine: String = ""
@@ -121,43 +137,42 @@ final class InkEngine {
             containerStack[containerStack.count - 1].index += 1
 
             if case .choicePoint(let target, let flags) = currentChild {
-                // flg=8 (bit 3): invisible default / gather fallback — never shown to user.
-                guard (flags & 8) == 0 else { continue }
+                // Bit 3: invisible default / gather fallback — never shown to user.
+                guard (flags & Self.flagIsInvisibleDefault) == 0 else { continue }
 
-                // Invisible default predicate: flags & 0x17 == 0 means none of the
-                // visible-choice bits are set (no condition, no text, not once-only).
+                // Invisible default predicate: none of the visible-choice bits are set.
                 // inklecate v0.9 compiles `+ [] -> target` as flg:0, so bit 3 alone
                 // is insufficient. Resolve the path NOW while the current container
                 // is still on the stack, then store for auto-divert after exhaustion.
-                if (flags & 0x17) == 0 {
+                if (flags & Self.flagVisibleChoiceMask) == 0 {
                     if pendingInvisibleDefaultPath == nil {
                         pendingInvisibleDefaultPath = resolveInvisibleDefaultPath(target)
                     }
                     continue
                 }
 
-                // flg=0x01 (bit 0): hasCondition — a preceding ev.../ev block has left a
-                // boolean on the evalStack. Pop it unconditionally to keep the stack
-                // balanced; skip this choice if the result is false.
-                if (flags & 0x01) != 0 {
+                // Bit 0: hasCondition — a preceding ev.../ev block has left a boolean
+                // on the evalStack. Pop it unconditionally to keep the stack balanced;
+                // skip this choice if the result is false.
+                if (flags & Self.flagHasCondition) != 0 {
                     let conditionResult = state.evalStack.popLast() ?? .bool(false)
                     guard conditionResult.asBool else { continue }
                 }
 
-                // flg=0x10 (bit 4): once-only choice — suppress if already chosen.
+                // Bit 4: once-only choice — suppress if already chosen.
                 // Use the resolved absolute path as the suppression key so that
                 // identically-named relative paths in different containers do not
                 // incorrectly collide.
-                if (flags & 0x10) != 0 {
+                if (flags & Self.flagIsOnceOnly) != 0 {
                     if let absolutePath = resolveAbsoluteTargetPath(for: target),
                        state.chosenChoiceTargets.contains(absolutePath) { continue }
                 }
 
                 // Choice text sources, in priority order:
                 //   1. Non-empty string on evalStack: placed there by preceding str/[text]/str
-                //      sequence (flg=20 bracket-only choices and correctly-executing flg=18/22).
-                //   2. namedContent["s"] in current container: direct read shortcut for flg=18/22
-                //      when the str/{->".^.s"}/str divert fails (relative path not yet resolved).
+                //      sequence (bracket-only and mixed text choices compiled by inklecate).
+                //   2. namedContent["s"] in current container: direct read shortcut when the
+                //      str/{->".^.s"}/str divert path is not yet resolved.
                 //   3. Accumulated output stream: fallback for hand-crafted / legacy JSON.
                 let choiceText: String
                 if case .string(let s) = state.evalStack.last, !s.isEmpty {
@@ -466,7 +481,7 @@ final class InkEngine {
         } else if let container = navigateAbsolute(components) {
             containerStack = [ContainerFrame(container: container, index: 0, pathFromRoot: components)]
             state.pointer.containerPath = components
-            if container.flags & 0x1 != 0 {
+            if container.flags & Self.containerFlagCountVisits != 0 {
                 let pathKey = components.joined(separator: ".")
                 state.visitCounts[pathKey, default: 0] += 1
             }
@@ -537,7 +552,7 @@ final class InkEngine {
             throw StoryError.invalidChoiceIndex(index)
         }
         let choice = state.currentChoices[index]
-        if (choice.flags & 0x10) != 0 {
+        if (choice.flags & Self.flagIsOnceOnly) != 0 {
             // Record the absolute path of the chosen target so the suppression
             // check in stepToNextLine can match it reliably across contexts.
             // Exception: do NOT track loop-back choices — continuations that divert
