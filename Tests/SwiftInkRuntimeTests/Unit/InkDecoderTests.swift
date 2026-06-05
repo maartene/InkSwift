@@ -13,7 +13,8 @@ struct InkDecoderTests {
     // Behavior 1: CNT? dict node is classified as .readCount(key), not .controlCommand("CNT?")
     // Behavior 2: f() dict node is classified as .divert, not .controlCommand
     // Behavior 3: ->t-> dict node is classified as .tunnelDivert(target:)
-    // Budget = 3 behaviors × 2 = 6 unit tests max
+    // Behavior 4: {"^var":"name","ci":-1} dict is classified as .variablePointer(name:contextIndex:)
+    // Budget = 4 behaviors × 2 = 8 unit tests max
 
     // MARK: - Behavior 1: CNT? dict classified as readCount
 
@@ -119,6 +120,39 @@ struct InkDecoderTests {
         let firstChild = try #require(root.children.first)
         if case .controlCommand = firstChild {
             Issue.record("->t-> must not be classified as .controlCommand — got \(firstChild)")
+        }
+    }
+
+    // MARK: - Behavior 4: {"^var":"name","ci":-1} classified as .variablePointer
+
+    @Test func `InkDecoder classifies variable pointer dict as variablePointer with name and contextIndex`() throws {
+        let json = """
+        {"inkVersion":21,"root":[{"^var":"score","ci":-1},null]}
+        """
+        let data = try #require(json.data(using: .utf8))
+        let decoder = InkDecoder()
+        let root = try decoder.decode(data)
+
+        let firstChild = try #require(root.children.first)
+        if case .variablePointer(let name, let contextIndex) = firstChild {
+            #expect(name == "score")
+            #expect(contextIndex == -1)
+        } else {
+            Issue.record("Expected .variablePointer(name: \"score\", contextIndex: -1) but got \(firstChild)")
+        }
+    }
+
+    @Test func `InkDecoder does not classify variable pointer dict as controlCommand`() throws {
+        let json = """
+        {"inkVersion":21,"root":[{"^var":"score","ci":-1},null]}
+        """
+        let data = try #require(json.data(using: .utf8))
+        let decoder = InkDecoder()
+        let root = try decoder.decode(data)
+
+        let firstChild = try #require(root.children.first)
+        if case .controlCommand = firstChild {
+            Issue.record("^var dict must not be classified as .controlCommand — got \(firstChild)")
         }
     }
 }

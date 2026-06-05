@@ -17,4 +17,5 @@ internal enum NodeKind {
     case tagClose
     case voidValue
     case readCount(String)
+    case variablePointer(name: String, contextIndex: Int)
 }

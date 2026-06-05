@@ -75,6 +75,9 @@ struct TreeWalker {
 
         case .readCount(let key):
             state.evalStack.append(.int(state.visitCounts[key] ?? 0))
+
+        case .variablePointer(let name, let contextIndex):
+            state.evalStack.append(.variablePointer(name: name, contextIndex: contextIndex))
         }
     }
 
@@ -161,13 +164,21 @@ struct TreeWalker {
     // MARK: - Variable handling
 
     private func handleVariableAssignment(name: String, state: inout StoryState) {
-        if let value = state.evalStack.popLast() {
+        guard let value = state.evalStack.popLast() else { return }
+        // If the existing variable holds a pointer, write through to the pointed-to global
+        if case .variablePointer(let pointedName, _) = state.variablesState[name] {
+            state.variablesState[pointedName] = value
+        } else {
             state.variablesState[name] = value
         }
     }
 
     private func handleVariableReference(name: String, state: inout StoryState) {
-        if let value = state.variablesState[name] {
+        guard let value = state.variablesState[name] else { return }
+        // If the variable holds a pointer, dereference it to get the pointed-to value
+        if case .variablePointer(let pointedName, _) = value {
+            state.evalStack.append(state.variablesState[pointedName] ?? .int(0))
+        } else {
             state.evalStack.append(value)
         }
     }

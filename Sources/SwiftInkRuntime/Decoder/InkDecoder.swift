@@ -153,6 +153,9 @@ struct InkDecoder {
         if let key = dict["CNT?"] as? String {
             return .readCount(key)
         }
+        if let name = dict["^var"] as? String, let contextIndex = dict["ci"] as? Int {
+            return .variablePointer(name: name, contextIndex: contextIndex)
+        }
         // Unknown dict node — surface the first key for diagnostics
         return .controlCommand(dict.keys.first ?? "?")
     }

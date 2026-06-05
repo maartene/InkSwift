@@ -7,9 +7,10 @@ enum InkValue: Codable, Equatable {
     case float(Double)
     case string(String)
     case bool(Bool)
+    case variablePointer(name: String, contextIndex: Int)
 
     private enum CodingKeys: String, CodingKey {
-        case type, intValue, floatValue, stringValue, boolValue
+        case type, intValue, floatValue, stringValue, boolValue, pointerName, pointerContextIndex
     }
 
     init(from decoder: Decoder) throws {
@@ -24,6 +25,10 @@ enum InkValue: Codable, Equatable {
             self = .string(try container.decode(String.self, forKey: .stringValue))
         case "bool":
             self = .bool(try container.decode(Bool.self, forKey: .boolValue))
+        case "variablePointer":
+            let name = try container.decode(String.self, forKey: .pointerName)
+            let contextIndex = try container.decode(Int.self, forKey: .pointerContextIndex)
+            self = .variablePointer(name: name, contextIndex: contextIndex)
         default:
             throw DecodingError.dataCorruptedError(
                 forKey: .type,
@@ -48,6 +53,10 @@ enum InkValue: Codable, Equatable {
         case .bool(let value):
             try container.encode("bool", forKey: .type)
             try container.encode(value, forKey: .boolValue)
+        case .variablePointer(let name, let contextIndex):
+            try container.encode("variablePointer", forKey: .type)
+            try container.encode(name, forKey: .pointerName)
+            try container.encode(contextIndex, forKey: .pointerContextIndex)
         }
     }
 }
@@ -62,6 +71,7 @@ extension InkValue {
         case .float(let f): return f
         case .bool(let b): return b ? 1.0 : 0.0
         case .string: return 0.0
+        case .variablePointer: return 0.0
         }
     }
 
@@ -71,6 +81,7 @@ extension InkValue {
         case .int(let n): return n != 0
         case .float(let f): return f != 0.0
         case .string(let s): return !s.isEmpty
+        case .variablePointer: return false
         }
     }
 
@@ -80,6 +91,7 @@ extension InkValue {
         case .float(let f): return String(f)
         case .string(let s): return s
         case .bool(let b): return b ? "true" : "false"
+        case .variablePointer(let name, _): return name
         }
     }
 
@@ -149,6 +161,7 @@ extension InkValue {
         case .float(let f): return .int(Int(f))
         case .bool(let b): return .int(b ? 1 : 0)
         case .string(let s): return .int(Int(s) ?? 0)
+        case .variablePointer: return .int(0)
         }
     }
 
@@ -158,6 +171,7 @@ extension InkValue {
         case .int(let n): return .float(Double(n))
         case .bool(let b): return .float(b ? 1.0 : 0.0)
         case .string(let s): return .float(Double(s) ?? 0.0)
+        case .variablePointer: return .float(0.0)
         }
     }
 }

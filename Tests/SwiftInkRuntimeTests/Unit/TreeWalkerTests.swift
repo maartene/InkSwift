@@ -1,4 +1,4 @@
-// Test Budget: 6 distinct behaviors x 2 = 12 max unit tests
+// Test Budget: 8 distinct behaviors x 2 = 16 max unit tests
 // Behaviors:
 //   B1 — Container exhaustion returns nil
 //   B2 — .text node appends to outputStream
@@ -6,6 +6,8 @@
 //   B4 — .controlCommand "done"/"end" sets isEnded = true
 //   B5 — .divert updates containerPath and resets index to 0
 //   B6 — "out" control command suppresses void sentinel (does not emit "void" text)
+//   B7 — .variablePointer node pushes a pointer sentinel onto evalStack
+//   B8 — variable assignment via pointer mutates the pointed-to global variable
 
 import Testing
 @testable import SwiftInkRuntime
@@ -126,5 +128,55 @@ struct TreeWalkerTests {
         state.evalStack.append(.int(42))
         walker.dispatchNode(.controlCommand("out"), state: &state)
         #expect(state.outputStream == ["42"])
+    }
+
+    // B7: .variablePointer node pushes a pointer value onto evalStack
+    @Test func `variablePointer node pushes pointer value with correct name onto evalStack`() {
+        let walker = TreeWalker()
+        var state = StoryState()
+        walker.dispatchNode(.variablePointer(name: "score", contextIndex: -1), state: &state)
+        if case .variablePointer(let name, let contextIndex) = state.evalStack.last {
+            #expect(name == "score")
+            #expect(contextIndex == -1)
+        } else {
+            Issue.record("Expected .variablePointer on evalStack but got \(String(describing: state.evalStack.last))")
+        }
+    }
+
+    @Test func `variablePointer node pushes exactly one item onto evalStack`() {
+        let walker = TreeWalker()
+        var state = StoryState()
+        walker.dispatchNode(.variablePointer(name: "x", contextIndex: -1), state: &state)
+        #expect(state.evalStack.count == 1)
+    }
+
+    // B8: variable assignment where stored value is a pointer mutates the pointed-to global
+    @Test func `variableAssignment to pointer-holding variable mutates the pointed-to global`() {
+        let walker = TreeWalker()
+        var state = StoryState()
+        // Set up: global "score" = 0, temp "total" holds a pointer to "score"
+        state.variablesState["score"] = .int(0)
+        state.variablesState["total"] = .variablePointer(name: "score", contextIndex: -1)
+        // Push 10 to evalStack (the value to assign via the pointer)
+        state.evalStack.append(.int(10))
+        // Non-global assignment to "total" (re-assignment, isGlobal: false)
+        walker.dispatchNode(.variableAssignment(name: "total", isGlobal: false), state: &state)
+        // "score" global must be updated to 10
+        #expect(state.variablesState["score"] == .int(10))
+    }
+
+    @Test func `variableAssignment to pointer-holding variable does not overwrite the pointer itself`() {
+        let walker = TreeWalker()
+        var state = StoryState()
+        state.variablesState["score"] = .int(0)
+        state.variablesState["total"] = .variablePointer(name: "score", contextIndex: -1)
+        state.evalStack.append(.int(10))
+        walker.dispatchNode(.variableAssignment(name: "total", isGlobal: false), state: &state)
+        // "total" must still hold the pointer (not be replaced with 10)
+        if case .variablePointer(let name, _) = state.variablesState["total"] {
+            #expect(name == "score")
+        } else {
+            Issue.record("Expected total to remain a pointer but got \(String(describing: state.variablesState["total"]))")
+        }
     }
 }

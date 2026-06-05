@@ -35,6 +35,7 @@ struct NodeKindTests {
             .voidValue,
             .pushDivertTarget("test"),
             .readCount("knot"),
+            .variablePointer(name: "score", contextIndex: -1),
         ]
 
         // Exhaustive switch proves every case compiles
@@ -57,10 +58,11 @@ struct NodeKindTests {
             case .container:       break
             case .pushDivertTarget: break
             case .readCount:       break
+            case .variablePointer: break
             }
         }
 
-        #expect(nodes.count == 16)
+        #expect(nodes.count == 17)
     }
 
     // MARK: - Behavior 2: Associated values carry correct payload types
