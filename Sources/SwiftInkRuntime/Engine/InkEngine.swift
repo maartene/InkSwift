@@ -111,6 +111,14 @@ final class InkEngine {
                 // flg=8 (bit 3): invisible default / gather fallback — never shown to user.
                 guard (flags & 8) == 0 else { continue }
 
+                // flg=0x01 (bit 0): hasCondition — a preceding ev.../ev block has left a
+                // boolean on the evalStack. Pop it unconditionally to keep the stack
+                // balanced; skip this choice if the result is false.
+                if (flags & 0x01) != 0 {
+                    let conditionResult = state.evalStack.popLast() ?? .bool(false)
+                    guard conditionResult.asBool else { continue }
+                }
+
                 // flg=0x10 (bit 4): once-only choice — suppress if already chosen.
                 // Use the resolved absolute path as the suppression key so that
                 // identically-named relative paths in different containers do not
