@@ -70,8 +70,8 @@ struct TreeWalker {
         case .container:
             break  // inline sub-containers handled by InkEngine via path resolution
 
-        case .readCount:
-            break  // will be wired in step 02-03
+        case .readCount(let key):
+            state.evalStack.append(.int(state.visitCounts[key] ?? 0))
         }
     }
 

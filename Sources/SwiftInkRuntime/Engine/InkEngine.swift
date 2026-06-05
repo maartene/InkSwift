@@ -169,13 +169,26 @@ final class InkEngine {
 
             walker.dispatchNode(currentChild, state: &state)
 
-            if case .divert(let target, _, let isVariable) = currentChild {
+            if case .divert(let target, let isConditional, let isVariable) = currentChild {
                 // Flush any buffered output as a line BEFORE the divert collapses
                 // the stack — Ink commonly emits `text + divert` with the implicit
                 // newline placed AFTER the divert. Without this flush, content
                 // like the inner choice continuation's response text gets wiped
                 // by the choice-collection clear in the divert target.
                 let flushedLine = flushRemainingOutput()
+                // Conditional diverts (c:true in JSON) pop a bool from the eval stack.
+                // If the condition is false, skip the divert entirely.
+                if isConditional {
+                    let condition = state.evalStack.popLast() ?? .bool(false)
+                    guard condition.asBool else {
+                        if let line = flushedLine { return line }
+                        continue
+                    }
+                    // Condition is true: resolve branch target (may be a relative named path).
+                    if let line = flushedLine { return line }
+                    applyConditionalBranch(target: target)
+                    continue
+                }
                 if isVariable, !state.returnStack.isEmpty {
                     applyDivert(target: state.returnStack.removeLast())
                 } else if !isVariable {
@@ -361,6 +374,31 @@ final class InkEngine {
         return nil
     }
 
+    /// Resolve a conditional branch target (from a `{"->":"...","c":true}` divert).
+    /// Unlike `applyDivert`, this method resolves relative paths with named navigation
+    /// (e.g. `.^.b`) because conditional branches always jump to their target.
+    /// Absolute paths delegate to `applyDivert`.
+    private func applyConditionalBranch(target: String) {
+        if target.hasPrefix(".") {
+            guard let (stackIndex, rest) = parseRelativePath(target) else { return }
+            if rest.isEmpty {
+                // Pure ancestor goto
+                let resolved = containerStack[stackIndex]
+                containerStack = [ContainerFrame(container: resolved.container, index: 0, pathFromRoot: resolved.pathFromRoot)]
+                state.pointer.containerPath = resolved.pathFromRoot
+            } else {
+                // Navigate into named content from the anchor frame (e.g. ".^.b")
+                guard let destination = navigate(rest, from: containerStack[stackIndex].container) else { return }
+                let resolvedPath = containerStack[stackIndex].pathFromRoot + rest
+                containerStack = [ContainerFrame(container: destination, index: 0, pathFromRoot: resolvedPath)]
+                state.pointer.containerPath = resolvedPath
+            }
+            return
+        }
+        // Absolute target: delegate to standard divert resolution
+        applyDivert(target: target)
+    }
+
     private func applyDivert(target: String) {
         // Relative path (starts with ".").
         // Only pure-ancestor gotos (all-caret paths like ".^.^") are resolved here;
@@ -388,11 +426,71 @@ final class InkEngine {
         } else if let container = navigateAbsolute(components) {
             containerStack = [ContainerFrame(container: container, index: 0, pathFromRoot: components)]
             state.pointer.containerPath = components
+            if container.flags & 0x1 != 0 {
+                let pathKey = components.joined(separator: ".")
+                state.visitCounts[pathKey, default: 0] += 1
+            }
+        } else if let startIndex = Int(components.last ?? ""),
+                  let parentContainer = navigateAbsolute(Array(components.dropLast())) {
+            // Path whose last component is a numeric index into the parent container
+            // (e.g. "café.0.6" = execute A starting from index 6). The parent container
+            // is resolved by dropping the index and the full parent stack is rebuilt.
+            let parentPath = Array(components.dropLast())
+            rebuildStackForParentPath(parentPath, container: parentContainer, startIndex: startIndex)
         }
         // If unresolvable, leave stack as-is (will exhaust and stop)
     }
 
+    /// Rebuild the container stack to reflect a jump to `startIndex` within `container`,
+    /// reconstructing all ancestor frames from the absolute `parentPath`.
+    private func rebuildStackForParentPath(_ parentPath: [String], container: ContainerNode, startIndex: Int) {
+        var frames: [ContainerFrame] = []
+        // Walk from root to parent, building frames for each ancestor container.
+        var current = root
+        var currentPath: [String] = []
+        for component in parentPath {
+            currentPath.append(component)
+            if let index = Int(component) {
+                guard index < current.children.count,
+                      case .container(let child) = current.children[index] else { break }
+                // Parent frame: index is advanced past this child (it was entered)
+                frames.append(ContainerFrame(container: current, index: index + 1, pathFromRoot: Array(currentPath.dropLast())))
+                current = child
+            } else {
+                guard let named = current.namedContent[component] else { break }
+                frames.append(ContainerFrame(container: current, index: current.children.count, pathFromRoot: Array(currentPath.dropLast())))
+                current = named
+            }
+        }
+        // Final frame: the target container at the specified startIndex
+        frames.append(ContainerFrame(container: container, index: startIndex, pathFromRoot: parentPath))
+        containerStack = frames
+        state.pointer.containerPath = parentPath
+    }
+
     // MARK: - Choice handling
+
+    /// Returns true when the choice continuation's first absolute divert targets an
+    /// ancestor of the continuation itself (a "loop-back" pattern like `* [Leave] -> café`
+    /// inside the `café` knot). Loop-back choices are never tracked in `chosenChoiceTargets`
+    /// because they are intended to remain available on every visit.
+    private func continuationLoopsBackToAncestor(_ choice: ChoiceData) -> Bool {
+        guard let lastFrame = choice.continuationFrames.last,
+              let continuationContainer = navigateAbsolute(lastFrame.pathFromRoot) else { return false }
+        let continuationPath = lastFrame.pathFromRoot
+        for node in continuationContainer.children {
+            guard case .divert(let target, _, _) = node else { continue }
+            guard !target.hasPrefix(".") else { continue }
+            let targetComponents = target.split(separator: ".").map(String.init)
+            // A loop-back: targetComponents is a proper prefix of continuationPath
+            // (meaning the divert goes to a containing ancestor of this continuation).
+            if targetComponents.count < continuationPath.count,
+               continuationPath.starts(with: targetComponents) {
+                return true
+            }
+        }
+        return false
+    }
 
     func chooseChoice(at index: Int) throws {
         guard index >= 0 && index < state.currentChoices.count else {
@@ -402,8 +500,11 @@ final class InkEngine {
         if (choice.flags & 0x10) != 0 {
             // Record the absolute path of the chosen target so the suppression
             // check in stepToNextLine can match it reliably across contexts.
-            // The continuation frames' last entry holds the resolved absolute path.
-            if let absolutePath = choice.continuationFrames.last?.pathFromRoot.joined(separator: ".") {
+            // Exception: do NOT track loop-back choices — continuations that divert
+            // directly back to an ancestor knot (e.g. `* [Leave] -> café` inside café).
+            // Such choices are intended to be available on every visit.
+            if let absolutePath = choice.continuationFrames.last?.pathFromRoot.joined(separator: "."),
+               !continuationLoopsBackToAncestor(choice) {
                 state.chosenChoiceTargets.insert(absolutePath)
             }
         }
