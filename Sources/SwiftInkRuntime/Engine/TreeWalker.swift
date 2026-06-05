@@ -69,6 +69,9 @@ struct TreeWalker {
 
         case .container:
             break  // inline sub-containers handled by InkEngine via path resolution
+
+        case .readCount:
+            break  // will be wired in step 02-03
         }
     }
 

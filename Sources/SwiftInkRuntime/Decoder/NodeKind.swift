@@ -15,4 +15,5 @@ internal enum NodeKind {
     case tagOpen
     case tagClose
     case voidValue
+    case readCount(String)
 }

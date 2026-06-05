@@ -33,6 +33,7 @@ struct NodeKindTests {
             .tagClose,
             .voidValue,
             .pushDivertTarget("test"),
+            .readCount("knot"),
         ]
 
         // Exhaustive switch proves every case compiles
@@ -53,10 +54,11 @@ struct NodeKindTests {
             case .voidValue:       break
             case .container:       break
             case .pushDivertTarget: break
+            case .readCount:       break
             }
         }
 
-        #expect(nodes.count == 14)
+        #expect(nodes.count == 15)
     }
 
     // MARK: - Behavior 2: Associated values carry correct payload types

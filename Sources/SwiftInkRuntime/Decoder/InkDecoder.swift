@@ -142,6 +142,9 @@ struct InkDecoder {
             // Named-container reference marker (e.g., {"#n":"$r1"}) — treated as a no-op node
             return .controlCommand("#n")
         }
+        if let key = dict["CNT?"] as? String {
+            return .readCount(key)
+        }
         // Unknown dict node — surface the first key for diagnostics
         return .controlCommand(dict.keys.first ?? "?")
     }
