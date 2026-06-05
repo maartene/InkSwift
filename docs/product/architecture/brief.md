@@ -209,13 +209,13 @@ Feature tiers follow inkle's own documentation structure:
 | 1 | Text output / newlines | CORE | Yes | **WORKS** | |
 | 2 | Knots (`=== name`) | CORE | Yes (28) | **WORKS** | |
 | 3 | Stitches (`= name`) | CORE | Yes (47) | **WORKS** | |
-| 4 | Diverts (`->`) | CORE | Yes (110+) | **WORKS** (absolute paths) | Relative paths broken — see #5 |
-| 5 | Relative paths (`.^.x`) | CORE | Yes (all within-knot) | **BROKEN** | `resolveNamedPath` has no `^` support; iklecate always emits relative paths in knots |
+| 4 | Diverts (`->`) | CORE | Yes (110+) | **WORKS** | Absolute, relative pure-ancestor (`.^.^`), and anchor (`$rN`) diverts all resolve. `text -> divert` flushes the line before the stack collapses. |
+| 5 | Relative paths (`.^.x`) | CORE | Yes (all within-knot) | **WORKS** | Caret parent-traversal + named lookup per stack frame, captured as `pathFromRoot` so it round-trips through save/restore |
 | 6 | Plain choices (`* text`) | CORE | Yes | **WORKS** | |
-| 7 | Bracketed choices (`* [text]`) | CORE | Yes (majority of 156+) | **BROKEN** | `flg=20`: choice text on `evalStack` via `str`/`/str`; engine reads `namedContent["s"]` only |
-| 8 | Sticky choices (`+ text`) | CORE | Yes | **UNKNOWN** | `flg` field parsed but not dispatched |
-| 9 | Once-only suppression (`flg=8`) | CORE | Yes | **UNKNOWN** | Flag ignored; choice always shown |
-| 10 | Invisible defaults (`flg=4`) | CORE | Yes | **UNKNOWN** | Flag ignored; gather shown as choice |
+| 7 | Bracketed choices (`* [text]`) | CORE | Yes (majority of 156+) | **WORKS** | `flg=20` choice text consumed from `evalStack`; `flg=18`/`22` use `namedContent["s"]` fallback |
+| 8 | Sticky choices (`+ text`) | CORE | Yes | **PARTIAL** | Choice is collected and dispatched; not yet differentiated from once-only at the level of post-pick visibility |
+| 9 | Once-only suppression (`flg=8`) | CORE | Yes | **MISSING** | Picked once-only choices still re-appear after the continuation loops back |
+| 10 | Invisible defaults (`flg=4`) | CORE | Yes | **PARTIAL** | Engine suppresses `flags & 8` (gather fallback); brief's `flg=4` invisible-default bit not separately gated |
 | 11 | Conditional choices (`* {cond}`) | CORE | Yes | **PARTIAL** | `isConditional` parsed; never gated at runtime |
 | 12 | Gathers (`-`) | CORE | Yes | **PARTIAL** | Anchors exist; nested depth untested |
 | 13 | Labeled gathers / options `(label)` | CORE | Yes | **PARTIAL** | Anchor resolution implemented; not fully tested |
@@ -238,7 +238,7 @@ Feature tiers follow inkle's own documentation structure:
 | 30 | Inline function calls `{f()}` | STANDARD | Yes | **UNKNOWN** | No test |
 | 31 | String interpolation | STANDARD | Yes | **WORKS** | `str`/`/str` handler correct in TreeWalker |
 | 32 | Tags (`#tag`) | STANDARD | No | **WORKS** | Implemented ahead of need |
-| 33 | Save / restore | STANDARD | — | **WORKS** | `StoryState` is `Codable` |
+| 33 | Save / restore | STANDARD | — | **WORKS** | `StoryState` is `Codable`; survives `chooseChoice` round-trip via `pathFromRoot` frames + `ChoiceData.continuationFrames` |
 | 34 | Tunnels (`-> knot ->`) | ADVANCED | Yes (8) | **MISSING** | ADR-004 defers; needs nested call frames |
 | 35 | Reference parameters (`ref x`) | ADVANCED | Yes | **MISSING** | Not modelled |
 | 36 | Threads | BEYOND | No | **MISSING** | Lowest priority |
@@ -248,11 +248,16 @@ Feature tiers follow inkle's own documentation structure:
 
 #### Implementation Roadmap by Tier
 
-**Tier 1 (immediate — unblocks any real story):**
-Rows 5, 7 — relative path resolution + bracketed choice text. Root cause: engine choice-text shortcut (`namedContent["s"]`) must be replaced with `evalStack` consumption; `resolveNamedPath` must gain `^` parent-traversal support. See RCA in `docs/feature/fix-choice-text-path-resolution/design/wave-decisions.md`.
+**Tier 1 (immediate — unblocks any real story): COMPLETE**
+Rows 5, 7 are `WORKS`. Beyond the originally-scoped fix, follow-up work driven by an InkTest playthrough also delivered:
+- One-level callstack for chosen continuations (`isChoiceContinuationRoot`) so picking an outer choice no longer falls through into the parent's remaining choice generators.
+- Pre-divert output flush so `text -> divert` on the same Ink source line emits the text before the stack collapses.
+- Save/restore round-trip across `chooseChoice` via `pathFromRoot`-based stack frames and `ChoiceData.continuationFrames`.
+
+See RCA in `docs/feature/fix-choice-text-path-resolution/design/wave-decisions.md`.
 
 **Tier 2 (core completeness — before a representative story runs):**
-Rows 8–11, 14 — choice flag bitmask (sticky, once-only, invisible defaults), conditional choice gating, read counts.
+Rows 8–11, 14 — choice flag bitmask (sticky, once-only suppression, invisible defaults), conditional choice gating, read counts. The Cass story currently re-shows non-sticky choices after they're picked because once-only is not yet wired up.
 
 **Tier 3 (The Intercept ceiling):**
 Rows 22–24, 29–30 — conditional text, functions.
