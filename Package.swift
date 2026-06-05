@@ -59,8 +59,18 @@ let package = Package(
                 .target(name: "InkSwift", condition: .when(platforms: [.macOS])),
                 "JSONEquality"
             ],
+            exclude: [
+                "slice01-once-only.ink",
+                "slice02-conditional.ink",
+                "slice03-read-counts.ink",
+                "slice04-invisible-defaults.ink",
+            ],
             resources: [
-                .process("test.ink.json")
+                .process("test.ink.json"),
+                .process("slice01-once-only.ink.json"),
+                .process("slice02-conditional.ink.json"),
+                .process("slice03-read-counts.ink.json"),
+                .process("slice04-invisible-defaults.ink.json"),
             ]
         ),
     ]
