@@ -213,13 +213,13 @@ Feature tiers follow inkle's own documentation structure:
 | 5 | Relative paths (`.^.x`) | CORE | Yes (all within-knot) | **WORKS** | Caret parent-traversal + named lookup per stack frame, captured as `pathFromRoot` so it round-trips through save/restore |
 | 6 | Plain choices (`* text`) | CORE | Yes | **WORKS** | |
 | 7 | Bracketed choices (`* [text]`) | CORE | Yes (majority of 156+) | **WORKS** | `flg=20` choice text consumed from `evalStack`; `flg=18`/`22` use `namedContent["s"]` fallback |
-| 8 | Sticky choices (`+ text`) | CORE | Yes | **PARTIAL** | Choice is collected and dispatched; not yet differentiated from once-only at the level of post-pick visibility |
-| 9 | Once-only suppression (`flg=8`) | CORE | Yes | **MISSING** | Picked once-only choices still re-appear after the continuation loops back |
-| 10 | Invisible defaults (`flg=4`) | CORE | Yes | **PARTIAL** | Engine suppresses `flags & 8` (gather fallback); brief's `flg=4` invisible-default bit not separately gated |
-| 11 | Conditional choices (`* {cond}`) | CORE | Yes | **PARTIAL** | `isConditional` parsed; never gated at runtime |
+| 8 | Sticky choices (`+ text`) | CORE | Yes | **IMPLEMENTED** | Sticky (`+`) choices remain after being picked; differentiated from once-only by `flags & 0x10 == 0` (tier2-choice-mechanics) |
+| 9 | Once-only suppression (`flg=0x10`) | CORE | Yes | **IMPLEMENTED** | Picked once-only choices suppressed via `chosenChoiceTargets: Set<String>` on StoryState; survives save/restore (tier2-choice-mechanics) |
+| 10 | Invisible defaults (`flags & 0x17 == 0`) | CORE | Yes | **IMPLEMENTED** | Auto-divert applied when `currentChoices` is empty and invisible default recorded; inklecate v0.9 `flg: 0` detection (tier2-choice-mechanics) |
+| 11 | Conditional choices (`* {cond}`) | CORE | Yes | **IMPLEMENTED** | `evalStack` popped when `flags & 0x01`; false result skips choice; stack always balanced (tier2-choice-mechanics) |
 | 12 | Gathers (`-`) | CORE | Yes | **PARTIAL** | Anchors exist; nested depth untested |
 | 13 | Labeled gathers / options `(label)` | CORE | Yes | **PARTIAL** | Anchor resolution implemented; not fully tested |
-| 14 | Read counts (knot visit counters) | CORE | Yes | **MISSING** | `CNT?` native function deferred; `visitCounts` map exists |
+| 14 | Read counts (knot visit counters) | CORE | Yes | **IMPLEMENTED** | `NodeKind.readCount(String)`, `InkDecoder` CNT? handler, `TreeWalker` dispatch, and `#f` bit `0x1` container-entry increment (tier2-choice-mechanics) |
 | 15 | Glue (`<>`) | CORE | Likely | **UNKNOWN** | No test coverage |
 | 16 | VAR global variables | STANDARD | Yes (21) | **WORKS** | |
 | 17 | CONST declarations | STANDARD | Yes (6) | **UNKNOWN** | Parsed? No test |
@@ -256,12 +256,81 @@ Rows 5, 7 are `WORKS`. Beyond the originally-scoped fix, follow-up work driven b
 
 See RCA in `docs/feature/fix-choice-text-path-resolution/design/wave-decisions.md`.
 
-**Tier 2 (core completeness — before a representative story runs):**
-Rows 8–11, 14 — choice flag bitmask (sticky, once-only suppression, invisible defaults), conditional choice gating, read counts. The Cass story currently re-shows non-sticky choices after they're picked because once-only is not yet wired up.
+**Tier 2 (core completeness): COMPLETE**
+Rows 8–11, 14 — choice flag bitmask (sticky/once-only differentiation), once-only suppression, invisible default auto-divert, conditional choice gating, read counts. All implemented in `tier2-choice-mechanics`. 95 tests passing. See `docs/evolution/2026-06-05-tier2-choice-mechanics.md`.
 
 **Tier 3 (The Intercept ceiling):**
 Rows 22–24, 29–30 — conditional text, functions.
 Rows 34–35 — tunnels, reference parameters.
+
+---
+
+### Tier 2 — Choice Mechanics (tier2-choice-mechanics)
+
+This subsection records the concrete architectural decisions for the `tier2-choice-mechanics` feature. It covers rows 8–11 and 14 of the Feature Coverage Matrix (sticky/once-only differentiation, conditional gating, invisible defaults, read counts).
+
+No new source files are introduced. The changes are localised to three existing files: `InkEngine.swift`, `StoryState.swift`, and `TreeWalker.swift`.
+
+#### Reuse Analysis
+
+| Existing Component | File | Overlap | Decision | Justification |
+|---|---|---|---|---|
+| `InkEngine` | `Engine/InkEngine.swift` | Choice-collection loop; `chooseChoice(at:)` | Extend | The collection loop and choice dispatch already exist; once-only, conditional, and invisible-default logic is purely additive gating within those loops |
+| `StoryState` | `Engine/StoryState.swift` | Codable state struct | Extend | Needs one new field (`chosenChoiceTargets`) and one field on `ChoiceData` (`flags`); both added as `decodeIfPresent` with safe defaults for backward compatibility |
+| `TreeWalker` | `Engine/TreeWalker.swift` | `dispatch` switch | Extend | `.readCount(key)` is one new `case` in the existing dispatch; `#f` container flag check triggers `visitCounts` increment |
+| `NodeKind` | `Decoder/NodeKind.swift` | Node kind enum | Extend | New case `.readCount(String)` for `{"CNT?": key}` dict nodes |
+| `InkDecoder` | `Decoder/InkDecoder.swift` | `classifyDict` | Extend | Match `{"CNT?": key}` → `.readCount(key)` before the unknown-fallback path |
+
+#### Flag Bit Reference
+
+Authoritative source: `docs/ink_JSON_runtime_format.md` § ChoicePoint, and inklecate v0.9 compiled output.
+
+| Bit | Value | Name | Meaning |
+|-----|-------|------|---------|
+| 0 | 1 | `hasCondition` | Choice has a preceding `ev … /ev` condition block; result is on `evalStack` |
+| 1 | 2 | `hasStartContent` | Leading text before `[` is present on the eval stack |
+| 2 | 4 | `hasChoiceOnlyContent` | Text inside `[…]` is present on the eval stack |
+| 3 | 8 | `isInvisibleDefault` | Auto-divert fallback; excluded from `currentChoices` (note: inklecate v0.9 compiles `+ []` to `flg: 0`, not `flg: 8` — see D4) |
+| 4 | 16 | `onceOnly` | `*` choice — suppressed after being picked once |
+
+A `*` (once-only) choice has bit 4 **set** (`flags & 0x10 != 0`).  
+A `+` (sticky) choice has bit 4 **unset** (`flags & 0x10 == 0`).
+
+#### D1 — Once-only suppression (S1)
+
+In the choice-collection loop inside `InkEngine.stepToNextLine`, before appending a choice to `state.currentChoices`, the engine checks whether the choice is once-only (`flags & 0x10 != 0`) and whether its target path is already recorded in `state.chosenChoiceTargets`. If both conditions hold, the choice is skipped. When `InkEngine.chooseChoice(at:)` executes a once-only choice it appends `choiceData.target` to `state.chosenChoiceTargets` so future loops suppress it.
+
+#### D2 — Conditional gating (S2)
+
+`flags & 1` signals that the choice has a preceding `ev … /ev` evaluation block that leaves a boolean result on top of `state.evalStack`. In the collection loop, when this bit is set, the engine pops the top value; if it is `false` the choice is skipped. The pop is unconditional to keep the stack balanced regardless of the outcome.
+
+#### D3 — Visit counts / CNT? nodes (S3)
+
+In inklecate-compiled JSON, visit count lookup is a **dict node** `{"CNT?": "knot_name"}`, not a native function string. The implementation requires changes to the Decoder layer as well as TreeWalker:
+
+1. `NodeKind` gains a new case: `.readCount(String)` (the dotted-path key)
+2. `InkDecoder.classifyDict` matches `{"CNT?": key}` → `.readCount(key)` (currently falls through to `.controlCommand("CNT?")` and is silently ignored)
+3. `TreeWalker.dispatch` handles `.readCount(key)` by pushing `state.visitCounts[key] ?? 0` as `.int` to `evalStack`
+4. `InkEngine` (or `TreeWalker`) increments `state.visitCounts[containerPath]` when entering a container whose `#f` flag has bit `0x1` set (`CountVisits`) — this is what populates the counts that `CNT?` reads
+
+The `"visit"` control command string in the spec is a **push** operation (pushes the current container's own visit count onto the stack); it is separate from `CNT?`. Inklecate-compiled stories use `#f: 1` on containers to trigger count tracking, not inline `"visit"` strings.
+
+#### D4 — Invisible defaults (S4)
+
+**Important**: inklecate v0.9 compiles `+ []` to `flg: 0`, NOT `flg: 8`. The `isInvisibleDefault` bit (0x8) in the spec is not reliably set by the current compiler. Detect an invisible default by the combination of ALL conditions:
+- Not once-only: `flags & 0x10 == 0`
+- No text content: `flags & (0x02 | 0x04) == 0`
+- No condition: `flags & 0x01 == 0`
+
+In the choice-collection loop the engine skips choices matching the above criteria from `state.currentChoices`, instead recording the first such target in a local `pendingInvisibleDefault: String?`. After the collection loop completes, if `state.currentChoices` is empty and `pendingInvisibleDefault` is non-nil, the engine applies that divert target and continues the step loop rather than returning to the caller — implementing the Ink specification's auto-divert behaviour.
+
+#### D5 — StoryState additions
+
+`StoryState` gains one new field: `chosenChoiceTargets: Set<String>`, declared `Codable` and decoded with `decodeIfPresent` so that existing saved states deserialise with an empty set default. `CodingKeys` is extended with the corresponding case.
+
+#### D6 — ChoiceData gains `flags`
+
+`ChoiceData` gains `flags: Int`, declared `Codable` with `decodeIfPresent` defaulting to `0`. This field is read by `chooseChoice(at:)` to determine whether to record the choice target in `chosenChoiceTargets`, and is set during choice collection from the in-flight choice node's flag value.
 
 ---
 
