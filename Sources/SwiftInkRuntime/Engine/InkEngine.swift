@@ -453,18 +453,34 @@ var state: StoryState
 
     private func applyDivert(target: String) {
         // Relative path (starts with ".").
-        // Only pure-ancestor gotos (all-caret paths like ".^.^") are resolved here;
-        // paths with further navigation after the carets (e.g. ".^.s", ".^.^.12.s")
-        // are call/return choice-text mechanisms — leave them as no-ops so the
-        // namedContent["s"] fallback in choice collection continues to work.
+        // Pure-ancestor gotos (all-caret paths like ".^.^") jump to an ancestor frame.
+        //
+        // Named-relative paths (e.g. ".^.b") come in two flavours:
+        //  1. Branch jumps: `{"->":".^.b"}` in a conditional-false branch — the `b`
+        //     namedContent is the branch body. No return address is on the returnStack.
+        //  2. Call/return text mechanisms: `{"->":".^.s"}` and `{"->":".^.^.N.s"}` —
+        //     a push-divert-target (`{"^->":"..."}`) always precedes these, so the
+        //     returnStack is non-empty. The `s` container uses the return address to
+        //     jump back after emitting choice text.
+        //
+        // Discriminator: only follow a named-relative path when returnStack is EMPTY
+        // (branch-jump case). When returnStack is non-empty it is a call/return
+        // mechanism — remain a no-op so the existing call/return machinery works.
         if target.hasPrefix(".") {
-            let parts = target.split(separator: ".").map(String.init)
-            let isPureAncestorGoto = !parts.isEmpty && parts.allSatisfy { $0 == "^" }
-            if isPureAncestorGoto, let resolved = resolveRelativePath(target) {
-                containerStack = [ContainerFrame(container: resolved.container, index: 0, pathFromRoot: resolved.path)]
-                state.pointer.containerPath = resolved.path
+            guard let (stackIndex, rest) = parseRelativePath(target) else { return }
+            if rest.isEmpty {
+                // Pure ancestor goto
+                let resolved = containerStack[stackIndex]
+                containerStack = [ContainerFrame(container: resolved.container, index: 0, pathFromRoot: resolved.pathFromRoot)]
+                state.pointer.containerPath = resolved.pathFromRoot
+            } else if state.returnStack.isEmpty,
+                      let destination = navigate(rest, from: containerStack[stackIndex].container) {
+                // Named-relative branch jump (no pending return address): navigate into namedContent
+                let resolvedPath = containerStack[stackIndex].pathFromRoot + rest
+                containerStack = [ContainerFrame(container: destination, index: 0, pathFromRoot: resolvedPath)]
+                state.pointer.containerPath = resolvedPath
             }
-            // Non-pure-caret or unresolvable: leave stack as-is (silent no-op)
+            // Call/return relative path (returnStack non-empty) or unresolvable: leave stack as-is
             return
         }
         let components = pathComponents(from: target)
