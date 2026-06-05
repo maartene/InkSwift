@@ -5,14 +5,15 @@ final class InkEngine {
     let root: ContainerNode
     private var lastCompletedLine: String = ""
 
-    // Container execution stack. Each frame tracks a container and the current index.
-    // Anonymous sub-containers are pushed as additional frames during execution.
+    // Container execution stack. Each frame tracks a container, its execution
+    // index, and its absolute path from root. Anonymous sub-containers are
+    // pushed as additional frames during execution.
     private var containerStack: [ContainerFrame] = []
 
     init(root: ContainerNode) {
         self.root = root
         self.state = StoryState()
-        containerStack = [ContainerFrame(container: root, index: 0)]
+        containerStack = [ContainerFrame(container: root, index: 0, pathFromRoot: [])]
     }
 
     // MARK: - Container frame management
@@ -20,10 +21,20 @@ final class InkEngine {
     private struct ContainerFrame {
         var container: ContainerNode
         var index: Int
+        // Absolute path from root. Each component is either a numeric child
+        // index (string-encoded) or a name from the parent's namedContent.
+        // Used for save/restore so any frame can be rebuilt by walking the path.
+        var pathFromRoot: [String]
     }
 
+    /// Push a child container that was reached by sequential descent from the
+    /// current top frame. The caller has already incremented the parent's index
+    /// past the child, so the entry index is `parent.index - 1`.
     private func enterContainer(_ container: ContainerNode) {
-        containerStack.append(ContainerFrame(container: container, index: 0))
+        let parentPath = containerStack.last?.pathFromRoot ?? []
+        let entryIndex = (containerStack.last?.index ?? 0) - 1
+        let path = parentPath + ["\(entryIndex)"]
+        containerStack.append(ContainerFrame(container: container, index: 0, pathFromRoot: path))
     }
 
     private func popContainer() {
@@ -87,15 +98,43 @@ final class InkEngine {
 
             containerStack[containerStack.count - 1].index += 1
 
-            // Choice text lives in the 's' named sub-container of the choice wrapper container.
-            // The str/divert/str mechanism that would normally populate the eval stack requires
-            // call/return semantics not yet implemented, so we read the text directly.
-            if case .choicePoint(let target, _) = currentChild {
-                let choiceText = containerStack.last?.container.namedContent["s"]?.children
-                    .compactMap { if case .text(let t) = $0 { return t } else { return nil } }
-                    .joined() ?? ""
+            if case .choicePoint(let target, let flags) = currentChild {
+                // flg=8 (bit 3): invisible default / gather fallback — never shown to user.
+                guard (flags & 8) == 0 else { continue }
+
+                // Choice text sources, in priority order:
+                //   1. Non-empty string on evalStack: placed there by preceding str/[text]/str
+                //      sequence (flg=20 bracket-only choices and correctly-executing flg=18/22).
+                //   2. namedContent["s"] in current container: direct read shortcut for flg=18/22
+                //      when the str/{->".^.s"}/str divert fails (relative path not yet resolved).
+                //   3. Accumulated output stream: fallback for hand-crafted / legacy JSON.
+                let choiceText: String
+                if case .string(let s) = state.evalStack.last, !s.isEmpty {
+                    state.evalStack.removeLast()
+                    choiceText = s
+                } else {
+                    if case .string(_) = state.evalStack.last { state.evalStack.removeLast() }
+                    if let sContainer = containerStack.last?.container.namedContent["s"] {
+                        choiceText = sContainer.children
+                            .compactMap { if case .text(let t) = $0 { return t } else { return nil } }
+                            .joined()
+                    } else {
+                        choiceText = state.outputStream.filter { $0 != "\n" }.joined()
+                    }
+                }
+
+                let index = state.currentChoices.count
+                // Capture the continuation stack NOW while containerStack still
+                // has the choice-collection context. This snapshot survives
+                // save/restore and lets chooseChoice resume even on a fresh engine.
+                let continuationFrames = buildContinuationFrames(forTarget: target)
                 state.currentChoices.append(
-                    ChoiceData(text: choiceText, targetPath: target, index: state.currentChoices.count)
+                    ChoiceData(
+                        text: choiceText,
+                        targetPath: target,
+                        continuationFrames: continuationFrames,
+                        index: index
+                    )
                 )
                 state.outputStream.removeAll { $0 != "\n" }
                 continue
@@ -167,6 +206,92 @@ final class InkEngine {
         return container
     }
 
+    /// Parse a relative Ink path into (stackIndex, remainingComponents).
+    /// Returns nil when the caret count would push the index out of bounds.
+    ///
+    /// Ink relative paths: `.^{N}.rest` where N carets each move one level up the
+    /// execution stack.  N=1 → `containerStack[count-1]`, N=2 → `containerStack[count-2]`, etc.
+    private func parseRelativePath(_ path: String) -> (stackIndex: Int, components: [String])? {
+        var components = path.split(separator: ".").map(String.init)
+        var caretCount = 0
+        while components.first == "^" {
+            caretCount += 1
+            components.removeFirst()
+        }
+        let stackIndex = containerStack.count - caretCount
+        guard stackIndex >= 0, stackIndex < containerStack.count else { return nil }
+        return (stackIndex: stackIndex, components: components)
+    }
+
+    /// Navigate `components` down from `container`, following numeric indices into
+    /// `.children` and named strings into `.namedContent`.
+    private func navigate(_ components: [String], from container: ContainerNode) -> ContainerNode? {
+        var current = container
+        for component in components {
+            if let index = Int(component) {
+                guard index < current.children.count,
+                      case .container(let child) = current.children[index]
+                else { return nil }
+                current = child
+            } else {
+                guard let named = current.namedContent[component] else { return nil }
+                current = named
+            }
+        }
+        return current
+    }
+
+    /// Walk an absolute `pathFromRoot` from the root container.
+    /// Used by save/restore (rebuilding stack frames) and choice resolution.
+    private func navigateAbsolute(_ path: [String]) -> ContainerNode? {
+        var current = root
+        for component in path {
+            if let index = Int(component) {
+                guard index < current.children.count,
+                      case .container(let child) = current.children[index]
+                else { return nil }
+                current = child
+            } else {
+                guard let named = current.namedContent[component] else { return nil }
+                current = named
+            }
+        }
+        return current
+    }
+
+    /// Build a serialisable continuation-stack snapshot for a choice target.
+    /// Captures the parent frames at choice-collection time plus a frame for the
+    /// continuation container itself. The snapshot is stored inside `ChoiceData`
+    /// so chooseChoice can resume even after a save/restore round-trip.
+    private func buildContinuationFrames(forTarget target: String) -> [ContainerStackFrame] {
+        if target.hasPrefix(".") {
+            // Relative path: derive parent frames from the current containerStack
+            // and append the continuation. The continuation's pathFromRoot is the
+            // parent's pathFromRoot plus the final name component of the target.
+            guard let (stackIndex, rest) = parseRelativePath(target),
+                  navigate(rest, from: containerStack[stackIndex].container) != nil
+            else { return [] }
+            let parentSnapshots = containerStack[0...stackIndex].map {
+                ContainerStackFrame(pathFromRoot: $0.pathFromRoot, executionIndex: $0.index)
+            }
+            let parentPath = containerStack[stackIndex].pathFromRoot
+            let continuationPath = parentPath + rest
+            return parentSnapshots + [ContainerStackFrame(pathFromRoot: continuationPath, executionIndex: 0)]
+        }
+        // Absolute path: continuation is a top-level lookup; no parent frames.
+        let components = pathComponents(from: target)
+        guard navigateAbsolute(components) != nil else { return [] }
+        return [ContainerStackFrame(pathFromRoot: components, executionIndex: 0)]
+    }
+
+    /// Resolve a relative path during execution (used by applyDivert).
+    private func resolveRelativePath(_ path: String) -> (container: ContainerNode, path: [String])? {
+        guard let (stackIndex, rest) = parseRelativePath(path) else { return nil }
+        guard let container = navigate(rest, from: containerStack[stackIndex].container) else { return nil }
+        let resolvedPath = containerStack[stackIndex].pathFromRoot + rest
+        return (container, resolvedPath)
+    }
+
     // MARK: - Divert handling
 
     /// Resolve an anchor path whose last component starts with "$".
@@ -186,16 +311,31 @@ final class InkEngine {
     }
 
     private func applyDivert(target: String) {
+        // Relative path (starts with ".").
+        // Only pure-ancestor gotos (all-caret paths like ".^.^") are resolved here;
+        // paths with further navigation after the carets (e.g. ".^.s", ".^.^.12.s")
+        // are call/return choice-text mechanisms — leave them as no-ops so the
+        // namedContent["s"] fallback in choice collection continues to work.
+        if target.hasPrefix(".") {
+            let parts = target.split(separator: ".").map(String.init)
+            let isPureAncestorGoto = !parts.isEmpty && parts.allSatisfy { $0 == "^" }
+            if isPureAncestorGoto, let resolved = resolveRelativePath(target) {
+                containerStack = [ContainerFrame(container: resolved.container, index: 0, pathFromRoot: resolved.path)]
+                state.pointer.containerPath = resolved.path
+            }
+            // Non-pure-caret or unresolvable: leave stack as-is (silent no-op)
+            return
+        }
         let components = pathComponents(from: target)
         if components.last?.hasPrefix("$") == true {
             let prefixComponents = Array(components.dropLast())
             if let (parentContainer, startIndex) = resolveAnchor(inPath: components) {
-                containerStack = [ContainerFrame(container: parentContainer, index: startIndex)]
+                containerStack = [ContainerFrame(container: parentContainer, index: startIndex, pathFromRoot: prefixComponents)]
                 state.pointer.containerPath = prefixComponents
             }
             // If unresolvable, leave stack as-is (silent no-op)
-        } else if let container = resolveNamedPath(components) {
-            containerStack = [ContainerFrame(container: container, index: 0)]
+        } else if let container = navigateAbsolute(components) {
+            containerStack = [ContainerFrame(container: container, index: 0, pathFromRoot: components)]
             state.pointer.containerPath = components
         }
         // If unresolvable, leave stack as-is (will exhaust and stop)
@@ -211,13 +351,23 @@ final class InkEngine {
         state.currentChoices = []
         state.currentTags = []
         state.isEnded = false
-        if !choice.targetPath.isEmpty {
-            let components = pathComponents(from: choice.targetPath)
-            if let container = resolveNamedPath(components) {
-                containerStack = [ContainerFrame(container: container, index: 0)]
-                state.pointer.containerPath = components
-                state.pointer.index = 0
-            }
+
+        // Install the continuation stack snapshot captured at choice-collection time.
+        // Falls back to absolute-path lookup of targetPath for hand-crafted/legacy JSON
+        // fixtures that may not have populated continuationFrames.
+        let frames: [ContainerStackFrame]
+        if !choice.continuationFrames.isEmpty {
+            frames = choice.continuationFrames
+        } else if navigateAbsolute(pathComponents(from: choice.targetPath)) != nil {
+            frames = [ContainerStackFrame(pathFromRoot: pathComponents(from: choice.targetPath), executionIndex: 0)]
+        } else {
+            frames = []
+        }
+        let rebuilt = framesFromSnapshots(frames)
+        if !rebuilt.isEmpty {
+            containerStack = rebuilt
+            state.pointer.containerPath = rebuilt.last?.pathFromRoot ?? []
+            state.pointer.index = 0
         }
     }
 
@@ -234,14 +384,11 @@ final class InkEngine {
         return try JSONEncoder().encode(snapshot)
     }
 
-    /// Builds a serialisable representation of the current containerStack.
-    /// Frame 0 is always the root (childIndex = nil). Subsequent frames record
-    /// the index into the parent's children array that was used to enter them.
-    /// Note: the parent incremented its index BEFORE entering, so the entry child is at parent.index - 1.
+    /// Snapshot the current containerStack as serialisable frames. Each frame's
+    /// pathFromRoot is preserved as-is so restoration can walk it from root.
     private func buildStackFrameSnapshot() -> [ContainerStackFrame] {
-        return containerStack.enumerated().map { depth, frame in
-            let childIndex = depth == 0 ? nil : Optional(containerStack[depth - 1].index - 1)
-            return ContainerStackFrame(childIndex: childIndex, executionIndex: frame.index)
+        return containerStack.map { frame in
+            ContainerStackFrame(pathFromRoot: frame.pathFromRoot, executionIndex: frame.index)
         }
     }
 
@@ -256,45 +403,41 @@ final class InkEngine {
     }
 
     /// Rebuild containerStack from state.stackFrames after a state restore.
-    /// Falls back to the legacy state.pointer approach when stackFrames is empty
-    /// (for backwards compatibility with states saved before this field was added).
+    /// Falls back to a single frame derived from state.pointer for restored
+    /// states with no stackFrames (e.g. legacy fixtures or fresh defaults).
     private func rebuildContainerStack() {
-        guard !state.stackFrames.isEmpty else {
-            containerStack = [ContainerFrame(container: legacyRestoredContainer(), index: state.pointer.index)]
+        if state.stackFrames.isEmpty {
+            let baseContainer = legacyRestoredContainer()
+            containerStack = [ContainerFrame(
+                container: baseContainer,
+                index: state.pointer.index,
+                pathFromRoot: state.pointer.containerPath
+            )]
             return
         }
-        containerStack = rebuildStackFromFrames()
+        containerStack = framesFromSnapshots(state.stackFrames)
     }
 
-    /// Resolve the container for a legacy (pre-stackFrames) save file.
+    /// Resolve a single container from `state.pointer.containerPath`, used as
+    /// the legacy fallback when no stackFrames are present.
     private func legacyRestoredContainer() -> ContainerNode {
         guard !state.pointer.containerPath.isEmpty else { return root }
-        return resolveNamedPath(state.pointer.containerPath) ?? root
+        return navigateAbsolute(state.pointer.containerPath) ?? root
     }
 
-    /// Reconstruct a ContainerFrame stack from the serialised stack frames.
-    /// Frame 0 uses state.pointer.containerPath to resolve its container so that
-    /// states saved after a divert (where frame 0 is a non-root container) restore correctly.
-    private func rebuildStackFromFrames() -> [ContainerFrame] {
+    /// Walk each stack-frame snapshot's pathFromRoot from root to rebuild the
+    /// in-memory ContainerFrame stack. Frames that fail to resolve truncate
+    /// the stack at that depth.
+    private func framesFromSnapshots(_ snapshots: [ContainerStackFrame]) -> [ContainerFrame] {
         var rebuilt: [ContainerFrame] = []
-        for (depth, frame) in state.stackFrames.enumerated() {
-            if depth == 0 {
-                let baseContainer: ContainerNode
-                if !state.pointer.containerPath.isEmpty {
-                    baseContainer = resolveNamedPath(state.pointer.containerPath) ?? root
-                } else {
-                    baseContainer = root
-                }
-                rebuilt.append(ContainerFrame(container: baseContainer, index: frame.executionIndex))
-            } else if let childIdx = frame.childIndex {
-                let parentContainer = rebuilt[depth - 1].container
-                guard childIdx < parentContainer.children.count,
-                      case .container(let child) = parentContainer.children[childIdx] else {
-                    break  // Unresolvable child — truncate and stop
-                }
-                rebuilt.append(ContainerFrame(container: child, index: frame.executionIndex))
-            }
+        for snapshot in snapshots {
+            guard let container = navigateAbsolute(snapshot.pathFromRoot) else { break }
+            rebuilt.append(ContainerFrame(
+                container: container,
+                index: snapshot.executionIndex,
+                pathFromRoot: snapshot.pathFromRoot
+            ))
         }
-        return rebuilt.isEmpty ? [ContainerFrame(container: root, index: 0)] : rebuilt
+        return rebuilt.isEmpty ? [ContainerFrame(container: root, index: 0, pathFromRoot: [])] : rebuilt
     }
 }

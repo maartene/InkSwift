@@ -207,6 +207,41 @@ import InkSwift
         #expect(lines.contains { $0.contains("They lived happily ever after.") })
     }
 
+    // GIVEN: a story with flg=20 (bracket-only) choices using str/str text accumulation
+    // WHEN: continue() reaches the choice points
+    // THEN: each choice exposes the bracketed text — not empty string
+    // Regression for: choice shortcut reading namedContent["s"] only (flg=20 has no "s" container)
+
+    @Test
+    func `flg-20 bracket-only choices expose correct text from evalStack`() throws {
+        let json = #"""
+        {"inkVersion":21,"root":[["ev","str","^Option A ","/str","/ev",{"*":".^.c-0","flg":20},"ev","str","^Option B ","/str","/ev",{"*":".^.c-1","flg":20},{"c-0":["^You chose A.","\n","done",{"#f":5}],"c-1":["^You chose B.","\n","done",{"#f":5}]}],"done",{"#f":1}],"listDefs":{}}
+        """#
+        let story = try Story(json: json)
+        while story.canContinue { _ = story.`continue`() }
+        #expect(story.currentChoices.count == 2)
+        #expect(story.currentChoices[0].text == "Option A ")
+        #expect(story.currentChoices[1].text == "Option B ")
+    }
+
+    // GIVEN: a story with flg=20 choices whose targets are relative paths (.^.c-N)
+    // WHEN: a choice is selected and continue() is called
+    // THEN: the continuation text from the chosen branch is produced
+    // Regression for: resolveNamedPath silently returning nil for "^" path component
+
+    @Test
+    func `choosing a flg-20 choice with relative target path produces continuation text`() throws {
+        let json = #"""
+        {"inkVersion":21,"root":[["ev","str","^Option A ","/str","/ev",{"*":".^.c-0","flg":20},"ev","str","^Option B ","/str","/ev",{"*":".^.c-1","flg":20},{"c-0":["^You chose A.","\n","done",{"#f":5}],"c-1":["^You chose B.","\n","done",{"#f":5}]}],"done",{"#f":1}],"listDefs":{}}
+        """#
+        let story = try Story(json: json)
+        while story.canContinue { _ = story.`continue`() }
+        try #require(story.currentChoices.count == 2)
+        try story.chooseChoice(at: 1)
+        let text = story.`continue`()
+        #expect(text.contains("You chose B."))
+    }
+
     // GIVEN: a story continued to its end
     // WHEN: canContinue is false and currentChoices is empty
     // THEN: the story is complete without any pending error

@@ -41,7 +41,7 @@ struct StoryStateTests {
         state.variablesState = ["score": .int(42), "name": .string("Ink")]
         state.visitCounts = ["knot1": 2]
         state.currentTags = ["author: Maarten"]
-        state.currentChoices = [ChoiceData(text: "Go left", targetPath: "root.left", index: 0)]
+        state.currentChoices = [ChoiceData(text: "Go left", targetPath: "root.left", continuationFrames: [], index: 0)]
         state.isEnded = true
 
         let encoder = JSONEncoder()

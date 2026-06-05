@@ -37,8 +37,8 @@ struct TreeWalker {
         case .pushDivertTarget(let path):
             state.returnStack.append(path)
 
-        case .choicePoint(let target, let flags):
-            handleChoicePoint(target: target, flags: flags, state: &state)
+        case .choicePoint:
+            break  // handled by InkEngine before dispatchNode is reached
 
         case .variableAssignment(let name, _):
             handleVariableAssignment(name: name, state: &state)
@@ -141,18 +141,6 @@ struct TreeWalker {
         let components = target.split(separator: ".").map(String.init)
         state.pointer.containerPath = components
         state.pointer.index = 0
-    }
-
-    // MARK: - Choice point handling
-
-    private func handleChoicePoint(target: String, flags: Int, state: inout StoryState) {
-        // Collect current outputStream content as choice label
-        let choiceText = state.outputStream.filter { $0 != "\n" }.joined()
-        let choiceIndex = state.currentChoices.count
-        let choice = ChoiceData(text: choiceText, targetPath: target, index: choiceIndex)
-        state.currentChoices.append(choice)
-        // Clear accumulated output that was used as choice text
-        state.outputStream.removeAll { $0 != "\n" }
     }
 
     // MARK: - Variable handling

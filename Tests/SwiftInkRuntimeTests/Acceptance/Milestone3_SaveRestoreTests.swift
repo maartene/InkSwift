@@ -116,6 +116,45 @@ import Foundation
         #expect(lines.contains { $0.contains("They lived happily ever after.") })
     }
 
+    // GIVEN: a real-compiler story where a choice with a relative path (.^.^.c-N) is selected
+    //        and the chosen continuation lives inside a NAMED parent container
+    // WHEN: state is saved immediately after chooseChoice and restored on a fresh Story
+    // THEN: the restored story can continue and produces the choice's continuation text
+    // Regression for: rebuildStackFromFrames using childIndex into parent.children for the
+    // top frame, even though chooseChoice entered the continuation via parent.namedContent.
+    // This is what InkTest's blueprint+state-per-iteration loop exercises.
+
+    @Test
+    func `save-restore after chooseChoice with nested named continuation produces continuation text`() throws {
+        // Cass shop fragment: cass_opening is named (root[0] itself is cass_opening),
+        // and c-2 (Order a coffee) lives at root[0].namedContent["c-2"] — i.e. nested.
+        // Choice target ".^.^.c-2" must resolve via parent.namedContent, not parent.children[16].
+        let json = #"""
+        {"inkVersion":21,"root":[["^Intro line.","\n",["ev","str","^Ask question.","/str","/ev",{"*":".^.c-0","flg":20},["ev",{"^->":"0.cass_opening.6.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":".^.^.c-1","flg":2},{"s":["^Order coffee.",{"->":"$r","var":true},null]}],{"c-0":["\n","^You asked.","\n",{"->":".^.^"},{"->":"0.g-0"},{"#f":5}],"c-1":["ev",{"^->":"0.cass_opening.c-1.$r2"},"/ev",{"temp=":"$r"},{"->":".^.^.6.s"},[{"#n":"$r2"}],"\n","^Here you go.","\n",{"->":".^.^"},{"->":"0.g-0"},null],"#n":"cass_opening"}],{"g-0":["end",["done",{"#n":"g-1"}],null]}],"done",null],"listDefs":{}}
+        """#
+
+        // Simulate InkTest: save after chooseChoice, restore in fresh story.
+        let story = try Story(json: json)
+        while story.canContinue { _ = story.`continue`() }
+        try #require(story.currentChoices.count == 2)
+        try story.chooseChoice(at: 1)  // Order coffee
+        let savedData = try story.saveState()
+
+        let restored = try Story(json: json)
+        try restored.restoreState(savedData)
+
+        var lines: [String] = []
+        var safety = 0
+        while restored.canContinue && safety < 50 {
+            let line = restored.`continue`()
+            if !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                lines.append(line)
+            }
+            safety += 1
+        }
+        #expect(lines.contains { $0.contains("Here you go.") })
+    }
+
     // GIVEN: a story mid-playback with state saved twice at the same point
     // WHEN: both snapshots are restored and continued
     // THEN: both produce identical continuation state

@@ -167,6 +167,10 @@ extension InkValue {
 struct ChoiceData: Codable {
     let text: String
     let targetPath: String
+    /// Stack snapshot to install when this choice is selected. Captured at
+    /// choice-collection time so the continuation can be resumed even after a
+    /// save/restore round-trip (when in-memory resolution caches are gone).
+    let continuationFrames: [ContainerStackFrame]
     let index: Int
 }
 
@@ -176,11 +180,12 @@ struct StoryPointer: Codable {
 }
 
 /// One frame of the container execution stack, serialised for save/restore.
-/// `childIndex` is the index into the parent's children array used to enter
-/// this frame (nil for the root frame). `executionIndex` is the next-to-process
-/// position within the container at this depth.
+/// `pathFromRoot` is the absolute path from root to this frame's container:
+/// each component is either a numeric index into the parent's `children`
+/// array, or a name lookup into the parent's `namedContent`. Empty array =
+/// root. `executionIndex` is the next-to-process position within the container.
 struct ContainerStackFrame: Codable {
-    var childIndex: Int?   // nil = root container; otherwise parent.children[childIndex]
+    var pathFromRoot: [String]
     var executionIndex: Int
 }
 
