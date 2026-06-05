@@ -64,6 +64,12 @@ let package = Package(
                 "slice02-conditional.ink",
                 "slice03-read-counts.ink",
                 "slice04-invisible-defaults.ink",
+                "slice-c1-inline-conditionals.ink",
+                "slice-c2-block-conditionals.ink",
+                "slice-c3-functions.ink",
+                "slice-t1-tunnels.ink",
+                "slice-t2-nested-tunnels.ink",
+                "slice-t3-ref-params.ink",
             ],
             resources: [
                 .process("test.ink.json"),
@@ -71,6 +77,13 @@ let package = Package(
                 .process("slice02-conditional.ink.json"),
                 .process("slice03-read-counts.ink.json"),
                 .process("slice04-invisible-defaults.ink.json"),
+                .process("slice-c1-inline-conditionals.ink.json"),
+                .process("slice-c2-block-conditionals.ink.json"),
+                .process("slice-c3-functions.ink.json"),
+                .process("slice-t1-tunnels.ink.json"),
+                .process("slice-t2-nested-tunnels.ink.json"),
+                .process("slice-t3-ref-params.ink.json"),
+                .process("TheIntercept.ink.json"),
             ]
         ),
     ]
