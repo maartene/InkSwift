@@ -114,6 +114,11 @@ struct TreeWalker {
             state.stringAccumulator = ""
             state.evalStack.append(.string(accumulated))
 
+        case "du":
+            if let top = state.evalStack.last {
+                state.evalStack.append(top)
+            }
+
         case "pop":
             _ = state.evalStack.popLast()
 
