@@ -172,6 +172,39 @@ struct ChoiceData: Codable {
     /// save/restore round-trip (when in-memory resolution caches are gone).
     let continuationFrames: [ContainerStackFrame]
     let index: Int
+    /// Raw choice flags from the Ink JSON (bit 0 = once-only, bit 1 = invisible default, etc.).
+    /// Decoded with `decodeIfPresent` so legacy saves without this key default to 0.
+    let flags: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case text, targetPath, continuationFrames, index, flags
+    }
+
+    init(text: String, targetPath: String, continuationFrames: [ContainerStackFrame], index: Int, flags: Int = 0) {
+        self.text = text
+        self.targetPath = targetPath
+        self.continuationFrames = continuationFrames
+        self.index = index
+        self.flags = flags
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        text               = try container.decode(String.self,               forKey: .text)
+        targetPath         = try container.decode(String.self,               forKey: .targetPath)
+        continuationFrames = try container.decode([ContainerStackFrame].self, forKey: .continuationFrames)
+        index              = try container.decode(Int.self,                  forKey: .index)
+        flags              = try container.decodeIfPresent(Int.self,         forKey: .flags) ?? 0
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(text,               forKey: .text)
+        try container.encode(targetPath,         forKey: .targetPath)
+        try container.encode(continuationFrames, forKey: .continuationFrames)
+        try container.encode(index,              forKey: .index)
+        try container.encode(flags,              forKey: .flags)
+    }
 }
 
 struct StoryPointer: Codable {
@@ -241,6 +274,10 @@ struct StoryState: Codable {
     // Call/return stack: push-divert-target nodes write here; variable-divert nodes pop from here.
     var returnStack: [String]
 
+    /// Paths of choices that have already been taken (once-only suppression).
+    /// Serialised as a sorted array for deterministic JSON output.
+    var chosenChoiceTargets: Set<String>
+
     init() {
         pointer = StoryPointer(containerPath: [], index: 0)
         outputStream = []
@@ -257,6 +294,7 @@ struct StoryState: Codable {
         lastCompletedLine = ""
         stackFrames = []
         returnStack = []
+        chosenChoiceTargets = []
     }
 
     // MARK: - Codable
@@ -266,6 +304,7 @@ struct StoryState: Codable {
         case isEnded, currentChoices, evalStack
         case inTagMode, tagAccumulator, inStringMode, stringAccumulator
         case lastCompletedLine, stackFrames, returnStack
+        case chosenChoiceTargets
     }
 
     init(from decoder: Decoder) throws {
@@ -285,6 +324,8 @@ struct StoryState: Codable {
         lastCompletedLine = try container.decode(String.self,               forKey: .lastCompletedLine)
         stackFrames       = try container.decode([ContainerStackFrame].self, forKey: .stackFrames)
         returnStack       = try container.decodeIfPresent([String].self,    forKey: .returnStack) ?? []
+        let chosenTargetsArray = try container.decodeIfPresent([String].self, forKey: .chosenChoiceTargets) ?? []
+        chosenChoiceTargets = Set(chosenTargetsArray)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -304,5 +345,6 @@ struct StoryState: Codable {
         try container.encode(lastCompletedLine, forKey: .lastCompletedLine)
         try container.encode(stackFrames,       forKey: .stackFrames)
         try container.encode(returnStack,       forKey: .returnStack)
+        try container.encode(Array(chosenChoiceTargets).sorted(), forKey: .chosenChoiceTargets)
     }
 }
