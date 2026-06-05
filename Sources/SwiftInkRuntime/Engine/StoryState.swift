@@ -184,9 +184,29 @@ struct StoryPointer: Codable {
 /// each component is either a numeric index into the parent's `children`
 /// array, or a name lookup into the parent's `namedContent`. Empty array =
 /// root. `executionIndex` is the next-to-process position within the container.
+/// `isChoiceContinuationRoot` marks frames installed by chooseChoice so the
+/// engine stops walking when the continuation exhausts (one-level callstack).
 struct ContainerStackFrame: Codable {
     var pathFromRoot: [String]
     var executionIndex: Int
+    var isChoiceContinuationRoot: Bool
+
+    init(pathFromRoot: [String], executionIndex: Int, isChoiceContinuationRoot: Bool = false) {
+        self.pathFromRoot = pathFromRoot
+        self.executionIndex = executionIndex
+        self.isChoiceContinuationRoot = isChoiceContinuationRoot
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case pathFromRoot, executionIndex, isChoiceContinuationRoot
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        pathFromRoot = try container.decode([String].self, forKey: .pathFromRoot)
+        executionIndex = try container.decode(Int.self, forKey: .executionIndex)
+        isChoiceContinuationRoot = try container.decodeIfPresent(Bool.self, forKey: .isChoiceContinuationRoot) ?? false
+    }
 }
 
 // MARK: - StoryState

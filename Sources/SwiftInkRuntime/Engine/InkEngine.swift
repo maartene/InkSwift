@@ -25,6 +25,11 @@ final class InkEngine {
         // index (string-encoded) or a name from the parent's namedContent.
         // Used for save/restore so any frame can be rebuilt by walking the path.
         var pathFromRoot: [String]
+        // True for the top frame installed by chooseChoice. When such a frame
+        // exhausts naturally, the engine stops rather than popping into the
+        // parent — modelling a single-level callstack so the choice's
+        // continuation doesn't fall through into the parent's remaining content.
+        var isChoiceContinuationRoot: Bool = false
     }
 
     /// Push a child container that was reached by sequential descent from the
@@ -83,6 +88,10 @@ final class InkEngine {
             guard let top = containerStack.last else { break }
 
             if top.index >= top.container.children.count {
+                // A chosen-choice continuation acts as a callstack root: when it
+                // exhausts, the engine stops rather than popping into the parent's
+                // remaining content (which would re-generate the outer choices).
+                if top.isChoiceContinuationRoot { break }
                 popContainer()
                 if containerStack.isEmpty { break }
                 continue
@@ -143,11 +152,18 @@ final class InkEngine {
             walker.dispatchNode(currentChild, state: &state)
 
             if case .divert(let target, _, let isVariable) = currentChild {
+                // Flush any buffered output as a line BEFORE the divert collapses
+                // the stack — Ink commonly emits `text + divert` with the implicit
+                // newline placed AFTER the divert. Without this flush, content
+                // like the inner choice continuation's response text gets wiped
+                // by the choice-collection clear in the divert target.
+                let flushedLine = flushRemainingOutput()
                 if isVariable, !state.returnStack.isEmpty {
                     applyDivert(target: state.returnStack.removeLast())
                 } else if !isVariable {
                     applyDivert(target: target)
                 }
+                if let line = flushedLine { return line }
                 continue
             }
 
@@ -363,8 +379,12 @@ final class InkEngine {
         } else {
             frames = []
         }
-        let rebuilt = framesFromSnapshots(frames)
+        var rebuilt = framesFromSnapshots(frames)
         if !rebuilt.isEmpty {
+            // Mark the top frame as the callstack root for this choice. When the
+            // continuation exhausts, the engine stops instead of popping into the
+            // parent and re-generating the outer choices.
+            rebuilt[rebuilt.count - 1].isChoiceContinuationRoot = true
             containerStack = rebuilt
             state.pointer.containerPath = rebuilt.last?.pathFromRoot ?? []
             state.pointer.index = 0
@@ -388,7 +408,11 @@ final class InkEngine {
     /// pathFromRoot is preserved as-is so restoration can walk it from root.
     private func buildStackFrameSnapshot() -> [ContainerStackFrame] {
         return containerStack.map { frame in
-            ContainerStackFrame(pathFromRoot: frame.pathFromRoot, executionIndex: frame.index)
+            ContainerStackFrame(
+                pathFromRoot: frame.pathFromRoot,
+                executionIndex: frame.index,
+                isChoiceContinuationRoot: frame.isChoiceContinuationRoot
+            )
         }
     }
 
@@ -435,7 +459,8 @@ final class InkEngine {
             rebuilt.append(ContainerFrame(
                 container: container,
                 index: snapshot.executionIndex,
-                pathFromRoot: snapshot.pathFromRoot
+                pathFromRoot: snapshot.pathFromRoot,
+                isChoiceContinuationRoot: snapshot.isChoiceContinuationRoot
             ))
         }
         return rebuilt.isEmpty ? [ContainerFrame(container: root, index: 0, pathFromRoot: [])] : rebuilt

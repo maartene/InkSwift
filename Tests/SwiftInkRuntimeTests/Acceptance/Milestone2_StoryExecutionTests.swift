@@ -242,6 +242,62 @@ import InkSwift
         #expect(text.contains("You chose B."))
     }
 
+    // GIVEN: a real-compiler story with nested choices (`* [...] * * [...]`)
+    // WHEN: the outer choice is selected and the story is continued through the
+    //       inner choice generation
+    // THEN: only the inner choices are exposed — the outer container's remaining
+    //       choices are NOT re-generated as siblings of the inner choices
+    // Regression for: containerStack falling through into the outer container
+    // after the chosen-continuation frame exhausts.
+
+    @Test
+    func `picking an outer choice yields only the inner choices not outer ones too`() throws {
+        let json = #"""
+        {"inkVersion":21,"root":[["^Intro line.","\n",["ev","str","^Ask question.","/str","/ev",{"*":".^.c-0","flg":20},"ev","str","^Ask another.","/str","/ev",{"*":".^.c-1","flg":20},["ev",{"^->":"0.cass_opening.12.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":".^.^.c-2","flg":2},{"s":["^Sticky option.",{"->":"$r","var":true},null]}],{"c-0":["\n","^Inner response.","\n",[["ev","str","^Pick this inner.","/str","/ev",{"*":".^.c-0","flg":20},"ev","str","^Pick that inner.","/str","/ev",{"*":".^.c-1","flg":20},{"c-0":["\n","^You picked this. ",{"->":".^.^"},"\n",{"->":"0.g-0"},{"#f":5}],"c-1":["\n","^You picked that.","\n","end",{"->":"0.g-0"},{"#f":5}],"#n":"inner_gather"}],null],{"#f":5}],"c-1":["\n","^Another response.","\n",{"->":".^.^"},{"->":"0.g-0"},{"#f":5}],"c-2":["ev",{"^->":"0.cass_opening.c-2.$r2"},"/ev",{"temp=":"$r"},{"->":".^.^.12.s"},[{"#n":"$r2"}],"\n","^Sticky response.","\n",{"->":".^.^"},{"->":"0.g-0"},null],"#n":"cass_opening"}],{"g-0":["end",["done",{"#n":"g-1"}],null]}],"done",null],"listDefs":{}}
+        """#
+        let story = try Story(json: json)
+        while story.canContinue { _ = story.`continue`() }
+        try #require(story.currentChoices.count == 3)
+        try story.chooseChoice(at: 0)  // Ask question (outer)
+        // Drain any continuation text the choice produces.
+        while story.canContinue { _ = story.`continue`() }
+        let texts = story.currentChoices.map { $0.text }
+        #expect(texts == ["Pick this inner.", "Pick that inner."])
+    }
+
+    // GIVEN: a nested inner choice whose continuation has text immediately followed
+    //        by a relative divert (`text + {"->": ".^.^"}` with no `\n` between)
+    // WHEN: that inner choice is selected and continue() is called
+    // THEN: the continuation text is produced as a line, not clobbered by the
+    //       choice-point clearing of outputStream after the divert
+    // Regression for: outputStream containing pending text getting wiped by the
+    // choice-collection clear when a divert leads straight into a choice generator.
+
+    @Test
+    func `picking an inner choice with divert-after-text emits the text before re-prompt`() throws {
+        let json = #"""
+        {"inkVersion":21,"root":[["^Intro line.","\n",["ev","str","^Ask question.","/str","/ev",{"*":".^.c-0","flg":20},"ev","str","^Ask another.","/str","/ev",{"*":".^.c-1","flg":20},["ev",{"^->":"0.cass_opening.12.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":".^.^.c-2","flg":2},{"s":["^Sticky option.",{"->":"$r","var":true},null]}],{"c-0":["\n","^Inner response.","\n",[["ev","str","^Pick this inner.","/str","/ev",{"*":".^.c-0","flg":20},"ev","str","^Pick that inner.","/str","/ev",{"*":".^.c-1","flg":20},{"c-0":["\n","^You picked this. ",{"->":".^.^"},"\n",{"->":"0.g-0"},{"#f":5}],"c-1":["\n","^You picked that.","\n","end",{"->":"0.g-0"},{"#f":5}],"#n":"inner_gather"}],null],{"#f":5}],"c-1":["\n","^Another response.","\n",{"->":".^.^"},{"->":"0.g-0"},{"#f":5}],"c-2":["ev",{"^->":"0.cass_opening.c-2.$r2"},"/ev",{"temp=":"$r"},{"->":".^.^.12.s"},[{"#n":"$r2"}],"\n","^Sticky response.","\n",{"->":".^.^"},{"->":"0.g-0"},null],"#n":"cass_opening"}],{"g-0":["end",["done",{"#n":"g-1"}],null]}],"done",null],"listDefs":{}}
+        """#
+        let story = try Story(json: json)
+        while story.canContinue { _ = story.`continue`() }
+        try story.chooseChoice(at: 0)  // outer Ask question
+        var lines: [String] = []
+        while story.canContinue {
+            let line = story.`continue`()
+            if !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                lines.append(line)
+            }
+        }
+        try story.chooseChoice(at: 0)  // inner Pick this — text then divert to inner_gather
+        while story.canContinue {
+            let line = story.`continue`()
+            if !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                lines.append(line)
+            }
+        }
+        #expect(lines.contains { $0.contains("You picked this.") })
+    }
+
     // GIVEN: a story continued to its end
     // WHEN: canContinue is false and currentChoices is empty
     // THEN: the story is complete without any pending error
