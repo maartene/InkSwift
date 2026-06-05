@@ -84,6 +84,10 @@ final class InkEngine {
     /// Returns nil when there is no more output to produce.
     func stepToNextLine() -> String? {
         let walker = TreeWalker()
+        // Resolved absolute path components for an invisible default target. Set
+        // while the choice-collection container is still on the stack (so relative
+        // path resolution succeeds), checked after the container exhausts.
+        var pendingInvisibleDefaultPath: [String]? = nil
         while !state.isEnded {
             guard let top = containerStack.last else { break }
 
@@ -93,6 +97,15 @@ final class InkEngine {
                 // remaining content (which would re-generate the outer choices).
                 if top.isChoiceContinuationRoot { break }
                 popContainer()
+                // After popping any container: if an invisible default was collected
+                // and no visible choices were surfaced, auto-divert now rather than
+                // falling through into later content (e.g. a "done" node at root).
+                if state.currentChoices.isEmpty, let autoPath = pendingInvisibleDefaultPath {
+                    pendingInvisibleDefaultPath = nil
+                    let absoluteTarget = autoPath.joined(separator: ".")
+                    applyDivert(target: absoluteTarget)
+                    continue
+                }
                 if containerStack.isEmpty { break }
                 continue
             }
@@ -110,6 +123,18 @@ final class InkEngine {
             if case .choicePoint(let target, let flags) = currentChild {
                 // flg=8 (bit 3): invisible default / gather fallback — never shown to user.
                 guard (flags & 8) == 0 else { continue }
+
+                // Invisible default predicate: flags & 0x17 == 0 means none of the
+                // visible-choice bits are set (no condition, no text, not once-only).
+                // inklecate v0.9 compiles `+ [] -> target` as flg:0, so bit 3 alone
+                // is insufficient. Resolve the path NOW while the current container
+                // is still on the stack, then store for auto-divert after exhaustion.
+                if (flags & 0x17) == 0 {
+                    if pendingInvisibleDefaultPath == nil {
+                        pendingInvisibleDefaultPath = resolveInvisibleDefaultPath(target)
+                    }
+                    continue
+                }
 
                 // flg=0x01 (bit 0): hasCondition — a preceding ev.../ev block has left a
                 // boolean on the evalStack. Pop it unconditionally to keep the stack
@@ -304,6 +329,21 @@ final class InkEngine {
             }
         }
         return current
+    }
+
+    /// Resolve an invisible-default choice target to its absolute path components
+    /// while the choice-collection container is still on the stack. Returns nil
+    /// when the path cannot be resolved.
+    private func resolveInvisibleDefaultPath(_ target: String) -> [String]? {
+        if target.hasPrefix(".") {
+            guard let (stackIndex, rest) = parseRelativePath(target),
+                  navigate(rest, from: containerStack[stackIndex].container) != nil
+            else { return nil }
+            return containerStack[stackIndex].pathFromRoot + rest
+        }
+        let components = pathComponents(from: target)
+        guard navigateAbsolute(components) != nil else { return nil }
+        return components
     }
 
     /// Resolve a choice target to an absolute dotted-path string suitable for
