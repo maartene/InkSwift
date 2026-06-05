@@ -1,0 +1,182 @@
+{
+  "roadmap": {
+    "project_id": "tier2-choice-mechanics",
+    "created_at": "2026-06-05T10:07:29Z",
+    "total_steps": 6,
+    "phases": 2
+  },
+  "phases": [
+    {
+      "id": "01",
+      "name": "State and Decoder Foundation",
+      "description": "Extend StoryState and ChoiceData for Tier 2 state fields; add NodeKind.readCount and InkDecoder CNT? handler.",
+      "steps": [
+        {
+          "id": "01-01",
+          "name": "Add chosenChoiceTargets and ChoiceData flags",
+          "description": "Extend StoryState with chosenChoiceTargets: Set<String> (Codable, decodeIfPresent default []) and extend ChoiceData with flags: Int (Codable, decodeIfPresent default 0). Extend CodingKeys on both types. No engine behaviour changes in this step.",
+          "criteria": "StoryState encodes and decodes chosenChoiceTargets as Set<String> using decodeIfPresent defaulting to []; ChoiceData has flags: Int decoded with decodeIfPresent defaulting to 0; existing StoryState JSON without chosenChoiceTargets round-trips without error",
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Milestone4_Tier2ChoiceMechanicsTests.swift",
+          "scenario_name": "Slice 01 — Once-Only and Sticky Choices",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Engine/StoryState.swift"
+          ],
+          "implementation_notes": "Add chosenChoiceTargets: Set<String> field to StoryState struct with init value []. Add chosenChoiceTargets case to CodingKeys enum. In init(from:) use decodeIfPresent([String].self) then convert to Set, defaulting to []. In encode(to:) encode as sorted Array for deterministic output. Add flags: Int to ChoiceData struct with CodingKeys addition; use decodeIfPresent defaulting to 0. Both changes must be backward-compatible with pre-Tier-2 saved states.",
+          "estimated_hours": 1,
+          "quality_gates": [
+            "swift build succeeds with no new warnings",
+            "existing StoryState Codable round-trip tests pass",
+            "StoryState decoded from JSON lacking chosenChoiceTargets field does not throw"
+          ],
+          "deliverables": [
+            "StoryState.chosenChoiceTargets: Set<String> field with Codable support",
+            "ChoiceData.flags: Int field with Codable support",
+            "Backward-compatible decode for both new fields"
+          ]
+        },
+        {
+          "id": "01-02",
+          "name": "Add NodeKind.readCount and InkDecoder CNT? handler",
+          "description": "Add .readCount(String) case to NodeKind enum. Update InkDecoder.classifyDict to match {CNT?: key} dict nodes before the unknown-fallback path, returning .readCount(key) instead of falling through to .controlCommand(\"CNT?\").",
+          "criteria": "A {\"CNT?\": \"cafe\"} dict node is classified as .readCount(\"cafe\") not .controlCommand(\"CNT?\"); all existing decoder tests still pass",
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Milestone4_Tier2ChoiceMechanicsTests.swift",
+          "scenario_name": "Slice 03 — Visit Count Logic",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Decoder/NodeKind.swift",
+            "Sources/SwiftInkRuntime/Decoder/InkDecoder.swift"
+          ],
+          "implementation_notes": "In NodeKind.swift add case readCount(String) after the existing cases. In InkDecoder.classifyDict, add a guard/if before the fallback: if the dict has exactly one key \"CNT?\" and its value is a String, return .readCount(value). This guard must appear before any generic fallback that would produce .controlCommand. The classifyDict method is called from classify(_:) for [String: Any] elements.",
+          "estimated_hours": 1,
+          "quality_gates": [
+            "swift build succeeds with no new warnings",
+            "NodeKind switch exhaustiveness check passes (all existing dispatch sites compile)",
+            "Existing decoder unit tests pass unmodified"
+          ],
+          "deliverables": [
+            "NodeKind.readCount(String) case",
+            "InkDecoder.classifyDict CNT? branch returning .readCount(key)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "02",
+      "name": "Engine Logic",
+      "description": "Implement once-only suppression, conditional gating, visit count increment and read, and invisible default auto-divert in InkEngine and TreeWalker.",
+      "steps": [
+        {
+          "id": "02-01",
+          "name": "Once-only suppression in collection loop",
+          "description": "In InkEngine.stepToNextLine choice-collection loop, skip a choice when flags & 0x10 != 0 AND target path is in state.chosenChoiceTargets. In chooseChoice(at:), record the target path in state.chosenChoiceTargets for every choice whose flags & 0x10 != 0. Set ChoiceData.flags from the in-flight choice node during collection.",
+          "criteria": "Once-only choice that has been picked is absent from currentChoices when story loops back; sticky choices remain present after being picked; picking one once-only removes only that choice not others; all Slice 01 acceptance tests pass",
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Milestone4_Tier2ChoiceMechanicsTests.swift",
+          "scenario_name": "Slice 01 — Once-Only and Sticky Choices",
+          "deps": ["01-01"],
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift"
+          ],
+          "implementation_notes": "During choice collection, capture the choicePoint node's flags value and store it in ChoiceData.flags. Add suppression guard: if (flags & 0x10 != 0) && state.chosenChoiceTargets.contains(targetPath) { skip }. In chooseChoice(at:), after resolving the chosen ChoiceData, if choiceData.flags & 0x10 != 0 insert choiceData.targetPath into state.chosenChoiceTargets. chosenChoiceTargets is already Codable (01-01), so suppression survives save/restore automatically.",
+          "estimated_hours": 2,
+          "quality_gates": [
+            "all 8 Slice 01 acceptance tests pass (7 in-memory/save-restore + 1 oracle on macOS)",
+            "swift build succeeds with no new warnings",
+            "no regression in Tier 1 acceptance tests"
+          ],
+          "deliverables": [
+            "Once-only suppression guard in stepToNextLine collection loop",
+            "chosenChoiceTargets recording in chooseChoice(at:)",
+            "ChoiceData.flags populated during collection"
+          ]
+        },
+        {
+          "id": "02-02",
+          "name": "Conditional gating in collection loop",
+          "description": "In InkEngine.stepToNextLine choice-collection loop, when flags & 1 is set, pop the boolean from state.evalStack. If the popped value is false, skip the choice. The pop must always occur (even when skipping) to keep the evalStack balanced.",
+          "criteria": "Choice with false condition is absent from currentChoices; choice with true condition is present; unconditional choices always appear regardless of variable state; all Slice 02 acceptance tests pass",
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Milestone4_Tier2ChoiceMechanicsTests.swift",
+          "scenario_name": "Slice 02 — Conditional Choice Gating",
+          "deps": ["01-01"],
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift"
+          ],
+          "implementation_notes": "In the choice-collection loop, after reading flags from the choicePoint node: if (flags & 0x01 != 0), pop the top InkValue from state.evalStack and call .asBool. If the result is false, skip appending the choice but continue the loop. If evalStack is empty when a pop is expected, treat as false and continue (defensive handling). This guard runs independently of the once-only guard from 02-01; order: conditional gate first, then once-only gate.",
+          "estimated_hours": 1.5,
+          "quality_gates": [
+            "all 5 Slice 02 acceptance tests pass (4 in-memory/save-restore + 1 oracle on macOS)",
+            "evalStack is always balanced after collection loop regardless of choice outcome",
+            "no regression in Slice 01 or Tier 1 tests"
+          ],
+          "deliverables": [
+            "Conditional gating guard in stepToNextLine collection loop",
+            "Unconditional evalStack pop when flags & 0x01 is set"
+          ]
+        },
+        {
+          "id": "02-03",
+          "name": "Visit count increment and readCount dispatch",
+          "description": "In TreeWalker.dispatch, add a case for .readCount(key) that pushes state.visitCounts[key] ?? 0 as .int onto state.evalStack. In the container entry path, increment state.visitCounts[containerPath] when the container's #f flag has bit 0x1 (CountVisits) set.",
+          "criteria": "Visit count for a location increments each time that location is entered; visit count is queryable during story execution; visit counts survive save/restore; all Slice 03 acceptance tests pass",
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Milestone4_Tier2ChoiceMechanicsTests.swift",
+          "scenario_name": "Slice 03 — Visit Count Logic",
+          "deps": ["01-02"],
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Engine/TreeWalker.swift"
+          ],
+          "implementation_notes": "Add case .readCount(let key): state.evalStack.append(.int(state.visitCounts[key] ?? 0)) to the dispatch switch in TreeWalker. For container entry: InkEngine already resolves containers by path; add a hook at the point a container is entered to check container.flags & 0x1 != 0 and if so perform state.visitCounts[resolvedPath, default: 0] += 1. The containerPath string must match the key format used by CNT? nodes in inklecate-compiled JSON — validate against real slice03 fixture. visitCounts is already in StoryState and Codable.",
+          "estimated_hours": 2,
+          "quality_gates": [
+            "all 5 Slice 03 acceptance tests pass (4 in-memory/save-restore + 1 oracle on macOS)",
+            "TreeWalker dispatch switch remains exhaustive (compiles without warning)",
+            "no regression in Slice 01, Slice 02, or Tier 1 tests"
+          ],
+          "deliverables": [
+            "TreeWalker.dispatch case for .readCount(key)",
+            "visitCounts increment on container entry when #f bit 0x1 is set"
+          ]
+        },
+        {
+          "id": "02-04",
+          "name": "Invisible default auto-divert",
+          "description": "In InkEngine.stepToNextLine choice-collection loop, detect invisible defaults (flags & 0x17 == 0) and record the first such target in a local pendingInvisibleDefault variable without appending to currentChoices. After collection, if currentChoices is empty and pendingInvisibleDefault is non-nil, apply that divert and continue the step loop.",
+          "criteria": "Invisible choices never appear in currentChoices even as empty text; when all visible choices are exhausted an invisible default auto-executes without requiring a chooseChoice call; visible choices always take priority over invisible defaults; no empty-text choice traps the story; all Slice 04 acceptance tests pass",
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Milestone4_Tier2ChoiceMechanicsTests.swift",
+          "scenario_name": "Slice 04 — Invisible Default Fallthrough",
+          "deps": ["01-01"],
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift"
+          ],
+          "implementation_notes": "Invisible default detection predicate: (flags & 0x10 == 0) AND (flags & 0x06 == 0) AND (flags & 0x01 == 0) — i.e. flags & 0x17 == 0. During collection if this predicate is true, store targetPath in local var pendingInvisibleDefault (keep only the first). Do not append to currentChoices. After the collection loop: if currentChoices.isEmpty, pendingInvisibleDefault is non-nil, apply the divert (update pointer/stack) and re-enter the step loop. Guard against infinite loops: pendingInvisibleDefault is consumed once and cleared. The auto-divert must also survive save/restore since the divert is applied before the state is exposed — no additional Codable changes needed.",
+          "estimated_hours": 2,
+          "quality_gates": [
+            "all 5 Slice 04 acceptance tests pass",
+            "story never hangs with empty currentChoices and non-nil invisible default target",
+            "no regression in Slice 01, Slice 02, Slice 03, or Tier 1 tests"
+          ],
+          "deliverables": [
+            "Invisible default detection predicate in collection loop",
+            "pendingInvisibleDefault local variable capturing first invisible target",
+            "Post-collection auto-divert when currentChoices is empty"
+          ]
+        }
+      ]
+    }
+  ],
+  "implementation_scope": {
+    "source_directories": [
+      "Sources/SwiftInkRuntime/Engine",
+      "Sources/SwiftInkRuntime/Decoder"
+    ],
+    "test_directories": [
+      "Tests/SwiftInkRuntimeTests/Acceptance"
+    ],
+    "excluded_patterns": [
+      "*.DS_Store",
+      ".build/**"
+    ]
+  },
+  "validation": {
+    "status": "approved",
+    "reviewer": "nw-acceptance-designer-reviewer",
+    "approved_at": "2026-06-05T00:00:00Z"
+  }
+}

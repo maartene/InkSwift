@@ -111,6 +111,15 @@ final class InkEngine {
                 // flg=8 (bit 3): invisible default / gather fallback — never shown to user.
                 guard (flags & 8) == 0 else { continue }
 
+                // flg=0x10 (bit 4): once-only choice — suppress if already chosen.
+                // Use the resolved absolute path as the suppression key so that
+                // identically-named relative paths in different containers do not
+                // incorrectly collide.
+                if (flags & 0x10) != 0 {
+                    if let absolutePath = resolveAbsoluteTargetPath(for: target),
+                       state.chosenChoiceTargets.contains(absolutePath) { continue }
+                }
+
                 // Choice text sources, in priority order:
                 //   1. Non-empty string on evalStack: placed there by preceding str/[text]/str
                 //      sequence (flg=20 bracket-only choices and correctly-executing flg=18/22).
@@ -142,7 +151,8 @@ final class InkEngine {
                         text: choiceText,
                         targetPath: target,
                         continuationFrames: continuationFrames,
-                        index: index
+                        index: index,
+                        flags: flags
                     )
                 )
                 state.outputStream.removeAll { $0 != "\n" }
@@ -275,6 +285,23 @@ final class InkEngine {
         return current
     }
 
+    /// Resolve a choice target to an absolute dotted-path string suitable for
+    /// use as a suppression key in `state.chosenChoiceTargets`. Relative paths
+    /// are resolved against the current containerStack; absolute paths are
+    /// returned as-is. Returns nil when the path cannot be resolved.
+    private func resolveAbsoluteTargetPath(for target: String) -> String? {
+        if target.hasPrefix(".") {
+            guard let (stackIndex, rest) = parseRelativePath(target),
+                  navigate(rest, from: containerStack[stackIndex].container) != nil
+            else { return nil }
+            let absoluteComponents = containerStack[stackIndex].pathFromRoot + rest
+            return absoluteComponents.joined(separator: ".")
+        }
+        let components = pathComponents(from: target)
+        guard navigateAbsolute(components) != nil else { return nil }
+        return target
+    }
+
     /// Build a serialisable continuation-stack snapshot for a choice target.
     /// Captures the parent frames at choice-collection time plus a frame for the
     /// continuation container itself. The snapshot is stored inside `ChoiceData`
@@ -364,6 +391,14 @@ final class InkEngine {
             throw StoryError.invalidChoiceIndex(index)
         }
         let choice = state.currentChoices[index]
+        if (choice.flags & 0x10) != 0 {
+            // Record the absolute path of the chosen target so the suppression
+            // check in stepToNextLine can match it reliably across contexts.
+            // The continuation frames' last entry holds the resolved absolute path.
+            if let absolutePath = choice.continuationFrames.last?.pathFromRoot.joined(separator: ".") {
+                state.chosenChoiceTargets.insert(absolutePath)
+            }
+        }
         state.currentChoices = []
         state.currentTags = []
         state.isEnded = false
