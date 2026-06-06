@@ -217,30 +217,30 @@ Feature tiers follow inkle's own documentation structure:
 | 9 | Once-only suppression (`flg=0x10`) | CORE | Yes | **IMPLEMENTED** | Picked once-only choices suppressed via `chosenChoiceTargets: Set<String>` on StoryState; survives save/restore (tier2-choice-mechanics) |
 | 10 | Invisible defaults (`flags & 0x17 == 0`) | CORE | Yes | **IMPLEMENTED** | Auto-divert applied when `currentChoices` is empty and invisible default recorded; inklecate v0.9 `flg: 0` detection (tier2-choice-mechanics) |
 | 11 | Conditional choices (`* {cond}`) | CORE | Yes | **IMPLEMENTED** | `evalStack` popped when `flags & 0x01`; false result skips choice; stack always balanced (tier2-choice-mechanics) |
-| 12 | Gathers (`-`) | CORE | Yes | **PARTIAL** | Anchors exist; nested depth untested |
-| 13 | Labeled gathers / options `(label)` | CORE | Yes | **PARTIAL** | Anchor resolution implemented; not fully tested |
+| 12 | Gathers (`-`) | CORE | Yes | **IMPLEMENTED** | Multi-level nested gathers exercised by The Intercept 100-line non-trivial playthrough (`Milestone5b`) — covers depth-1 / depth-2 / depth-3 gather chains |
+| 13 | Labeled gathers / options `(label)` | CORE | Yes | **IMPLEMENTED** | Labeled gathers (`pushes_cup`, `monastic`, `say_nothing`, `disagree`, …) exercised by The Intercept non-trivial playthrough; relative diverts to labels resolved via path-component caret math (`InkEngine.parseRelativePath`) |
 | 14 | Read counts (knot visit counters) | CORE | Yes | **IMPLEMENTED** | `NodeKind.readCount(String)`, `InkDecoder` CNT? handler, `TreeWalker` dispatch, and `#f` bit `0x1` container-entry increment (tier2-choice-mechanics) |
-| 15 | Glue (`<>`) | CORE | Likely | **UNKNOWN** | No test coverage |
+| 15 | Glue (`<>`) | CORE | Yes (heavy) | **IMPLEMENTED** | `<>` removes trailing `\n` and suppresses next `\n` (`TreeWalker.handleControlCommand`); cross-divert glue handled by `evalBlockDepth` flush deferral; baseline `Bug_GlueAfterChoiceTests`; non-trivial Intercept playthrough validates glue across function-call diverts |
 | 16 | VAR global variables | STANDARD | Yes (21) | **WORKS** | |
-| 17 | CONST declarations | STANDARD | Yes (6) | **UNKNOWN** | Parsed? No test |
+| 17 | CONST declarations | STANDARD | Yes (6: `NONE`, `STRAIGHT`, `CHESS`, `CROSSWORD`, `SHOE`, `BUCKET`) | **IMPLEMENTED** | Inklecate inlines CONSTs at compile time as integer literals, so no engine support is required. End-to-end correctness validated by The Intercept non-trivial playthrough (the `hooperClueType` / `smashingWindowItem` comparisons resolve identically to the JS-bridge oracle) |
 | 18 | Temp variables (`~ temp`) | STANDARD | Yes | **WORKS** | |
 | 19 | Variable assignment (`~ x =`) | STANDARD | Yes | **WORKS** | |
 | 20 | Variable read in output (`{x}`) | STANDARD | Yes | **WORKS** | |
 | 21 | Arithmetic / logic operators | STANDARD | Yes | **WORKS** | `+`,`-`,`*`,`/`,`%`,`==`,`!=`,`>`,`<`,`&&`,`||`,`!` |
-| 22 | Inline conditionals (`{c: a\|b}`) | STANDARD | Yes (95+) | **UNKNOWN** | No test at all |
-| 23 | Block conditionals (if / else if) | STANDARD | Yes | **UNKNOWN** | No test |
-| 24 | Switch-style conditionals | STANDARD | Yes (CONST dispatch) | **UNKNOWN** | No test |
+| 22 | Inline conditionals (`{c: a\|b}`) | STANDARD | Yes (95+) | **IMPLEMENTED** | Slice C1 (`slice-c1-inline-conditionals`) + The Intercept non-trivial playthrough; reuses existing `isConditional` divert pathway, no new NodeKind cases (tier3-conditionals-and-tunnels D1) |
+| 23 | Block conditionals (if / else if) | STANDARD | Yes | **IMPLEMENTED** | Slice C2 (`slice-c2-block-conditionals`) + The Intercept; shares C1's `applyConditionalBranch` mechanism (tier3 D2). The 4-bug cascade behind the Intercept GREEN included a flush-defer fix for the multi-line `{cond: a - else: b}` + cluster pattern (`Bug_DeferFlushDuringChoiceClusterTests`) |
+| 24 | Switch-style conditionals | STANDARD | Yes (CONST dispatch) | **IMPLEMENTED** | Slice C2 + The Intercept; switch dispatch uses the existing `==` native function plus per-case conditional diverts (tier3 D2) |
 | 25 | Variable text: sequences (`{a\|b\|c}`) | STANDARD | No | **UNKNOWN** | `"seq"` command listed; no handler |
 | 26 | Variable text: cycles (`{&}`) | STANDARD | No | **UNKNOWN** | No handler |
 | 27 | Variable text: once-only (`{!}`) | STANDARD | No | **UNKNOWN** | No handler |
 | 28 | Variable text: shuffle (`{~}`) | STANDARD | No | **UNKNOWN** | No handler |
-| 29 | Functions (`=== f(params) ===`) | STANDARD | Yes (2) | **UNKNOWN** | No test |
-| 30 | Inline function calls `{f()}` | STANDARD | Yes | **UNKNOWN** | No test |
+| 29 | Functions (`=== f(params) ===`) | STANDARD | Yes (2: `raise`, `lower`) | **IMPLEMENTED** | Slice C3 (`slice-c3-functions`) + The Intercept (raise/lower exercised through every Disagree/Lie/Evade body); `f():`-prefixed divert with `fnret:`-prefixed return address in `returnStack`; per-frame temp scope via `StoryState.callFrameVariables` (tier3 D3 + fix `36e3052`) |
+| 30 | Inline function calls `{f()}` | STANDARD | Yes | **IMPLEMENTED** | Slice C3 (`{double(5)}`, `{setSideEffect()}`) + The Intercept; `out` / `pop` control commands handle return-value emission vs. discard (`distill/upstream-issues.md` Issues 1 + 2) |
 | 31 | String interpolation | STANDARD | Yes | **WORKS** | `str`/`/str` handler correct in TreeWalker |
 | 32 | Tags (`#tag`) | STANDARD | No | **WORKS** | Implemented ahead of need |
 | 33 | Save / restore | STANDARD | — | **WORKS** | `StoryState` is `Codable`; survives `chooseChoice` round-trip via `pathFromRoot` frames + `ChoiceData.continuationFrames` |
-| 34 | Tunnels (`-> knot ->`) | ADVANCED | Yes (8) | **MISSING** | ADR-004 defers; needs nested call frames |
-| 35 | Reference parameters (`ref x`) | ADVANCED | Yes | **MISSING** | Not modelled |
+| 34 | Tunnels (`-> knot ->`) | ADVANCED | Yes (8) | **IMPLEMENTED** | Slices T1 (single) + T2 (nested) + The Intercept (all 8 tunnels exercised). `NodeKind.tunnelDivert(target:)` plus pre-dispatch `->t->` / `->->` intercepts in `InkEngine.stepToNextLine`; `returnStack` from ADR-004 reused with no new StoryState field (tier3 D4) |
+| 35 | Reference parameters (`ref x`) | ADVANCED | Yes (`raise(ref x)`, `lower(ref x)`) | **IMPLEMENTED** | Slice T3 + The Intercept. `NodeKind.variablePointer(name:, contextIndex:)`; `ci == -1` = global scope (NOT `ci == 0` as DESIGN assumed — see `distill/upstream-issues.md` Issue 3). Function-local temp leak between consecutive ref-param calls fixed by `callFrameVariables` per-frame scope (commit `36e3052`, lands deferred T3 DESIGN D5 Option A) |
 | 36 | Threads | BEYOND | No | **MISSING** | Lowest priority |
 | 37 | LIST declarations | BEYOND | No | **MISSING** | `listDefs` placeholder only |
 | 38 | RANDOM / SEED_RANDOM | BEYOND | No | **MISSING** | Not started |
@@ -259,9 +259,17 @@ See RCA in `docs/feature/fix-choice-text-path-resolution/design/wave-decisions.m
 **Tier 2 (core completeness): COMPLETE**
 Rows 8–11, 14 — choice flag bitmask (sticky/once-only differentiation), once-only suppression, invisible default auto-divert, conditional choice gating, read counts. All implemented in `tier2-choice-mechanics`. 95 tests passing. See `docs/evolution/2026-06-05-tier2-choice-mechanics.md`.
 
-**Tier 3 (The Intercept ceiling):**
+**Tier 3 (The Intercept ceiling): COMPLETE**
 Rows 22–24, 29–30 — conditional text, functions.
 Rows 34–35 — tunnels, reference parameters.
+Implemented in `tier3-conditionals-and-tunnels` (commits up through `977ea20`). Initial delivery passed all six slice suites and the always-pick-0 oracle playthrough; the DISTILL non-trivial playthrough test was committed RED on purpose as a deterministic bug-trap. A follow-on bugfix cascade (commits `912c04a` → `7dccb97` → `36e3052` → `4ab1606`) then resolved four engine bugs that the always-pick-0 path never exercised:
+
+1. **Caret math depth** — `parseRelativePath` was counting stack-frame depth instead of compiled-path-component depth (the canonical C# semantic per `ink-engine-runtime/Path.cs:220-223` and `Object.cs:106-123`). Fixed by `topFrame.pathFromRoot.dropLast(caretCount - 1)`.
+2. **Eval-block flush** — `stepToNextLine` was flushing pending lines at the start of `ev`/`/ev` blocks before downstream function-call diverts + destination glue could remove the trailing `\n`. Fixed by an `evalBlockDepth` counter; also made `flushRemainingOutput` line-aware and `canContinue` allow draining buffered lines after `isEnded`.
+3. **Per-frame temp scope** — `TreeWalker.handleVariableAssignment` was writing both `VAR=` and `temp=` into a single `variablesState` dict; consecutive ref-param calls corrupted each other through stale pointer leftovers. Fixed by adding `callFrameVariables: [[String: InkValue]]` to `StoryState`, pushed by `applyFunctionCall` and popped by `applyFunctionReturn` (this lands the deferred T3 DESIGN D5 Option A).
+4. **Cluster flush deferral** — after the first choicePoint was collected, a flush at the next `/ev` boundary returned early; the caller saw `canContinue == false` and never visited the remaining choicePoints. Fixed by deferring flush while `currentChoices` is non-empty, matching the C# `Continue()` loop which separates pointer-based `canContinue` from choice availability.
+
+Final state: 154 of 154 tests in 26 suites GREEN. The 100-line non-trivial Intercept playthrough matches the JS-bridge oracle line-for-line. Three baseline regression suites (`Bug_GlueAfterChoiceTests`, `Bug_DeferFlushDuringChoiceClusterTests`, `TheInterceptNonTrivialPlaythroughTests`) guard against regressions. See `docs/feature/tier3-conditionals-and-tunnels/distill/upstream-issues.md` and `wave-decisions.md` for the full chain.
 
 ---
 
