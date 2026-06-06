@@ -334,6 +334,288 @@ In the choice-collection loop the engine skips choices matching the above criter
 
 ---
 
+### Tier 3 — Conditionals and Tunnels (tier3-conditionals-and-tunnels)
+
+This subsection records the concrete architectural decisions for the `tier3-conditionals-and-tunnels` feature. It covers rows 22–24, 29–30, and 34–35 of the Feature Coverage Matrix: inline conditional text, block/switch conditionals, Ink functions, tunnels, and reference parameters.
+
+No new source files are introduced. All changes are localised to four existing files: `NodeKind.swift`, `InkDecoder.swift`, `TreeWalker.swift`, and `InkEngine.swift`. `StoryState.swift` gains one new field for function call frames (Decision 3).
+
+---
+
+#### Architecture Options Considered
+
+This section records the design alternatives evaluated per the five technical decisions, with the chosen option marked. The options were evaluated against the quality attributes: Maintainability, Testability, Correctness (oracle-match), No new runtime dependencies, and Save/restore invariant.
+
+---
+
+##### Decision 1 — Inline Conditional Text (C1): Where does branch selection happen?
+
+**Background**: inklecate encodes `{c: a|b}` as a container whose children are: an `ev…/ev` block pushing the condition, a conditional divert (`{"->": "falseAddr", "c": true}`) that skips the true branch if the condition is false, the true-branch content, followed by a divert past the false branch, and the false-branch content. The `isConditional` flag is already decoded in `classifyDict` (`{"->": path, "c": true}`) and dispatched in `handleDivertNode` via `applyConditionalBranch`. The eval stack machinery (`ev`/`/ev`/native functions) is complete.
+
+**Option A — No decoder change; rely entirely on existing `isConditional` divert dispatch** (RECOMMENDED)
+
+The `classifyDict` method already decodes `{"->": path, "c": true}` as `.divert(isConditional: true)`. `handleDivertNode` in `InkEngine` already calls `applyConditionalBranch` when `isConditional` is true, which rewrites `containerStack` to the target branch. The inline conditional container is therefore already structurally handled by the existing machinery — C1 requires no new NodeKind cases and no decoder changes. The gap is behavioural: the crafter must write a test against a real inklecate fixture to verify the existing path handles `{c: a|b}` correctly.
+
+Trade-offs: Zero new code surface. Risk: if inklecate encodes `{c: a|b}` with a structural pattern not covered by the existing `applyConditionalBranch` logic (e.g. an unconditional divert after the true branch to skip the false branch), the crafter discovers this during RED and extends `applyConditionalBranch` without a design change.
+
+**Option B — New NodeKind case `.inlineConditional(trueContainer:, falseContainer:)` parsed at decode time**
+
+Pre-compute the branch structure in `InkDecoder`. Requires scanning children for the `ev`/conditional-divert/content pattern at decode time and folding it into a single `NodeKind` case. `TreeWalker` evaluates the condition and enters the correct child container directly.
+
+Trade-offs: Cleaner TreeWalker dispatch. Cost: `InkDecoder` becomes structurally aware of branch patterns (violates the decoder's role as a pure structural parser). Requires understanding the exact inklecate encoding before any code is written — a chicken-and-egg risk.
+
+**Option C — Handle in `stepToNextLine` as a special container pattern**
+
+Detect the conditional pattern (ev block + conditional divert + two content containers) in `InkEngine.stepToNextLine` by inspecting the children of an entered container. Route to the correct branch at the engine level.
+
+Trade-offs: Engine becomes a structural parser — couples engine to encoding details. Reduces the TreeWalker abstraction to irrelevance for this node type.
+
+**Recommended**: Option A. The existing `isConditional` divert pathway is correct by design. C1 is primarily a test-writing exercise, not a structural change. If the fixture reveals a gap in `applyConditionalBranch` (e.g. the divert-past-false-branch pattern), the crafter extends that method.
+
+---
+
+##### Decision 2 — Block and Switch Conditionals (C2): Relationship to C1
+
+**Background**: Block conditionals `{c: ... - else: ...}` and switch-style `{v: - 1: ... - 2: ...}` in inklecate JSON use the same conditional divert mechanism as inline `{c: a|b}`. The spec representation for switch dispatch is repeated equality comparisons (`ev / varRef / literal / == / /ev`) followed by conditional diverts per case. Each case is a named branch container.
+
+**Option A — Shared handler with C1; no new code** (RECOMMENDED)
+
+Block conditionals use the same `isConditional` divert encoding. Switch dispatch uses repeated `ev…==…/ev` blocks with a conditional divert per case; the existing `==` native function handler and conditional divert handler are sufficient. C2 requires only fixture-driven tests. Any `applyConditionalBranch` gaps discovered during C1 RED will have been fixed before C2 starts.
+
+Trade-offs: Zero code delta if C1 fixes were sufficient. Risk: switch dispatch may use a divert-to-else fallthrough that `applyConditionalBranch` does not handle correctly for multi-level container stacks.
+
+**Option B — Separate `applySwitchBranch(value:, cases:)` method in `InkEngine`**
+
+Add a dedicated switch-dispatch method that pops the switch value from `evalStack`, compares against each case literal, and diverts to the matching branch container or else branch. Requires inklecate fixture inspection to confirm the case structure before implementing.
+
+Trade-offs: Explicit switch semantics. Cost: new engine method, new code surface, higher risk of introducing a regression in the conditional divert pathway.
+
+**Option C — Decode switch as `.switchConditional(value:, cases: [(Int, ContainerNode)])` in NodeKind**
+
+Fold switch structure at decode time. Requires InkDecoder to recognise the multi-case pattern.
+
+Trade-offs: Clean TreeWalker dispatch. Cost: decoder becomes pattern-aware; structural coupling risk. Premature without fixture inspection.
+
+**Recommended**: Option A. C2 builds on C1. Inspect the compiled fixtures during RED before adding new code. Only introduce Option B if the switch `==` / conditional-divert pattern proves insufficient after fixture inspection.
+
+---
+
+##### Decision 3 — Ink Functions (C3): Call frame strategy
+
+**Background**: Ink functions use a divert with key `"f()"` in inklecate JSON (`{"f()": "path.to.fn"}`). This key is not currently in `classifyDict` (falls to `controlCommand("f()")`). The `~ret` control command IS in the `controlCommands` set but has no TreeWalker handler. Functions push a return address and pop it on return. The existing `returnStack: [String]` (ADR-004) supports this — `pushDivertTarget` / variable divert is the choice-text mechanism using the same stack. Functions and choices both use `returnStack`, so the depth will be non-zero during function calls from within choices.
+
+**Option A — Reuse `returnStack: [String]` for function frames; distinguish by call-site encoding** (RECOMMENDED)
+
+`{"f()": path}` is a new dict key pattern: add it to `classifyDict` as `.divert(target: path, isConditional: false, isVariable: false)` plus a preceding `.pushDivertTarget(returnAddress)` pair — matching the `^->` / `->var:true` pattern already used by choice text. The `~ret` control command pops `returnStack` and diverts. No new StoryState fields.
+
+However, the `f()` encoding in inklecate is subtly different from tunnel entry: functions push a return address from `{"^->": returnAddr}` nodes placed before the call-site divert, whereas the `f()` key itself is the call divert. The `~ret` pop is the symmetric action. This means the existing `pushDivertTarget` / variable-divert mechanism IS the function call frame — `~ret` simply needs a handler in `TreeWalker.handleControlCommand` that pops `returnStack` and triggers a divert.
+
+The crafter must add to `classifyDict`:
+- `{"f()": path}` → `.divert(target: path, isConditional: false, isVariable: false)`
+
+And to `TreeWalker.handleControlCommand`:
+- `case "~ret"`: pop `returnStack`, store popped address (InkEngine must then handle the divert)
+
+Because `~ret` triggers a divert that must be handled by `InkEngine` (not `TreeWalker`), the cleanest design is for `TreeWalker` to set a signal in `StoryState` that `InkEngine.stepToNextLine` can detect — but `StoryState` should not carry mutable execution signals. Instead, `InkEngine` should check for `~ret` in the same position as `.divert` in its step loop, parallel to how it already intercepts `.divert` nodes before passing them to `TreeWalker`.
+
+Trade-offs: No new StoryState field. `returnStack` carries both choice-text frames and function frames — they are structurally identical. Risk: if a function call occurs during a choice's `ev…/ev` block, the returnStack depth may be non-zero from the choice-text mechanism. Inspection of the inklecate encoding during RED is required.
+
+**Option B — Separate `functionCallStack: [String]` in StoryState**
+
+Add `var functionCallStack: [String]` alongside `returnStack`. Function `~ret` pops from `functionCallStack`; tunnel `->->` pops from `returnStack`.
+
+Trade-offs: Clean semantic separation. Cost: new StoryState field, new Codable key, backward compatibility `decodeIfPresent`. Risk: inklecate may interleave function and tunnel calls on the same stack (the C# runtime uses a single call stack with typed frames). Adding a second stack that is conceptually wrong at the Ink VM level creates a fragile design.
+
+**Option C — Typed call frame struct in `returnStack`**
+
+Replace `returnStack: [String]` with `returnStack: [CallFrame]` where `CallFrame` is `enum { case function(String), case tunnel(String) }`. Distinguish at pop time.
+
+Trade-offs: Semantically correct. Cost: breaking StoryState format change (cannot use `decodeIfPresent` to default), requires ADR amendment. Not justified by The Intercept's scope (only 2 functions).
+
+**Recommended**: Option A. Reuse `returnStack`. The `f()` key → `.divert` classification plus `~ret` handler in `InkEngine`'s step dispatch. `InkEngine` must intercept the `~ret` control command before `TreeWalker.dispatchNode` to divert upon return. New StoryState field: none.
+
+Void suppression: the existing `.voidValue` case in `TreeWalker.dispatch` is already a no-op (`break`). When a void-returning function calls `~ret` and the composition root has `"void"` emitted before the function's closing `}`, the `.voidValue` no-op is correct. No additional void-suppression logic is needed.
+
+---
+
+##### Decision 4 — Tunnels (T1/T2): Encoding and `returnStack` reuse
+
+**Background**: ADR-004 explicitly designed `returnStack: [String]` for tunnel nesting. The `->t->` divert key (`{"->t->": "path"}`) is not in `classifyDict`. The `->->` control command IS in the `controlCommands` set but has no TreeWalker handler.
+
+**Option A — Add `"->t->"` to `classifyDict` as `.divert`; handle `"->->"` in InkEngine** (RECOMMENDED)
+
+Add `{"->t->": path}` → decode as two nodes inline is not possible (single classify call). Instead, use a new NodeKind case: `.tunnelDivert(target: String)`. InkDecoder classifies `{"->t->": path}` → `.tunnelDivert(path)`. InkEngine intercepts `.tunnelDivert` in the step loop (like `.divert`): push a return address (the post-call-site path) to `returnStack`, then call `applyDivert(target: path)`.
+
+For the return address: when a tunnel is entered, the return address is the path of the container currently being walked plus the next execution index — i.e. where the engine should resume when `->->` fires. This is the current frame's path + current index, captured at the moment the `->t->` node is processed.
+
+`->->` handling: add `case "->->":` to `TreeWalker.handleControlCommand`. However, `->->` needs to trigger a divert, which `TreeWalker` cannot do (no `containerStack` access). The same pattern as `~ret`: `InkEngine` must intercept `->->` before passing to `TreeWalker`, or `TreeWalker` sets a flag and InkEngine acts on it.
+
+The cleanest pattern: `InkEngine.stepToNextLine` checks the current node for `.controlCommand("->->")` and `.controlCommand("~ret")` (and `.tunnelDivert`) before calling `walker.dispatchNode`, mirroring the existing check for `.divert` and `.choicePoint`.
+
+Trade-offs: New NodeKind case `.tunnelDivert(String)` required. `InkEngine` step loop gains three more pre-dispatch intercepts. No new StoryState fields.
+
+**Option B — Classify `"->t->"` as `.divert` with a new `isTunnel: Bool` flag**
+
+Add `isTunnel: Bool` to the existing `.divert` case. `classifyDict` detects `"->t->"` key and sets `isTunnel: true`.
+
+Trade-offs: Keeps NodeKind extension minimal (no new case). Cost: `.divert` now carries three boolean flags (`isConditional`, `isVariable`, `isTunnel`) — combinatorial complexity in `handleDivertNode`. Mixing tunnel semantics into the generic divert case reduces clarity.
+
+**Option C — Handle `"->t->"` entirely in InkDecoder as a pair of nodes**
+
+`classifyDict` detects `"->t->"` and returns a `.container` wrapping both the push-return-address and the divert — synthesising two NodeKind cases from one JSON dict.
+
+Trade-offs: Decoder produces synthetic structure not present in the JSON — violates the decoder's role as a structural parser.
+
+**Recommended**: Option A. New `.tunnelDivert(String)` NodeKind case. `InkEngine` pre-dispatch intercept for `.tunnelDivert`, `->->`, and `~ret`. The return address pushed to `returnStack` is the current container path plus next index, encoded as a dotted path string. T2 (nested tunnels) requires no changes beyond T1 — `returnStack` is already an array by ADR-004 design.
+
+---
+
+##### Decision 5 — Reference Parameters (T3): Variable pointer resolution
+
+**Background**: `{"^var": "name", "ci": N}` is a variable pointer node. `ci` is the callstack context index: 0 = globals scope, 1 = outermost active call frame, higher = deeper. Current `classifyDict` does not match `"^var"` (falls to `controlCommand`). The `variablesState: [String: InkValue]` in `StoryState` is a flat dictionary — no per-frame scope exists.
+
+**Option A — New NodeKind case `.variablePointer(name: String, contextIndex: Int)` handled in InkEngine** (RECOMMENDED)
+
+`classifyDict` adds: `{"^var": name, "ci": N}` → `.variablePointer(name: name, contextIndex: N)`. InkEngine intercepts this node (pre-dispatch) and pushes an `InkValue` representing the pointer onto `evalStack`. When a `variableAssignment` subsequently fires for the pointed-to name, InkEngine checks the `contextIndex` to find the correct scope.
+
+Because `StoryState.variablesState` is currently a flat dictionary, T3 requires introducing per-frame variable scope for functions. This is the significant architectural change in T3.
+
+StoryState change: add `var callFrameVariables: [[String: InkValue]]` — a stack of per-frame variable dictionaries. Each function call pushes a new frame; `~ret` pops it. The `variablePointer` with `ci > 0` reads from `callFrameVariables[callFrameVariables.count - ci]`; `ci == 0` reads from `variablesState` (globals). This field uses `decodeIfPresent` with `[]` default.
+
+Trade-offs: Semantically correct. Requires new StoryState field. New NodeKind case. InkEngine gains frame push/pop logic. Correctness depends on exact `ci` semantics in inklecate — must be verified against fixture before implementing.
+
+**Option B — Reuse `.variableReference` with context-aware lookup in TreeWalker**
+
+Classify `{"^var": name, "ci": N}` as `.variableReference(name: name)`, ignoring `ci`. For stories where all function variables are also global, this is correct. For ref params, it is incorrect — the ref param points to the caller's local variable.
+
+Trade-offs: Zero new NodeKind cases. Cost: incorrect for `ci > 0` cases. The The Intercept uses `ref` only with variables that are global (`VAR score`), so this may accidentally work for The Intercept specifically. Risk: incorrect in the general case; creates a known-broken behaviour that will be discovered in the fixture.
+
+**Option C — Handle variable pointer in TreeWalker with contextIndex passed via `StoryState`**
+
+Classify as new case but dispatch in TreeWalker with a context-index lookup in `state.variablesState` using a naming convention (`_frame_N_varname`).
+
+Trade-offs: Avoids new StoryState field structure. Cost: naming convention is fragile; not how the C# runtime works; makes save/restore format opaque.
+
+**Recommended**: Option A. New `.variablePointer(name:, contextIndex:)` NodeKind case. New `callFrameVariables: [[String: InkValue]]` StoryState field with `decodeIfPresent` default `[]`. InkEngine manages frame push/pop at function call/return. This is the only Tier 3 decision that requires a new StoryState field.
+
+Note: T3 is the lowest-priority slice in Tier 3. It can defer to Tier 4 without blocking The Intercept playthrough if the two ref-param functions in The Intercept happen to use only global variables (verifiable during T3 RED). This deferral is a crafter-level decision, not an architectural one.
+
+---
+
+#### Chosen Approach per Decision
+
+| Decision | Chosen Option | Key Rationale |
+|---|---|---|
+| D1 — Inline conditionals (C1) | Option A: existing `isConditional` divert pathway | Already wired; C1 is primarily a test-writing exercise |
+| D2 — Block/switch conditionals (C2) | Option A: shared handler with C1 | Same encoding; switch uses `==` + conditional diverts already supported |
+| D3 — Ink functions (C3) | Option A: reuse `returnStack`; `f()` key → `.divert`; `~ret` intercepted in InkEngine | No new StoryState field; `voidValue` no-op already correct |
+| D4 — Tunnels (T1/T2) | Option A: new `.tunnelDivert(String)` NodeKind; InkEngine intercepts `->->` and `~ret` | Semantic clarity; existing `returnStack` handles nesting; no new StoryState field |
+| D5 — Reference parameters (T3) | Option A: new `.variablePointer(name:, contextIndex:)`; new `callFrameVariables` StoryState field | Correct at the Ink VM level; only design requiring new StoryState field |
+
+---
+
+#### New NodeKind Cases
+
+The following additions to `NodeKind.swift` are required:
+
+```
+// Tunnel entry divert: {"->t->": "path"} — push return address, then divert to path
+case tunnelDivert(target: String)
+
+// Variable pointer: {"^var": "name", "ci": N} — reference to a variable in a specific callstack frame
+case variablePointer(name: String, contextIndex: Int)
+```
+
+The `f()` call divert does NOT require a new NodeKind case — it is classified as `.divert(target:, isConditional: false, isVariable: false)` with the `"f()"` key added to `classifyDict`. The distinction between a function call divert and a regular divert is handled at the InkEngine level by whether a `pushDivertTarget` node immediately precedes it in the container.
+
+---
+
+#### New StoryState Fields
+
+| Field | Type | Default | Purpose | `decodeIfPresent`? |
+|---|---|---|---|---|
+| `callFrameVariables` | `[[String: InkValue]]` | `[]` | Per-frame local variable scope for function calls (T3 only) | Yes |
+
+The `returnStack` field (ADR-004) is reused for both function frames and tunnel frames — no additional fields needed for C3 or T1/T2.
+
+---
+
+#### InkDecoder.classifyDict Additions
+
+| JSON dict key | New handling | NodeKind produced |
+|---|---|---|
+| `"f()"` | `classifyDict` matches `dict["f()"] as? String` → path | `.divert(target: path, isConditional: false, isVariable: false)` |
+| `"->t->"` | `classifyDict` matches `dict["->t->"] as? String` → path | `.tunnelDivert(target: path)` |
+| `"^var"` | `classifyDict` matches `dict["^var"] as? String` + `dict["ci"] as? Int` | `.variablePointer(name: name, contextIndex: ci)` |
+
+The `"->->"` and `"~ret"` strings are already in `controlCommands` and classify correctly to `.controlCommand("->->")` and `.controlCommand("~ret")` — no decoder changes needed for them.
+
+---
+
+#### InkEngine Step Loop Intercepts
+
+The existing step loop in `stepToNextLine` intercepts `.choicePoint` and `.divert` nodes before calling `walker.dispatchNode`. The following additions follow the same pattern:
+
+| Node | Pre-dispatch action | Post-dispatch |
+|---|---|---|
+| `.tunnelDivert(target)` | Push return address (current path + next index) to `returnStack`; call `applyDivert(target:)` | Skip `walker.dispatchNode` (no-op); continue |
+| `.controlCommand("->->")` | Pop `returnStack`; call `applyDivert(target: popped)` | Skip `walker.dispatchNode`; handle flushed output like divert |
+| `.controlCommand("~ret")` | Pop `returnStack`; call `applyDivert(target: popped)` | Skip `walker.dispatchNode`; handle flushed output like divert |
+| `.variablePointer(name, ci)` | Push a pointer representation to `evalStack`; variable assignment handles the frame lookup | Via `walker.dispatchNode` (TreeWalker handles) |
+
+---
+
+#### Reuse Analysis
+
+| Existing Component | File | Overlap | Decision | Justification |
+|---|---|---|---|---|
+| `InkDecoder` | `Decoder/InkDecoder.swift` | `classifyDict` — add three new dict key patterns | Extend | Three additive match clauses before the unknown-fallback path; no restructuring |
+| `NodeKind` | `Decoder/NodeKind.swift` | Extend enum with two new cases | Extend | Two new internal cases; exhaustiveness is enforced by the compiler at every `switch` site |
+| `InkEngine` | `Engine/InkEngine.swift` | `stepToNextLine` pre-dispatch loop; `handleDivertNode` | Extend | Three new pre-dispatch intercepts (tunnelDivert, `->->`, `~ret`) following the established `.divert`/`.choicePoint` pattern; function/tunnel frame push/pop |
+| `TreeWalker` | `Engine/TreeWalker.swift` | `handleControlCommand` — no changes needed for `->->`/`~ret` (intercepted by engine); `dispatch` — no changes for new NodeKind cases that are engine-intercepted | Extend (minimal) | `.variablePointer` dispatch added to the switch if TreeWalker handles it; otherwise engine-only |
+| `StoryState` | `Engine/StoryState.swift` | New field `callFrameVariables` for T3; existing `returnStack` reused for C3/T1/T2 | Extend | One new field (T3 only); `decodeIfPresent` with `[]` default maintains backward compatibility |
+| `applyConditionalBranch` in `InkEngine` | `Engine/InkEngine.swift` | C1/C2 conditional branch resolution | Extend (if needed) | Existing method handles conditional diverts; extension only if fixture inspection reveals a gap in multi-branch handling |
+| `resolveAnchor` in `InkEngine` | `Engine/InkEngine.swift` | Anchor path resolution may be needed for function return addresses | Extend (if needed) | Return addresses in function `f()` calls may use `$r` anchor syntax — the existing `resolveAnchor` method handles this |
+
+No new source files are created. All components follow the EXTEND decision.
+
+---
+
+#### C4 Component Diagram
+
+No new components are introduced. The existing C4 Level 3 diagram for `SwiftInkRuntime` remains valid. The additions are additive extensions within existing components.
+
+The component responsibility annotations are updated:
+
+- **InkDecoder**: now also classifies `{"f()":}`, `{"->t->":}`, and `{"^var":}` dict nodes.
+- **NodeKind**: gains `.tunnelDivert(String)` and `.variablePointer(name:, contextIndex:)` cases.
+- **InkEngine**: gains tunnel-entry/function-call intercepts in the step loop; manages `callFrameVariables` stack push/pop for functions.
+- **StoryState**: gains `callFrameVariables: [[String: InkValue]]` (T3 only, `decodeIfPresent`).
+
+---
+
+#### Implementation Notes
+
+1. **Verify inklecate encoding first**: Before writing any handler for C1, C2, C3, T1, or T3, compile a minimal `.ink` fixture with inklecate and inspect the JSON. The assumed encodings (`f()` key, `->t->` key, `^var`/`ci`) are derived from Ink runtime format documentation and spike findings — they must be confirmed against actual compiler output. Hand-crafted JSON is forbidden per D5.
+
+2. **`->->` and `~ret` are pre-classified**: These strings are already in `InkDecoder.controlCommands`. The crafter must NOT re-classify them. The wiring gap is solely in `InkEngine.stepToNextLine` (no handler exists).
+
+3. **`returnStack` depth discipline**: At any point during execution, `returnStack` may contain frames from choice-text mechanisms (ADR-004), function calls (C3), and tunnel entries (T1/T2). The stack is homogeneous (`[String]`). The crafter must verify that push/pop are balanced for each pattern independently. A test that checks `returnStack.count == 0` after a complete story execution is a useful regression guard.
+
+4. **Save/restore for `callFrameVariables`**: The new `callFrameVariables: [[String: InkValue]]` field uses `decodeIfPresent` with `[]` default. The field is a stack of dictionaries — the `Codable` conformance encodes it as a JSON array of objects. The existing `InkValue` `Codable` conformance handles the value encoding.
+
+5. **`voidValue` is already correct**: The `.voidValue` case in `TreeWalker.dispatch` is a `break` (no-op). No change needed for void-function output suppression.
+
+6. **T3 deferral gate**: If inklecate inspection during T3 RED reveals that The Intercept's ref-param functions only use global variables (making the `ci` context index always 0), T3 can be implemented with Option B (`.variableReference` reuse) without the `callFrameVariables` StoryState field. The crafter makes this determination during RED.
+
+7. **NodeKind exhaustiveness**: Every time a new `NodeKind` case is added, the exhaustive case array in `NodeKindTests` must be updated to include it. This is the compiler-enforced exhaustiveness check for the decoder layer — the Swift compiler will produce a build error at every `switch` site that does not handle the new case, but the test array is an additional explicit guard. For Tier 3: `.tunnelDivert` and `.variablePointer` must be added to that array when introduced.
+
+8. **Tunnel return address format**: The return address pushed to `returnStack` on tunnel entry must be a dotted-path string that `applyDivert` can resolve. The correct format is the current container's `pathFromRoot` joined with `.`, plus a `.N` suffix where N is the next execution index — matching the `parentPath.numericIndex` format already accepted by `rebuildStackForParentPath`. Example: if the current frame has `pathFromRoot = ["café", "0"]` and `index = 6`, the return address is `"café.0.6"`. Verify this format against the inklecate-compiled fixture before finalising the push logic.
+
+9. **`f()` encoding caveat**: The `{"f()": path}` encoding is derived from the Ink runtime format documentation and spike findings. If inklecate's actual output uses a different key (e.g. the function call is encoded as a standard `{"->": path}` node with the return address in a preceding `{"^->": returnAddr}` node, making `f()` structurally identical to choice-text call/return), the `classifyDict` change may not be needed. The `returnStack` mechanism is correct regardless of which key the function call uses. Inspect a compiled function fixture before writing the classifier clause.
+
+---
+
 ### ADR Index
 
 | ADR | Title | Status |
