@@ -84,6 +84,7 @@ let package = Package(
                 .process("slice-t2-nested-tunnels.ink.json"),
                 .process("slice-t3-ref-params.ink.json"),
                 .process("TheIntercept.ink.json"),
+                .process("TheIntercept_oracle_walkthrough.json"),
             ]
         ),
     ]

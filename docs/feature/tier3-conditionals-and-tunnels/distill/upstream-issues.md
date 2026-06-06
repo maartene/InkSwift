@@ -139,6 +139,83 @@ behaviour for void functions.
 
 ---
 
+## Issue 5 — Engine diverges from oracle starting at line 11 on non-trivial Intercept path (DISTILL addendum 2026-06-06)
+
+**Severity**: MEDIUM-HIGH — blocks the new DWD-07 non-trivial playthrough acceptance test
+**Source file**: engine output divergence between native `Story` and `InkSwift.InkStory`
+**Discovered in**: `TheInterceptNonTrivialPlaythroughTests` (Milestone5b)
+
+**Initial summary (incorrect)**: an earlier version of this entry said the
+divergence was a single extra line at index 67. That was a misreading of
+the failure log — Swift Testing's `for i in 0..<prefix` loop reports each
+mismatched index, and the LAST few visible in the trail are 67-79 because
+the test loop continues past the first failure.
+
+**Corrected finding**: driving the engine through the committed non-trivial
+choice script produces **69 line mismatches**, the FIRST at index 11. Lines
+0-10 match the JS-bridge oracle exactly. The divergence onset is the line
+emitted immediately after picking choice 3 — `* {tellme} [Deny] "I'm not
+pretending anything." ... Harris looks disapproving. -> pushes_cup` in the
+`waited` knot of The Intercept (source line 119).
+
+**Observed divergence at the onset**:
+```
+N011 = "Harris looks disapproving. He pushes one mug halfway towards me:"
+O011 = "Harris looks disapproving. He pushes one mug halfway towards me: a small gesture of friendship."
+N012 = "I take a mug and warm my hands. It's a small gesture of friendship."
+O012 = "Enough to give me hope?"
+```
+
+Then native's choice trace shows it re-enters the OUTER cluster with
+`count=2, options=["Take one", "Wait"]` after the `Deny` body completes,
+whereas the oracle has correctly advanced past the cluster to the next
+choice cluster `count=2, options=["Take it", "Don't take it"]`. The
+remaining 67 mismatches downstream are knock-on effects of being in a
+different scene with different `teacup`/`forceful` state.
+
+**Hypothesised mechanism**: after picking a bracketed once-only `*` choice
+whose body ends with `-> labeled_gather` (where `labeled_gather` is a
+depth-2 gather inside the same choice cluster), the native engine emits the
+labeled-gather content correctly, but then re-enters the choice cluster
+loop instead of advancing to the depth-1 parent gather. The mismatch is
+NOT a glue / text-flush bug — it's a flow control bug around how the
+container stack collapses after diverting to an intra-cluster label.
+
+**Reproducer attempts (all of which FAILED to reproduce in isolation)**:
+1. `slice-bug-glue-after-choice.ink` — minimal 2-choice cluster with `<>`
+   glue after a no-bracket choice → passes.
+2. Same fixture extended to nested choice clusters (outer bracketed +
+   inner) with glue-tail gather → passes.
+3. Same again with explicit `-> labeled_gather` divert inside the cluster
+   → passes.
+4. Faithful copy of the Intercept's `waited` knot structure (4 choices, two
+   with `-> pushes_cup`, one with content + glue, one bare; same
+   conditional gating on `tellme` / `cooperate`; same depth-2 labeled
+   gather plus depth-1 parent gather) → still passes.
+
+The slice fixture
+`Tests/SwiftInkRuntimeTests/slice-bug-glue-after-choice.ink.json` plus
+`Bug_GlueAfterChoiceTests` is kept as a regression guard for the patterns
+that DO work. It does NOT reproduce the Intercept divergence.
+
+**Implication for next DELIVER feature**: open a focused bugfix feature.
+Investigation will need engine-level instrumentation: trace native vs.
+oracle through the same script with `containerStack`, `returnStack`,
+`evalStack`, `chosenChoiceTargets`, `currentChoices`, and `pointer.path`
+at every step around the Deny-cluster exit. The combination of accumulated
+state from earlier choices (Wait → "Tell me what..." → Deny) is required
+to trigger the bug — narrowing it without that state has so far failed.
+
+**Why it was not caught by Tier 3 slice tests OR the always-pick-0
+ceiling proof**: slice fixtures isolate single mechanisms; always-pick-0
+on The Intercept loops on "Think" in the opening cluster and never reaches
+a choice with `* [Bracketed] -> labeled_gather` structure inside a
+depth-2-gated `*` choice cluster. The non-trivial playthrough's varied
+choice sequence is the first test in the suite that explores this
+combination.
+
+---
+
 ## Summary Table
 
 | Issue | Severity | Blocks | DESIGN gap? |
@@ -147,3 +224,4 @@ behaviour for void functions.
 | `"pop"` command unhandled | MEDIUM | T3 | YES — not mentioned |
 | `ci == -1` for globals | HIGH | T3 | YES — assumed `ci == 0` |
 | Void function implicit `null` return | MEDIUM | C3 | YES — only `~ret` described |
+| Flow control after `* [Bracketed] -> labeled_gather` re-enters cluster | MEDIUM-HIGH | DWD-07 test | engine bug, not design (corrected diagnosis 2026-06-06) |

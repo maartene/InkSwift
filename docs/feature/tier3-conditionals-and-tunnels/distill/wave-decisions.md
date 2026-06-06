@@ -107,6 +107,58 @@ All `.ink` source files added to the `exclude` list.
 
 ---
 
+### DWD-07 — Non-Trivial Intercept Playthrough Acceptance Test (Addendum, 2026-06-06)
+
+**Decision**: Add a follow-on acceptance test
+(`TheInterceptNonTrivialPlaythroughTests`) that drives the engine through a
+deterministic, NON-trivial choice script and asserts the first 100 output
+lines match a committed JS-bridge oracle fixture line-for-line.
+
+**Rationale**: The original DWD-04 ceiling-proof test (`The Intercept full
+playthrough output matches JavaScript oracle`) always picks choice index 0.
+On The Intercept that path repeatedly selects "Think" inside the opening
+choice cluster and never exercises the Plan / Wait branches that call the
+`lower(ref forceful)` and `raise(ref evasive)` functions (C3 + T3). The
+ceiling-proof passed without actually proving the C3 / T3 mechanisms
+function in a real story context — only the slice fixtures cover them.
+
+A non-trivial choice script (committed in source as
+`interceptChoiceScript`) is replayable on both engines, so the test is
+reproducible without any hidden state. The choice cursor is `script[i] %
+currentChoices.count` so the script remains valid even if a future engine
+change alters the visible choice count at some step.
+
+**Test architecture**:
+1. `interceptChoiceScript: [Int]` constant — committed in test source.
+2. Committed fixture `TheIntercept_oracle_walkthrough.json` — `{choiceScript,
+   maxOutputLines, expectedLines}` captured once by driving `InkSwift.InkStory`.
+3. Assertion test — drives `Story` through the same script; asserts each
+   captured line equals the fixture's `expectedLines[i]`.
+4. Regeneration test — gated on `REGEN_INTERCEPT_ORACLE=1`; uses `#filePath`
+   to write the fixture into the test source tree. No-op under normal
+   `swift test` runs; never affects CI.
+
+**Test file**:
+`Tests/SwiftInkRuntimeTests/Acceptance/Milestone5b_TheInterceptNonTrivialPlaythroughTests.swift`
+
+**Fixture**:
+`Tests/SwiftInkRuntimeTests/TheIntercept_oracle_walkthrough.json` (added to
+`SwiftInkRuntimeTests` resources in `Package.swift`).
+
+**Current state**: **RED**. Diagnosis was corrected on a second pass.
+Lines 0-10 match the oracle line-for-line; the first divergence is at
+index 11 (NOT index 67 as initially reported), immediately after picking
+`* {tellme} [Deny] -> pushes_cup` in the `waited` knot. The native engine
+re-enters the depth-2 choice cluster after emitting the labeled-gather
+body instead of advancing past it, producing 69 line mismatches downstream
+as the engine then follows a different scene through different
+`teacup`/`forceful` state. See `distill/upstream-issues.md` Issue 5 (which
+has also been corrected) for the full divergence detail and the failed
+reproducer attempts. A focused follow-on bugfix feature is needed —
+engine-level state instrumentation is required to root-cause it.
+
+---
+
 ### DWD-06 — Upstream Issues Documented for Crafter
 
 **Decision**: Fixture inspection revealed four gaps between DESIGN documents and actual
