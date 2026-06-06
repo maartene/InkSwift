@@ -236,22 +236,34 @@ zero regressions.
 
 **Remaining gaps (deferred to a follow-on bugfix feature)**:
 
-1. **Line 16 — glue not preserved across function-call diverts**: native
-   emits "I reply" + ", sipping at my tea…" as two lines; oracle merges
-   them via the `<>` glue at the start of the conditional gather body
-   that follows `~ raise(forceful)` / `~ raise(evasive)` function calls.
-   Text content is identical — only the line break differs. Likely the
-   `suppressConsumeAfterDivert` flag in `stepToNextLine` does not survive
-   the function-call+return round-trip, or it needs to be set on the
-   `f():` divert path too.
-2. **Char ~1318 — real content divergence**: after the line-16 split, the
-   engine then takes a different scene around the missing-reel passage
-   ("My odds, then, are one in four…" vs native's "But this is still a
-   mere formality…"). Whether this is downstream of bug #1 (different
-   conditional state due to mis-flushed line context) or a new flow
-   control bug is unclear without further instrumentation. The
-   reproducer (`TheInterceptNonTrivialPlaythroughTests`) is fully
-   deterministic for the next investigator.
+1. ~~Line 16 — glue not preserved across function-call diverts~~. **FIXED 2026-06-06.**
+   The `stepToNextLine` loop was flushing pending lines at the start of
+   `ev`/`/ev` eval blocks, before the function-call divert + destination
+   glue could remove the trailing `\n`. The fix adds an `evalBlockDepth`
+   counter that defers flushes while inside an `ev`/`/ev` block; also
+   makes `flushRemainingOutput` line-aware (drains one complete line at
+   a time via `consumeNextLine` instead of merging the whole buffer);
+   and allows `canContinue` to return true while complete lines remain
+   in the output buffer (so trailing buffered lines drain across
+   subsequent `continue()` calls even after the story has ended). Lines
+   0-20 of the non-trivial playthrough now match the oracle (was 0-10
+   before the eval-block fix). See the commit
+   `fix(engine): defer line flush inside ev/.../ev eval blocks`.
+2. **Char ~1318 — real content divergence (still open)**. After the
+   line-21 boundary, the engine reaches a choice cluster ("Panic /
+   Calculate / Deny" gated by forceful/evasive conditions) where the
+   `forceful` variable holds `float(1.0)` and `evasive` holds `int(0)` —
+   wrong values caused by the function-local `temp= x` parameter slot
+   leaking into `state.variablesState` between consecutive
+   `~ raise(forceful); ~ raise(evasive)` function calls. The `Panic`
+   choice (`{forceful <= 0}`) gets filtered, and the engine ends up in a
+   different scene. Diagnosis: `TreeWalker.handleVariableAssignment`
+   writes BOTH `VAR=` (global) and `temp=` (function-local) into the
+   single `state.variablesState` dict, so the prior call's `x` pointer
+   persists and the next call's `temp= x` writes through the stale
+   pointer instead of replacing the local. The deferred T3 DESIGN D5
+   Option A (`callFrameVariables: [[String: InkValue]]` per-frame scope)
+   is the canonical fix.
 
 The committed regression test `Bug_GlueAfterChoiceTests` covers the
 glue-after-choice patterns that DO work, as a baseline against which any

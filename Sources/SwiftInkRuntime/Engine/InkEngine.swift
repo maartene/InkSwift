@@ -90,9 +90,15 @@ final class InkEngine {
     // MARK: - Computed properties
 
     var canContinue: Bool {
-        guard !state.isEnded else { return false }
-        // Story cannot continue if choices are pending (user must choose first)
+        // Choices pending — user must choose, can't continue.
         guard state.currentChoices.isEmpty else { return false }
+        // Buffered complete lines (text + \n) are still drainable via continue()
+        // even after the story has ended. The step loop defers some flushes
+        // (e.g. inside eval blocks) and may accumulate more than one line before
+        // hitting `end` / `done`; allow the caller to consume them one at a time
+        // through subsequent continue() calls.
+        if state.outputStream.contains("\n") { return true }
+        guard !state.isEnded else { return false }
         guard let top = containerStack.last else { return false }
         return top.index < top.container.children.count
     }
@@ -134,6 +140,14 @@ final class InkEngine {
         // of the current evaluation block (ev…/ev) following a divert so the glue has
         // a chance to fire before we return the buffered line.
         var suppressConsumeAfterDivert = false
+        // Track depth inside ev/.../ev blocks. While > 0, defer line flushing: the
+        // eval block may contain a function-call divert whose return + a downstream
+        // divert can land on a destination that starts with `<>` glue (removing the
+        // pending newline). Flushing inside the eval block would yield a line that
+        // should have been glued away.
+        // Matches the canonical C# runtime semantic where Continue() steps until
+        // outputStreamEndsInNewline is stable (see ink-engine-runtime/Story.cs:462).
+        var evalBlockDepth = 0
         while !state.isEnded {
             guard let top = containerStack.last else { break }
 
@@ -242,6 +256,15 @@ final class InkEngine {
 
             if state.isEnded { break }
 
+            // Track ev/.../ev depth so we can defer flushes inside eval blocks.
+            // The block may contain a function-call divert whose return is followed
+            // by a divert to a glued destination, and a flush at the block boundary
+            // would emit a line that should have been glued.
+            if case .controlCommand(let cmd) = currentChild {
+                if cmd == "ev" { evalBlockDepth += 1 }
+                if cmd == "/ev" { evalBlockDepth = max(0, evalBlockDepth - 1) }
+            }
+
             // Clear the post-divert suppression when we encounter a glue (<>) node,
             // since glue either removes the pending \n or confirms it won't be removed.
             if case .controlCommand(let cmd) = currentChild, cmd == "<>" {
@@ -253,12 +276,15 @@ final class InkEngine {
                 suppressConsumeAfterDivert = false
             }
 
-            // Only check for a completed line after nodes that don't add newlines.
-            // After a .newline node, we defer the check so that a subsequent glue
-            // (<>) has a chance to remove the newline before we return.  The line
+            // Only check for a completed line after nodes that don't add newlines,
+            // aren't suppressed by a recent divert, and aren't inside an eval block.
+            // After a .newline node we defer the check so that a subsequent glue
+            // (<>) has a chance to remove the newline before we return. The line
             // will be flushed on a later iteration (after the next text/glue node).
-            // After a divert, also defer to allow glue at the destination to fire.
-            if case .newline = currentChild { } else if suppressConsumeAfterDivert { } else {
+            if case .newline = currentChild { }
+            else if suppressConsumeAfterDivert { }
+            else if evalBlockDepth > 0 { }
+            else {
                 if let line = consumeNextLine() { return line }
             }
         }
@@ -411,9 +437,20 @@ final class InkEngine {
     }
 
     /// Flush any buffered output that remains after the step loop exits.
+    ///
+    /// If the buffer still contains a complete line (text followed by `\n`),
+    /// return JUST that line — anything beyond stays in `outputStream` for the
+    /// next `continue()` call. This preserves line boundaries when the loop
+    /// has accumulated more than one complete line before exiting (e.g. when
+    /// the step loop deferred flushes inside an eval block and then ended at
+    /// a choicePoint or story end).
+    ///
+    /// If the buffer has no `\n`, return the remaining text as the final line.
     private func flushRemainingOutput() -> String? {
         guard !state.outputStream.isEmpty else { return nil }
-        let remaining = state.outputStream.filter { $0 != "\n" }.joined()
+        if let line = consumeNextLine() { return line }
+        // No newline left — return remaining text as the trailing line.
+        let remaining = state.outputStream.joined()
         state.outputStream.removeAll()
         return remaining.isEmpty ? nil : remaining + "\n"
     }
