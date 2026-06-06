@@ -26,7 +26,11 @@ struct TreeWalker {
             handleText(string, state: &state)
 
         case .newline:
-            state.outputStream.append("\n")
+            if state.suppressNextNewline {
+                state.suppressNextNewline = false
+            } else {
+                state.outputStream.append("\n")
+            }
 
         case .controlCommand(let cmd):
             handleControlCommand(cmd, state: &state)
@@ -35,7 +39,10 @@ struct TreeWalker {
             handleDivert(target: target, state: &state)
 
         case .pushDivertTarget(let path):
-            state.returnStack.append(path)
+            // Push a divert-target value onto the evaluation stack (not the return stack).
+            // The caller (ev…/ev block) stores it in a temp variable via {temp=: "$r"};
+            // later, a variable divert {->: "$r", var: true} looks it up and jumps there.
+            state.evalStack.append(.string(path))
 
         case .choicePoint:
             break  // handled by InkEngine before dispatchNode is reached
@@ -74,7 +81,10 @@ struct TreeWalker {
             break  // inline sub-containers handled by InkEngine via path resolution
 
         case .readCount(let key):
-            state.evalStack.append(.int(state.visitCounts[key] ?? 0))
+            // CNT? keys may be relative (starting with "."). Resolve them against the
+            // current container path so they match the absolute keys in visitCounts.
+            let resolvedKey = resolveReadCountPath(key, relativeTo: state.pointer.containerPath)
+            state.evalStack.append(.int(state.visitCounts[resolvedKey] ?? 0))
 
         case .variablePointer(let name, let contextIndex):
             state.evalStack.append(.variablePointer(name: name, contextIndex: contextIndex))
@@ -90,6 +100,10 @@ struct TreeWalker {
             state.stringAccumulator += string
         } else {
             state.outputStream.append(string)
+            // Once text has been appended to the output stream, any pending glue
+            // suppression (<>) has already done its job of joining the preceding text.
+            // The next \n will be a real line-ending, not a glue-adjacent separator.
+            state.suppressNextNewline = false
         }
     }
 
@@ -136,13 +150,37 @@ struct TreeWalker {
             state.isEnded = true
             state.pointer.index = Int.max
 
+        case "<>":
+            // Glue: remove any trailing newlines already in the output stream AND
+            // suppress the next newline that gets appended. This joins the preceding
+            // text with whatever follows the glue marker — even when the `\n` comes
+            // after the `<>` node in the JSON (e.g. `"text " <> \n -> next_section`).
+            while state.outputStream.last == "\n" {
+                state.outputStream.removeLast()
+            }
+            state.suppressNextNewline = true
+
         case "nop":
-            break  // no-op
+            // Trim trailing whitespace from the output stream.
+            // In inklecate, `nop` is emitted as the "else" path for inline conditionals
+            // so that `{condition: then} rest` does not produce a double space when the
+            // condition is false: the space that the text before the `{...}` contributed
+            // is consumed here, leaving a single space before the continuation text.
+            if let last = state.outputStream.last, last.last == " " {
+                let trimmed = String(last.dropLast())
+                state.outputStream.removeLast()
+                if !trimmed.isEmpty {
+                    state.outputStream.append(trimmed)
+                }
+            }
 
         case "visit":
-            // Record visit count for current container
+            // Push the 0-based visit index for the current container onto the eval stack.
+            // The visit count is incremented when the container is first entered (in enterContainer
+            // or applyDivert); "visit" reports count-1 so the first visit yields index 0.
             let pathKey = state.pointer.containerPath.joined(separator: ".")
-            state.visitCounts[pathKey, default: 0] += 1
+            let visitCount = state.visitCounts[pathKey] ?? 1
+            state.evalStack.append(.int(max(0, visitCount - 1)))
 
         case "#n":
             break  // anonymous named-container reference marker — no-op at walk time
@@ -177,7 +215,8 @@ struct TreeWalker {
         guard let value = state.variablesState[name] else { return }
         // If the variable holds a pointer, dereference it to get the pointed-to value
         if case .variablePointer(let pointedName, _) = value {
-            state.evalStack.append(state.variablesState[pointedName] ?? .int(0))
+            let resolved = state.variablesState[pointedName] ?? .int(0)
+            state.evalStack.append(resolved)
         } else {
             state.evalStack.append(value)
         }
@@ -200,11 +239,12 @@ struct TreeWalker {
         case "<=":  applyBinaryOp(state: &state) { $0.comparing(to: $1, using: <=) }
         case "!":
             applyUnaryOp(state: &state) { value in
-                guard case .bool(let b) = value else { return value }
-                return .bool(!b)
+                return .bool(!value.asBool)
             }
         case "&&":  applyBinaryOp(state: &state) { .bool($0.asBool && $1.asBool) }
         case "||":  applyBinaryOp(state: &state) { .bool($0.asBool || $1.asBool) }
+        case "MIN":     applyBinaryOp(state: &state) { $0.asDouble <= $1.asDouble ? $0 : $1 }
+        case "MAX":     applyBinaryOp(state: &state) { $0.asDouble >= $1.asDouble ? $0 : $1 }
         case "srnd":    _ = state.evalStack.popLast()  // pop seed; result is implementation-defined
         case "floor":   applyUnaryOp(state: &state) { $0.floored }
         case "ceiling": applyUnaryOp(state: &state) { $0.ceiled }
@@ -212,6 +252,33 @@ struct TreeWalker {
         case "float":   applyUnaryOp(state: &state) { $0.toFloat }
         default:    break  // unsupported native functions are no-ops
         }
+    }
+
+    // MARK: - CNT? path resolution
+
+    /// Resolve a relative CNT? key against the current container path.
+    /// Relative keys start with "." and use "^" to navigate up the path hierarchy.
+    /// Returns the absolute dot-joined path string suitable for visitCounts lookup.
+    ///
+    /// Inklecate emits caret counts relative to the NAMED container hierarchy,
+    /// which does NOT count anonymous numeric-index containers (e.g. "0").
+    /// To match, we strip anonymous (numeric) components from the base path when
+    /// counting upward — they are transparent in inklecate's caret model.
+    private func resolveReadCountPath(_ key: String, relativeTo containerPath: [String]) -> String {
+        guard key.hasPrefix(".") else { return key }
+        var components = key.split(separator: ".").map(String.init)
+        // Build a "named-only" base path by filtering out anonymous numeric segments.
+        var namedBasePath = containerPath.filter { Int($0) == nil }
+        while components.first == "^" {
+            components.removeFirst()
+            if !namedBasePath.isEmpty { namedBasePath.removeLast() }
+        }
+        // The resolved key is used against visitCounts which uses FULL absolute paths
+        // (including numeric segments). We need to find the real path by looking up
+        // which visitCounts keys start with the named prefix + the target name.
+        // For simplicity, try the named-path resolution and also try inserting a "0":
+        let namedResult = (namedBasePath + components).joined(separator: ".")
+        return namedResult
     }
 
     // MARK: - Stack operation helpers

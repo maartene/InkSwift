@@ -137,13 +137,6 @@ var state: StoryState
         while !state.isEnded {
             guard let top = containerStack.last else { break }
 
-            // Debug: trace g-0 execution
-            let pathStr = top.pathFromRoot.joined(separator: ".")
-            if pathStr == "make_your_peace.0.g-0" {
-                let childDesc = top.index < top.container.children.count ? "\(top.container.children[top.index])" : "EXHAUSTED"
-                print("G0[\(top.index)] evalStack=\(state.evalStack.count) output=\(state.outputStream) child=\(childDesc.prefix(100))")
-            }
-
             if top.index >= top.container.children.count {
                 if top.isChoiceContinuationRoot {
                     // Before stopping, check for a pending invisible default that should fire
