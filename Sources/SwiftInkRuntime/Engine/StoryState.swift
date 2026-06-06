@@ -312,6 +312,11 @@ struct StoryState: Codable {
     /// Serialised as a sorted array for deterministic JSON output.
     var chosenChoiceTargets: Set<String>
 
+    /// When true, the next `\n` appended to the output stream is suppressed
+    /// (consumed by the glue `<>` that set this flag). Reset after one newline
+    /// is suppressed or when non-newline text is encountered.
+    var suppressNextNewline: Bool
+
     init() {
         pointer = StoryPointer(containerPath: [], index: 0)
         outputStream = []
@@ -329,6 +334,7 @@ struct StoryState: Codable {
         stackFrames = []
         returnStack = []
         chosenChoiceTargets = []
+        suppressNextNewline = false
     }
 
     // MARK: - Codable
@@ -338,28 +344,29 @@ struct StoryState: Codable {
         case isEnded, currentChoices, evalStack
         case inTagMode, tagAccumulator, inStringMode, stringAccumulator
         case lastCompletedLine, stackFrames, returnStack
-        case chosenChoiceTargets
+        case chosenChoiceTargets, suppressNextNewline
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        pointer           = try container.decode(StoryPointer.self,         forKey: .pointer)
-        outputStream      = try container.decode([String].self,             forKey: .outputStream)
-        variablesState    = try container.decode([String: InkValue].self,   forKey: .variablesState)
-        visitCounts       = try container.decode([String: Int].self,        forKey: .visitCounts)
-        currentTags       = try container.decode([String].self,             forKey: .currentTags)
-        isEnded           = try container.decode(Bool.self,                 forKey: .isEnded)
-        currentChoices    = try container.decode([ChoiceData].self,         forKey: .currentChoices)
-        evalStack         = try container.decode([InkValue].self,           forKey: .evalStack)
-        inTagMode         = try container.decode(Bool.self,                 forKey: .inTagMode)
-        tagAccumulator    = try container.decode(String.self,               forKey: .tagAccumulator)
-        inStringMode      = try container.decode(Bool.self,                 forKey: .inStringMode)
-        stringAccumulator = try container.decode(String.self,               forKey: .stringAccumulator)
-        lastCompletedLine = try container.decode(String.self,               forKey: .lastCompletedLine)
-        stackFrames       = try container.decode([ContainerStackFrame].self, forKey: .stackFrames)
-        returnStack       = try container.decodeIfPresent([String].self,    forKey: .returnStack) ?? []
-        let chosenTargetsArray = try container.decodeIfPresent([String].self, forKey: .chosenChoiceTargets) ?? []
-        chosenChoiceTargets = Set(chosenTargetsArray)
+        pointer              = try container.decode(StoryPointer.self,         forKey: .pointer)
+        outputStream         = try container.decode([String].self,             forKey: .outputStream)
+        variablesState       = try container.decode([String: InkValue].self,   forKey: .variablesState)
+        visitCounts          = try container.decode([String: Int].self,        forKey: .visitCounts)
+        currentTags          = try container.decode([String].self,             forKey: .currentTags)
+        isEnded              = try container.decode(Bool.self,                 forKey: .isEnded)
+        currentChoices       = try container.decode([ChoiceData].self,         forKey: .currentChoices)
+        evalStack            = try container.decode([InkValue].self,           forKey: .evalStack)
+        inTagMode            = try container.decode(Bool.self,                 forKey: .inTagMode)
+        tagAccumulator       = try container.decode(String.self,               forKey: .tagAccumulator)
+        inStringMode         = try container.decode(Bool.self,                 forKey: .inStringMode)
+        stringAccumulator    = try container.decode(String.self,               forKey: .stringAccumulator)
+        lastCompletedLine    = try container.decode(String.self,               forKey: .lastCompletedLine)
+        stackFrames          = try container.decode([ContainerStackFrame].self, forKey: .stackFrames)
+        returnStack          = try container.decodeIfPresent([String].self,    forKey: .returnStack) ?? []
+        let chosenTargetsArray = try container.decodeIfPresent([String].self,  forKey: .chosenChoiceTargets) ?? []
+        chosenChoiceTargets  = Set(chosenTargetsArray)
+        suppressNextNewline  = try container.decodeIfPresent(Bool.self,        forKey: .suppressNextNewline) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -380,5 +387,6 @@ struct StoryState: Codable {
         try container.encode(stackFrames,       forKey: .stackFrames)
         try container.encode(returnStack,       forKey: .returnStack)
         try container.encode(Array(chosenChoiceTargets).sorted(), forKey: .chosenChoiceTargets)
+        try container.encode(suppressNextNewline, forKey: .suppressNextNewline)
     }
 }

@@ -6,7 +6,8 @@ struct InkDecoder {
 
     private static let controlCommands: Set<String> = [
         "ev", "/ev", "out", "pop", "->->", "~ret", "du", "str", "/str",
-        "nop", "choiceCnt", "turn", "turns", "visit", "seq", "thread", "done", "end"
+        "nop", "choiceCnt", "turn", "turns", "visit", "seq", "thread", "done", "end",
+        "<>"
     ]
 
     private static let nativeFunctions: Set<String> = [
@@ -52,14 +53,29 @@ struct InkDecoder {
             // Last element is absent, null, or not a dict — treat all elements as content
             let contentItems = array.last is NSNull ? Array(array.dropLast()) : array
             let children = contentItems.compactMap { classify($0) }
-            return ContainerNode(children: children, namedContent: [:], flags: 0, name: nil)
+            // Named sequential children are accessible by name (mirrors C# TryAddNamedContent).
+            var namedContent: [String: ContainerNode] = [:]
+            for child in children {
+                if case .container(let sub) = child, let subName = sub.name {
+                    namedContent[subName] = sub
+                }
+            }
+            return ContainerNode(children: children, namedContent: namedContent, flags: 0, name: nil)
         }
 
         let contentItems = Array(array.dropLast())
         let flags = metaDict["#f"] as? Int ?? 0
         let name = metaDict["#n"] as? String
-        let namedContent = parseNamedContent(from: metaDict)
+        var namedContent = parseNamedContent(from: metaDict)
         let children = contentItems.compactMap { classify($0) }
+        // Named sequential children are accessible by name (mirrors C# TryAddNamedContent).
+        // Named-only content from the metadata dict takes precedence if keys collide.
+        for child in children {
+            if case .container(let sub) = child, let subName = sub.name,
+               namedContent[subName] == nil {
+                namedContent[subName] = sub
+            }
+        }
         return ContainerNode(children: children, namedContent: namedContent, flags: flags, name: name)
     }
 

@@ -53,7 +53,36 @@ public final class Story {
     @discardableResult
     public func `continue`() -> String {
         engine.step()
-        return engine.currentText
+        return cleanOutputWhitespace(engine.currentText)
+    }
+
+    /// Collapse runs of inline whitespace (spaces and tabs) to a single space.
+    /// Mirrors the `CleanOutputWhitespace` function in the inkjs reference runtime
+    /// which is applied to every `currentText` value before it is returned.
+    /// Newlines are preserved so multi-line output is unaffected.
+    private func cleanOutputWhitespace(_ text: String) -> String {
+        var result = ""
+        result.reserveCapacity(text.count)
+        var whitespaceStart = -1
+        var lastNewlinePos = 0
+        for (i, c) in text.enumerated() {
+            let isWS = c == " " || c == "\t"
+            if isWS {
+                if whitespaceStart == -1 { whitespaceStart = i }
+            } else {
+                if whitespaceStart >= 0 {
+                    // We have a run of whitespace. Collapse to single space
+                    // unless it's at the start of a new line (whitespaceStart == lastNewlinePos).
+                    if c != "\n" && whitespaceStart != lastNewlinePos {
+                        result.append(" ")
+                    }
+                    whitespaceStart = -1
+                }
+                if c == "\n" { lastNewlinePos = i + 1 }
+                result.append(c)
+            }
+        }
+        return result
     }
 
     public func chooseChoice(at index: Int) throws {
