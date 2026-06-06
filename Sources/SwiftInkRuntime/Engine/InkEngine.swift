@@ -486,6 +486,10 @@ final class InkEngine {
     /// `f():`-prefixed (an Ink function call rather than a plain goto).
     private func applyFunctionCall(target: String) {
         state.returnStack.append(buildFunctionReturnAddress())
+        // Push a new empty per-frame temp-variable scope so `temp= x` declarations
+        // inside the function body don't leak into `variablesState` (or get
+        // confused with the caller's locals with the same name).
+        state.callFrameVariables.append([:])
         applyDivert(target: target)
     }
 
@@ -493,6 +497,11 @@ final class InkEngine {
     /// Expected format: "fnret:path|index" where path is the dot-joined
     /// containerStack pathFromRoot and index is the execution index after the call.
     private func applyFunctionReturn(returnAddr: String) {
+        // Pop the function's per-frame temp-variable scope. Local `temp= x`
+        // declarations made inside the function body are discarded here.
+        if !state.callFrameVariables.isEmpty {
+            state.callFrameVariables.removeLast()
+        }
         // Strip the "fnret:" prefix
         let addr = returnAddr.hasPrefix("fnret:") ? String(returnAddr.dropFirst(6)) : returnAddr
         guard let pipeIdx = addr.lastIndex(of: "|") else {

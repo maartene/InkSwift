@@ -249,21 +249,40 @@ zero regressions.
    0-20 of the non-trivial playthrough now match the oracle (was 0-10
    before the eval-block fix). See the commit
    `fix(engine): defer line flush inside ev/.../ev eval blocks`.
-2. **Char ~1318 — real content divergence (still open)**. After the
-   line-21 boundary, the engine reaches a choice cluster ("Panic /
-   Calculate / Deny" gated by forceful/evasive conditions) where the
-   `forceful` variable holds `float(1.0)` and `evasive` holds `int(0)` —
-   wrong values caused by the function-local `temp= x` parameter slot
-   leaking into `state.variablesState` between consecutive
-   `~ raise(forceful); ~ raise(evasive)` function calls. The `Panic`
-   choice (`{forceful <= 0}`) gets filtered, and the engine ends up in a
-   different scene. Diagnosis: `TreeWalker.handleVariableAssignment`
-   writes BOTH `VAR=` (global) and `temp=` (function-local) into the
-   single `state.variablesState` dict, so the prior call's `x` pointer
-   persists and the next call's `temp= x` writes through the stale
-   pointer instead of replacing the local. The deferred T3 DESIGN D5
-   Option A (`callFrameVariables: [[String: InkValue]]` per-frame scope)
-   is the canonical fix.
+2. ~~Char ~1318 — real content divergence at the Panic/Calculate/Deny
+   cluster due to function-local `temp= x` leakage~~. **FIXED 2026-06-06.**
+   `TreeWalker.handleVariableAssignment` and `handleVariableReference`
+   were writing/reading BOTH `VAR=` (global) and `temp=` (function-local)
+   into the single `state.variablesState` dict, so the first
+   `~ raise(forceful)` call's leftover `x` pointer corrupted the second
+   `~ raise(evasive)` call. The fix implements the deferred T3 DESIGN
+   D5 Option A: a `callFrameVariables: [[String: InkValue]]` per-frame
+   scope on `StoryState`, pushed by `applyFunctionCall` and popped by
+   `applyFunctionReturn`. `temp=` writes go to the top frame; reads
+   check local first then fall back to globals. Result: after
+   `~ raise(forceful); ~ raise(evasive)`, `forceful=0` and `evasive=1`
+   correctly (was `forceful=float(1.0)`, `evasive=0`). At the
+   Panic/Calculate/Deny cluster: all three choices visible (was just
+   Calculate/Deny). Lines 0-27 of the non-trivial playthrough now match
+   the oracle (was 0-20). See the commit
+   `fix(engine): per-frame temp variable scope for function calls`.
+
+3. **Line 28+ — Say-nothing conditional choice filtered (still open)**.
+   At the "You want to explain that?" cluster in the `admitted_to_something`
+   knot, the native engine shows only `[Explain]` where the oracle shows
+   `[Explain, "Say nothing"]`. The `Say nothing` choice is gated by
+   `{drugged}`, and `drugged=int(1)` at the relevant moment, no stale
+   function-frames on the stack, so the bug looks unrelated to bug 2.
+   Slice 02 (conditional choice gating) tests still pass — the basic
+   mechanism works for simpler fixtures. The compiled JSON for this
+   cluster has a deeply-nested ev/.../ev structure inside an outer
+   `{not drugged}` conditional gather body. Possibly an interaction
+   between the new `evalBlockDepth` tracking and how nested choice
+   conditions get evaluated, or an unrelated quirk in the conditional
+   branch handling. Deferred to a separate bugfix feature; diagnosis
+   should start by adding evalStack-snapshot instrumentation at
+   `collectChoicePoint` and comparing native vs. oracle stack states
+   step-by-step through the cluster.
 
 The committed regression test `Bug_GlueAfterChoiceTests` covers the
 glue-after-choice patterns that DO work, as a baseline against which any

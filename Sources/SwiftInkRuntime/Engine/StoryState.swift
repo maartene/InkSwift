@@ -317,6 +317,20 @@ struct StoryState: Codable {
     /// is suppressed or when non-newline text is encountered.
     var suppressNextNewline: Bool
 
+    /// Per-function-call temp-variable scope. Each frame is a `[String: InkValue]`
+    /// of local temp variables declared inside that function call. Pushed by
+    /// `applyFunctionCall`, popped by `applyFunctionReturn`. Empty outside any
+    /// function call.
+    ///
+    /// Without this, `temp= x` inside a function call leaks into
+    /// `variablesState` as a global. Two consecutive ref-param function calls
+    /// (e.g. The Intercept's `~ raise(forceful); ~ raise(evasive)`) corrupt
+    /// state because the second call's `temp= x` writes through the previous
+    /// call's stale pointer instead of replacing the local — see
+    /// `distill/upstream-issues.md` Issue 5 (bug 2). This implements the
+    /// DESIGN D5 Option A scope that was deferred at original Tier 3 delivery.
+    var callFrameVariables: [[String: InkValue]]
+
     init() {
         pointer = StoryPointer(containerPath: [], index: 0)
         outputStream = []
@@ -335,6 +349,7 @@ struct StoryState: Codable {
         returnStack = []
         chosenChoiceTargets = []
         suppressNextNewline = false
+        callFrameVariables = []
     }
 
     // MARK: - Codable
@@ -345,6 +360,7 @@ struct StoryState: Codable {
         case inTagMode, tagAccumulator, inStringMode, stringAccumulator
         case lastCompletedLine, stackFrames, returnStack
         case chosenChoiceTargets, suppressNextNewline
+        case callFrameVariables
     }
 
     init(from decoder: Decoder) throws {
@@ -367,6 +383,7 @@ struct StoryState: Codable {
         let chosenTargetsArray = try container.decodeIfPresent([String].self,  forKey: .chosenChoiceTargets) ?? []
         chosenChoiceTargets  = Set(chosenTargetsArray)
         suppressNextNewline  = try container.decodeIfPresent(Bool.self,        forKey: .suppressNextNewline) ?? false
+        callFrameVariables   = try container.decodeIfPresent([[String: InkValue]].self, forKey: .callFrameVariables) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -388,5 +405,6 @@ struct StoryState: Codable {
         try container.encode(returnStack,       forKey: .returnStack)
         try container.encode(Array(chosenChoiceTargets).sorted(), forKey: .chosenChoiceTargets)
         try container.encode(suppressNextNewline, forKey: .suppressNextNewline)
+        try container.encode(callFrameVariables,  forKey: .callFrameVariables)
     }
 }

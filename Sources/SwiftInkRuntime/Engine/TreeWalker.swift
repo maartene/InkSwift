@@ -50,8 +50,8 @@ struct TreeWalker {
         case .tunnelDivert:
             break  // handled by InkEngine before dispatchNode is reached
 
-        case .variableAssignment(let name, _):
-            handleVariableAssignment(name: name, state: &state)
+        case .variableAssignment(let name, let isGlobal):
+            handleVariableAssignment(name: name, isGlobal: isGlobal, state: &state)
 
         case .variableReference(let name):
             handleVariableReference(name: name, state: &state)
@@ -201,9 +201,38 @@ struct TreeWalker {
 
     // MARK: - Variable handling
 
-    private func handleVariableAssignment(name: String, state: inout StoryState) {
+    private func handleVariableAssignment(name: String, isGlobal: Bool, state: inout StoryState) {
         guard let value = state.evalStack.popLast() else { return }
-        // If the existing variable holds a pointer, write through to the pointed-to global
+
+        // VAR= (global): always write to variablesState, with pointer write-through
+        // if the existing global is a variable pointer.
+        if isGlobal {
+            if case .variablePointer(let pointedName, _) = state.variablesState[name] {
+                state.variablesState[pointedName] = value
+            } else {
+                state.variablesState[name] = value
+            }
+            return
+        }
+
+        // temp= (function-local): if we're inside a function call, write to the
+        // top call-frame's local scope (creating it if absent). If the LOCAL slot
+        // already holds a variable pointer (the ref-param pattern: caller pushes
+        // pointer, function body's `temp= x` declares the param), write THROUGH
+        // the pointer instead of overwriting it — this is how `~ x = x + 1`
+        // inside `raise(ref x)` mutates the caller's variable.
+        if !state.callFrameVariables.isEmpty {
+            let frameIdx = state.callFrameVariables.count - 1
+            if case .variablePointer(let pointedName, _) = state.callFrameVariables[frameIdx][name] {
+                state.variablesState[pointedName] = value
+            } else {
+                state.callFrameVariables[frameIdx][name] = value
+            }
+            return
+        }
+
+        // temp= outside any function call (knot-level temp or pre-function declaration):
+        // fall back to globals — same as the old single-scope behaviour.
         if case .variablePointer(let pointedName, _) = state.variablesState[name] {
             state.variablesState[pointedName] = value
         } else {
@@ -212,13 +241,22 @@ struct TreeWalker {
     }
 
     private func handleVariableReference(name: String, state: inout StoryState) {
-        guard let value = state.variablesState[name] else { return }
-        // If the variable holds a pointer, dereference it to get the pointed-to value
-        if case .variablePointer(let pointedName, _) = value {
+        // Resolution order: top call-frame local (if any) → globals.
+        let value: InkValue?
+        if !state.callFrameVariables.isEmpty,
+           let local = state.callFrameVariables[state.callFrameVariables.count - 1][name] {
+            value = local
+        } else {
+            value = state.variablesState[name]
+        }
+        guard let v = value else { return }
+        // If the variable holds a pointer, dereference it to the pointed-to global.
+        // Ref-param pointers always point into globals (the caller's variable).
+        if case .variablePointer(let pointedName, _) = v {
             let resolved = state.variablesState[pointedName] ?? .int(0)
             state.evalStack.append(resolved)
         } else {
-            state.evalStack.append(value)
+            state.evalStack.append(v)
         }
     }
 
