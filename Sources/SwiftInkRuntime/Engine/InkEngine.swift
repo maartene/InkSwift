@@ -18,6 +18,37 @@ var state: StoryState
         self.root = root
         self.state = StoryState()
         containerStack = [ContainerFrame(container: root, index: 0, pathFromRoot: [])]
+        initializeGlobalVariables()
+    }
+
+    /// Execute the `global decl` named container (if present) to initialize global variables.
+    /// Ink stories store variable declarations as executable sequences: ev / value / /ev / VAR=
+    /// in a special named container that runs before the story starts.
+    private func initializeGlobalVariables() {
+        guard let globalDecl = root.namedContent["global decl"] else { return }
+        let walker = TreeWalker()
+        // Run the global decl container sequentially, collecting variable assignments.
+        var idx = 0
+        while idx < globalDecl.children.count {
+            let child = globalDecl.children[idx]
+            idx += 1
+            // Dispatch the node to process control commands, values, and assignments.
+            // We re-use the same state so VAR= nodes write directly into variablesState.
+            walker.dispatchNode(child, state: &state)
+        }
+        // Reset the eval stack after global initialization — the decl block may leave
+        // interim values pushed by ev/value//ev sequences that were consumed by VAR=.
+        state.evalStack.removeAll()
+        // Reset output stream — global decl may append text from string-mode operations.
+        state.outputStream.removeAll()
+        // Reset end-of-story flags that the decl's trailing "end"/"done" control command
+        // set via TreeWalker.handleControlCommand. Without this reset, a freshly-constructed
+        // engine appears terminated to the facade — canContinue short-circuits to false and
+        // chooseChoice raises invalidChoiceIndex. Real inklecate-compiled stories always end
+        // `global decl` with `"end"` so this reset restores the contract that a fresh engine
+        // is ready to run the main story body.
+        state.isEnded = false
+        state.pointer.index = 0
     }
 
     // MARK: - Container frame management
@@ -44,6 +75,12 @@ var state: StoryState
         let entryIndex = (containerStack.last?.index ?? 0) - 1
         let path = parentPath + ["\(entryIndex)"]
         containerStack.append(ContainerFrame(container: container, index: 0, pathFromRoot: path))
+        // Track visit counts for containers that have the Visits flag (#f bit 0).
+        // This mirrors C# VisitContainer(container, atStart:true) for sequential entry.
+        if container.flags & Self.containerFlagCountVisits != 0 {
+            let pathKey = path.joined(separator: ".")
+            state.visitCounts[pathKey, default: 0] += 1
+        }
     }
 
     private func popContainer() {
@@ -92,11 +129,35 @@ var state: StoryState
         // while the choice-collection container is still on the stack (so relative
         // path resolution succeeds), checked after the container exhausts.
         var pendingInvisibleDefaultPath: [String]? = nil
+        // After a divert fires, the destination may start with glue (<>) that removes
+        // a trailing \n from the output stream. Suppress consumeNextLine for the rest
+        // of the current evaluation block (ev…/ev) following a divert so the glue has
+        // a chance to fire before we return the buffered line.
+        var suppressConsumeAfterDivert = false
         while !state.isEnded {
             guard let top = containerStack.last else { break }
 
+            // Debug: trace g-0 execution
+            let pathStr = top.pathFromRoot.joined(separator: ".")
+            if pathStr == "make_your_peace.0.g-0" {
+                let childDesc = top.index < top.container.children.count ? "\(top.container.children[top.index])" : "EXHAUSTED"
+                print("G0[\(top.index)] evalStack=\(state.evalStack.count) output=\(state.outputStream) child=\(childDesc.prefix(100))")
+            }
+
             if top.index >= top.container.children.count {
-                if top.isChoiceContinuationRoot { break }
+                if top.isChoiceContinuationRoot {
+                    // Before stopping, check for a pending invisible default that should fire
+                    // now that all visible choices have been exhausted. This allows the
+                    // auto-continuation pattern (`+ [] -> target`) to work inside a choice
+                    // continuation (e.g., after "Ask about the shop." is exhausted).
+                    if state.currentChoices.isEmpty, let autoPath = pendingInvisibleDefaultPath {
+                        popContainer()
+                        pendingInvisibleDefaultPath = nil
+                        applyDivert(target: autoPath.joined(separator: "."))
+                        continue
+                    }
+                    break
+                }
                 // Implicit void return: function body exhausted with a pending function
                 // return address (identified by "fnret:" prefix).
                 // Push void sentinel so the caller's "out" command has something to consume.
@@ -147,6 +208,7 @@ var state: StoryState
                 let returnAddr = buildTunnelReturnAddress()
                 state.returnStack.append(returnAddr)
                 applyDivert(target: target)
+                suppressConsumeAfterDivert = state.outputStream.last == "\n"
                 continue
             }
 
@@ -155,6 +217,19 @@ var state: StoryState
                 if let returnAddr = state.returnStack.popLast() {
                     applyDivert(target: returnAddr)
                 }
+                suppressConsumeAfterDivert = state.outputStream.last == "\n"
+                continue
+            }
+
+            // Keep state.pointer.containerPath in sync with the actual current frame so
+            // the `visit` control command reads the correct container's visit count.
+            state.pointer.containerPath = containerStack.last?.pathFromRoot ?? []
+
+            // Intercept readCount before dispatching to TreeWalker so we can resolve
+            // relative CNT? paths using the actual containerStack frame paths.
+            if case .readCount(let key) = currentChild {
+                let resolvedKey = resolveReadCountKey(key)
+                state.evalStack.append(.int(state.visitCounts[resolvedKey] ?? 0))
                 continue
             }
 
@@ -167,16 +242,36 @@ var state: StoryState
                     let returnAddr = buildFunctionReturnAddress()
                     state.returnStack.append(returnAddr)
                     applyDivert(target: actualTarget)
+                    suppressConsumeAfterDivert = state.outputStream.last == "\n"
                     continue
                 }
                 let (shouldReturn, line) = handleDivertNode(target: target, isConditional: isConditional, isVariable: isVariable)
                 if shouldReturn { return line }
+                suppressConsumeAfterDivert = state.outputStream.last == "\n"
                 continue
             }
 
             if state.isEnded { break }
 
-            if let line = consumeNextLine() { return line }
+            // Clear the post-divert suppression when we encounter a glue (<>) node,
+            // since glue either removes the pending \n or confirms it won't be removed.
+            if case .controlCommand(let cmd) = currentChild, cmd == "<>" {
+                suppressConsumeAfterDivert = false
+            }
+            // Also clear when we encounter a text node — at that point any earlier \n
+            // is part of a completed line that's safe to return on the next iteration.
+            if case .text = currentChild {
+                suppressConsumeAfterDivert = false
+            }
+
+            // Only check for a completed line after nodes that don't add newlines.
+            // After a .newline node, we defer the check so that a subsequent glue
+            // (<>) has a chance to remove the newline before we return.  The line
+            // will be flushed on a later iteration (after the next text/glue node).
+            // After a divert, also defer to allow glue at the destination to fire.
+            if case .newline = currentChild { } else if suppressConsumeAfterDivert { } else {
+                if let line = consumeNextLine() { return line }
+            }
         }
 
         return flushRemainingOutput()
@@ -191,7 +286,12 @@ var state: StoryState
         pendingInvisibleDefaultPath: inout [String]?
     ) {
         // isInvisibleDefault: gather fallback — never shown to user.
-        guard !flags.contains(.isInvisibleDefault) else { return }
+        // Any pending str/text/str string on the evalStack must be popped to
+        // keep the stack balanced, since we skip resolveChoiceText() for these.
+        guard !flags.contains(.isInvisibleDefault) else {
+            discardPendingChoiceTextFromEvalStack()
+            return
+        }
 
         // Invisible default predicate: none of the visible-choice bits are set.
         // inklecate v0.9 compiles `+ [] -> target` as flg:0, so isInvisibleDefault
@@ -201,6 +301,7 @@ var state: StoryState
             if pendingInvisibleDefaultPath == nil {
                 pendingInvisibleDefaultPath = resolveInvisibleDefaultPath(target)
             }
+            discardPendingChoiceTextFromEvalStack()
             return
         }
 
@@ -209,7 +310,11 @@ var state: StoryState
         // skip this choice if the result is false.
         if flags.contains(.hasCondition) {
             let conditionResult = state.evalStack.popLast() ?? .bool(false)
-            guard conditionResult.asBool else { return }
+            guard conditionResult.asBool else {
+                // Also pop any pending choice text string to keep the stack balanced.
+                discardPendingChoiceTextFromEvalStack()
+                return
+            }
         }
 
         // isOnceOnly: suppress if already chosen.
@@ -218,7 +323,11 @@ var state: StoryState
         // incorrectly collide.
         if flags.contains(.isOnceOnly) {
             if let absolutePath = resolveAbsoluteTargetPath(for: target),
-               state.chosenChoiceTargets.contains(absolutePath) { return }
+               state.chosenChoiceTargets.contains(absolutePath) {
+                // Pop any pending choice text string to keep the stack balanced.
+                discardPendingChoiceTextFromEvalStack()
+                return
+            }
         }
 
         let choiceText = resolveChoiceText()
@@ -236,7 +345,16 @@ var state: StoryState
                 flags: flags
             )
         )
-        state.outputStream.removeAll { $0 != "\n" }
+    }
+
+    /// Discard a pending choice-text string from the evalStack without consuming it.
+    /// Called when a choice is skipped (condition false, once-only suppressed, or
+    /// invisible-default) so that the str/text/str-accumulated string does not linger
+    /// on the evalStack and corrupt later conditional evaluations.
+    private func discardPendingChoiceTextFromEvalStack() {
+        if case .string(_) = state.evalStack.last {
+            state.evalStack.removeLast()
+        }
     }
 
     /// Resolve the display text for a choice point from (in priority order):
@@ -265,27 +383,32 @@ var state: StoryState
         isConditional: Bool,
         isVariable: Bool
     ) -> (shouldReturn: Bool, line: String?) {
-        // Flush buffered output BEFORE the divert collapses the stack — Ink
-        // commonly emits `text + divert` with the newline after the divert.
-        let flushedLine = flushRemainingOutput()
+        // Do NOT flush the output stream before the divert. The divert destination
+        // may begin with a glue (<>) node that removes a pending \n from the stream —
+        // flushing here would return the line before the glue has a chance to join it
+        // with the continuation text (e.g. "Awkward, I reply" + glue + ", sipping...").
 
         if isConditional {
             // Conditional diverts pop a bool from the eval stack; false = skip divert.
             let condition = state.evalStack.popLast() ?? .bool(false)
             guard condition.asBool else {
-                return (shouldReturn: flushedLine != nil, line: flushedLine)
+                return (shouldReturn: false, line: nil)
             }
-            if let line = flushedLine { return (shouldReturn: true, line: line) }
             applyConditionalBranch(target: target)
             return (shouldReturn: false, line: nil)
         }
 
-        if isVariable, !state.returnStack.isEmpty {
-            applyDivert(target: state.returnStack.removeLast())
-        } else if !isVariable {
+        if isVariable {
+            // Variable divert: look up the target variable in variablesState.
+            // The variable holds a divert-target path stored as a string value
+            // (placed there by the {^->: "path"} + {temp=: "$varName"} mechanism).
+            if let varValue = state.variablesState[target],
+               case .string(let path) = varValue {
+                applyDivert(target: path)
+            }
+        } else {
             applyDivert(target: target)
         }
-        if let line = flushedLine { return (shouldReturn: true, line: line) }
         return (shouldReturn: false, line: nil)
     }
 
@@ -352,9 +475,11 @@ var state: StoryState
             state.pointer.containerPath = []
         } else {
             let components = pathStr.split(separator: ".").map(String.init)
+            // Always rebuild the full ancestor stack so relative diverts in the caller
+            // body (e.g. ".^.^.^.g-3") can find their anchor container at the correct
+            // depth. A single-frame stack would make those caret counts fail.
             if let container = navigateAbsolute(components) {
-                containerStack = [ContainerFrame(container: container, index: targetIndex, pathFromRoot: components)]
-                state.pointer.containerPath = components
+                rebuildFullStack(to: components, container: container, targetIndex: targetIndex)
             } else if let startIndex = Int(components.last ?? ""),
                       let parentContainer = navigateAbsolute(Array(components.dropLast())) {
                 rebuildStackForParentPath(Array(components.dropLast()), container: parentContainer, startIndex: startIndex)
@@ -428,6 +553,29 @@ var state: StoryState
         return current
     }
 
+    /// Attempt to navigate `components` from `anchorContainer`, returning both the
+    /// destination container and the ACTUAL resolved path components (which may include
+    /// an extra "0" segment if the anchor's named content is stored in an anonymous
+    /// sequential child — the inklecate "knot namespace flattening" convention).
+    private func navigateWithActualPath(
+        _ components: [String],
+        from anchorContainer: ContainerNode,
+        anchorPath: [String]
+    ) -> (container: ContainerNode, path: [String])? {
+        // First try direct navigation (works when namedContent is in the anchor itself)
+        if let destination = navigate(components, from: anchorContainer) {
+            return (destination, anchorPath + components)
+        }
+        // Fallthrough: in inklecate, knot stitches are stored in an anonymous container
+        // at index 0 of the knot. Try navigating from anchorContainer.children[0].
+        if !anchorContainer.children.isEmpty,
+           case .container(let firstChild) = anchorContainer.children[0],
+           let destination = navigate(components, from: firstChild) {
+            return (destination, anchorPath + ["0"] + components)
+        }
+        return nil
+    }
+
     /// Walk an absolute `pathFromRoot` from the root container.
     /// Used by save/restore (rebuilding stack frames) and choice resolution.
     private func navigateAbsolute(_ path: [String]) -> ContainerNode? {
@@ -452,9 +600,13 @@ var state: StoryState
     private func resolveToAbsoluteComponents(for target: String) -> [String]? {
         if target.hasPrefix(".") {
             guard let (stackIndex, rest) = parseRelativePath(target),
-                  navigate(rest, from: containerStack[stackIndex].container) != nil
+                  let (_, resolvedPath) = navigateWithActualPath(
+                      rest,
+                      from: containerStack[stackIndex].container,
+                      anchorPath: containerStack[stackIndex].pathFromRoot
+                  )
             else { return nil }
-            return containerStack[stackIndex].pathFromRoot + rest
+            return resolvedPath
         }
         let components = pathComponents(from: target)
         guard navigateAbsolute(components) != nil else { return nil }
@@ -483,22 +635,57 @@ var state: StoryState
     private func buildContinuationFrames(forTarget target: String) -> [ContainerStackFrame] {
         if target.hasPrefix(".") {
             // Relative path: derive parent frames from the current containerStack
-            // and append the continuation. The continuation's pathFromRoot is the
-            // parent's pathFromRoot plus the final name component of the target.
+            // and append the continuation. The continuation's pathFromRoot uses the
+            // ACTUAL resolved path (which may include a "0" segment for knot stitches).
             guard let (stackIndex, rest) = parseRelativePath(target),
-                  navigate(rest, from: containerStack[stackIndex].container) != nil
+                  let (_, continuationPath) = navigateWithActualPath(
+                      rest,
+                      from: containerStack[stackIndex].container,
+                      anchorPath: containerStack[stackIndex].pathFromRoot
+                  )
             else { return [] }
             let parentSnapshots = containerStack[0...stackIndex].map {
                 ContainerStackFrame(pathFromRoot: $0.pathFromRoot, executionIndex: $0.index)
             }
-            let parentPath = containerStack[stackIndex].pathFromRoot
-            let continuationPath = parentPath + rest
             return parentSnapshots + [ContainerStackFrame(pathFromRoot: continuationPath, executionIndex: 0)]
         }
         // Absolute path: continuation is a top-level lookup; no parent frames.
         let components = pathComponents(from: target)
         guard navigateAbsolute(components) != nil else { return [] }
         return [ContainerStackFrame(pathFromRoot: components, executionIndex: 0)]
+    }
+
+    /// Resolve a CNT? path key to an absolute dot-joined string suitable for visitCounts lookup.
+    /// Absolute keys (no leading ".") are returned as-is.
+    /// Relative keys use "^" carets that navigate up the containerStack frame hierarchy —
+    /// identical to the caret model used by parseRelativePath for diverts: N carets maps to
+    /// stackIndex = containerStack.count - N, and the remainder is navigated from that frame's
+    /// pathFromRoot.
+    private func resolveReadCountKey(_ key: String) -> String {
+        guard key.hasPrefix(".") else { return key }
+        var components = key.split(separator: ".").map(String.init)
+        var caretCount = 0
+        while components.first == "^" {
+            caretCount += 1
+            components.removeFirst()
+        }
+        let stackIndex = containerStack.count - caretCount
+        guard stackIndex >= 0, stackIndex < containerStack.count else { return key }
+        let anchorPath = containerStack[stackIndex].pathFromRoot
+        // Navigate the remaining components from the anchor frame to find the full path.
+        // Use navigateWithActualPath to handle knot-namespace fallthrough (anonymous "0" child).
+        if components.isEmpty {
+            return anchorPath.joined(separator: ".")
+        }
+        if let (_, resolvedPath) = navigateWithActualPath(
+            components,
+            from: containerStack[stackIndex].container,
+            anchorPath: anchorPath
+        ) {
+            return resolvedPath.joined(separator: ".")
+        }
+        // Fallback: plain concatenation
+        return (anchorPath + components).joined(separator: ".")
     }
 
     /// Resolve a relative path during execution (used by applyDivert).
@@ -535,16 +722,36 @@ var state: StoryState
         if target.hasPrefix(".") {
             guard let (stackIndex, rest) = parseRelativePath(target) else { return }
             if rest.isEmpty {
-                // Pure ancestor goto
+                // Pure ancestor goto: keep frames[0..<stackIndex], reset that frame.
                 let resolved = containerStack[stackIndex]
-                containerStack = [ContainerFrame(container: resolved.container, index: 0, pathFromRoot: resolved.pathFromRoot)]
+                containerStack = Array(containerStack[0..<stackIndex]) +
+                    [ContainerFrame(container: resolved.container, index: 0, pathFromRoot: resolved.pathFromRoot)]
                 state.pointer.containerPath = resolved.pathFromRoot
-            } else {
-                // Navigate into named content from the anchor frame (e.g. ".^.b")
-                guard let destination = navigate(rest, from: containerStack[stackIndex].container) else { return }
-                let resolvedPath = containerStack[stackIndex].pathFromRoot + rest
-                containerStack = [ContainerFrame(container: destination, index: 0, pathFromRoot: resolvedPath)]
+                return
+            }
+            if let (destination, resolvedPath) = navigateWithActualPath(
+                rest,
+                from: containerStack[stackIndex].container,
+                anchorPath: containerStack[stackIndex].pathFromRoot
+            ) {
+                // Named relative divert: keep anchor frame and all parents, add destination.
+                // The anchor frame is KEPT (frames[0...stackIndex] inclusive) so that the
+                // destination body can navigate back up through the full ancestor stack.
+                containerStack = Array(containerStack[0...stackIndex]) +
+                    [ContainerFrame(container: destination, index: 0, pathFromRoot: resolvedPath)]
                 state.pointer.containerPath = resolvedPath
+                return
+            }
+            // Numeric-index relative divert (e.g. ".^.^.^.7"):
+            // The last rest component is an execution-start index into the anchor frame's
+            // container, not a child container navigation. Set the anchor frame's index.
+            if rest.count == 1, let startIndex = Int(rest[0]) {
+                let anchorFrame = containerStack[stackIndex]
+                let droppedIsRoot = containerStack[stackIndex...].contains { $0.isChoiceContinuationRoot }
+                containerStack = Array(containerStack[0..<stackIndex]) +
+                    [ContainerFrame(container: anchorFrame.container, index: startIndex, pathFromRoot: anchorFrame.pathFromRoot, isChoiceContinuationRoot: droppedIsRoot)]
+                state.pointer.containerPath = anchorFrame.pathFromRoot
+                return
             }
             return
         }
@@ -554,49 +761,61 @@ var state: StoryState
 
     private func applyDivert(target: String) {
         // Relative path (starts with ".").
-        // Pure-ancestor gotos (all-caret paths like ".^.^") jump to an ancestor frame.
-        //
-        // Named-relative paths (e.g. ".^.b") come in two flavours:
-        //  1. Branch jumps: `{"->":".^.b"}` in a conditional-false branch — the `b`
-        //     namedContent is the branch body. No return address is on the returnStack.
-        //  2. Call/return text mechanisms: `{"->":".^.s"}` and `{"->":".^.^.N.s"}` —
-        //     a push-divert-target (`{"^->":"..."}`) always precedes these, so the
-        //     returnStack is non-empty. The `s` container uses the return address to
-        //     jump back after emitting choice text.
-        //
-        // Discriminator: only follow a named-relative path when returnStack is EMPTY
-        // (branch-jump case). When returnStack is non-empty it is a call/return
-        // mechanism — remain a no-op so the existing call/return machinery works.
+        // All relative paths resolve by counting '^' carets to find the anchor frame
+        // in the containerStack, then navigating the remaining components from there.
+        // Parent frames (below the anchor frame) are always preserved so that subsequent
+        // relative diverts in the destination container continue to resolve correctly.
         if target.hasPrefix(".") {
             guard let (stackIndex, rest) = parseRelativePath(target) else { return }
+            // If any frame being discarded (from stackIndex upward) is a continuation
+            // root, propagate that flag to the new top frame so the engine stops when
+            // the continuation exhausts rather than falling through into its parent.
+            let discardedIsRoot = containerStack[stackIndex...].contains { $0.isChoiceContinuationRoot }
             if rest.isEmpty {
-                // Pure ancestor goto
+                // Pure ancestor goto: restart the frame at stackIndex, discard frames above.
                 let resolved = containerStack[stackIndex]
-                containerStack = [ContainerFrame(container: resolved.container, index: 0, pathFromRoot: resolved.pathFromRoot)]
+                containerStack = Array(containerStack[0..<stackIndex]) +
+                    [ContainerFrame(container: resolved.container, index: 0, pathFromRoot: resolved.pathFromRoot, isChoiceContinuationRoot: discardedIsRoot)]
                 state.pointer.containerPath = resolved.pathFromRoot
-            } else if state.returnStack.isEmpty,
-                      let destination = navigate(rest, from: containerStack[stackIndex].container) {
-                // Named-relative branch jump (no pending return address): navigate into namedContent
-                let resolvedPath = containerStack[stackIndex].pathFromRoot + rest
-                containerStack = [ContainerFrame(container: destination, index: 0, pathFromRoot: resolvedPath)]
+            } else if let (destination, resolvedPath) = navigateWithActualPath(
+                rest,
+                from: containerStack[stackIndex].container,
+                anchorPath: containerStack[stackIndex].pathFromRoot
+            ) {
+                // Named or indexed relative divert: keep frames[0...stackIndex] (inclusive anchor)
+                // so the destination shares the same container-tree depth as a conditional
+                // divert to the same target. This ensures that exit diverts (e.g. ".^.^.^.7")
+                // emitted by inklecate count carets from the correct tree depth.
+                containerStack = Array(containerStack[0...stackIndex]) +
+                    [ContainerFrame(container: destination, index: 0, pathFromRoot: resolvedPath)]
                 state.pointer.containerPath = resolvedPath
+            } else if rest.count == 1, let startIndex = Int(rest[0]) {
+                // Numeric execution-position divert: last component is a child index, not a
+                // container name.  Jump to that execution position in the anchor frame,
+                // discarding all frames above it (same as the conditional-branch numeric case).
+                let anchorFrame = containerStack[stackIndex]
+                containerStack = Array(containerStack[0..<stackIndex]) +
+                    [ContainerFrame(container: anchorFrame.container, index: startIndex, pathFromRoot: anchorFrame.pathFromRoot, isChoiceContinuationRoot: discardedIsRoot)]
+                state.pointer.containerPath = anchorFrame.pathFromRoot
             }
-            // Call/return relative path (returnStack non-empty) or unresolvable: leave stack as-is
+            // Unresolvable: leave stack as-is
             return
         }
         let components = pathComponents(from: target)
         if components.last?.hasPrefix("$") == true {
+            // Anchor divert: jump to the position just after the named anchor marker,
+            // rebuilding the full ancestor stack so relative diverts remain resolvable.
             let prefixComponents = Array(components.dropLast())
             if let (parentContainer, startIndex) = resolveAnchor(inPath: components) {
-                containerStack = [ContainerFrame(container: parentContainer, index: startIndex, pathFromRoot: prefixComponents)]
+                rebuildStackForParentPath(prefixComponents, container: parentContainer, startIndex: startIndex)
                 state.pointer.containerPath = prefixComponents
             }
             // If unresolvable, leave stack as-is (silent no-op)
         } else if let container = navigateAbsolute(components) {
+            let pathKey = components.joined(separator: ".")
             containerStack = [ContainerFrame(container: container, index: 0, pathFromRoot: components)]
             state.pointer.containerPath = components
             if container.flags & Self.containerFlagCountVisits != 0 {
-                let pathKey = components.joined(separator: ".")
                 state.visitCounts[pathKey, default: 0] += 1
             }
         } else if let startIndex = Int(components.last ?? ""),
@@ -608,6 +827,20 @@ var state: StoryState
             rebuildStackForParentPath(parentPath, container: parentContainer, startIndex: startIndex)
         }
         // If unresolvable, leave stack as-is (will exhaust and stop)
+    }
+
+    /// Rebuild the full container stack for a return to a known container, preserving
+    /// all ancestor frames so that relative diverts inside the target body resolve correctly.
+    /// `fullPath` is the absolute path of the target container; `container` is its node.
+    private func rebuildFullStack(to fullPath: [String], container: ContainerNode, targetIndex: Int) {
+        rebuildStackForParentPath(Array(fullPath.dropLast()), container: container, startIndex: targetIndex)
+        // rebuildStackForParentPath ends with a frame that has pathFromRoot: parentPath.
+        // Overwrite the final frame's pathFromRoot with the full path so callers see
+        // the correct container path (e.g. "start.waited.0.g-2.c-7", not "start.waited.0.g-2").
+        if !containerStack.isEmpty {
+            containerStack[containerStack.count - 1].pathFromRoot = fullPath
+            state.pointer.containerPath = fullPath
+        }
     }
 
     /// Rebuild the container stack to reflect a jump to `startIndex` within `container`,
@@ -701,6 +934,15 @@ var state: StoryState
             containerStack = rebuilt
             state.pointer.containerPath = rebuilt.last?.pathFromRoot ?? []
             state.pointer.index = 0
+            // Track visit counts for the choice body container if it has the countVisits flag.
+            // This mirrors what applyDivert does for absolute-path targets and enterContainer
+            // does for sequentially-entered containers. Choice bodies entered via chooseChoice
+            // do not go through either path, so we track them explicitly here.
+            let topFrame = rebuilt[rebuilt.count - 1]
+            if topFrame.container.flags & Self.containerFlagCountVisits != 0 {
+                let pathKey = topFrame.pathFromRoot.joined(separator: ".")
+                state.visitCounts[pathKey, default: 0] += 1
+            }
         }
     }
 

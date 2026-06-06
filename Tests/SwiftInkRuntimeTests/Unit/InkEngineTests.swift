@@ -1,4 +1,4 @@
-// Test Budget: 11 distinct behaviors x 2 = 22 max unit tests
+// Test Budget: 12 distinct behaviors x 2 = 24 max unit tests
 // Behaviors:
 //   B1 — init(root:) does not crash; canContinue is true for non-empty root
 //   B2 — stepToNextLine() returns text collected from .text + .newline nodes
@@ -11,6 +11,7 @@
 //   B9 — function call via f() divert returns to caller and leaves return value on eval stack
 //   B10 — tunnel entry (->t->) jumps to sub_room and produces sub_room content
 //   B11 — tunnel return (->->) resumes execution after the tunnel divert in the caller
+//   B12 — global decl ending with "end" control command does not leak isEnded to story execution
 
 import Testing
 import Foundation
@@ -206,5 +207,19 @@ struct InkEngineTests {
         let line3 = story.`continue`()  // must be "After tunnel."
         #expect(line3.contains("After tunnel."),
                 "Tunnel return (->->) must resume caller context and produce after-tunnel text")
+    }
+
+    // B12: global decl that ends with the "end" control command must not leak isEnded into
+    // story execution. Real inklecate-compiled stories end `global decl` with `[..., "end", null]`,
+    // and TreeWalker.handleControlCommand sets state.isEnded=true and state.pointer.index=Int.max
+    // for "end" (and "done"). After initializeGlobalVariables completes, the engine must reset
+    // these so the story can run normally. Use slice-c1-inline-conditionals.ink.json — its
+    // global decl ends with `"end"` and is already a bundle resource.
+    @Test func `canContinue is true after init when global decl ends with end control command`() throws {
+        let url = try #require(Bundle.module.url(forResource: "slice-c1-inline-conditionals", withExtension: "ink.json"))
+        let json = try String(contentsOf: url, encoding: .utf8)
+        let story = try Story(json: json)
+        #expect(story.canContinue,
+                "canContinue must be true immediately after init even when global decl ends with the \"end\" control command")
     }
 }
