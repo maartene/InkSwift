@@ -1,0 +1,1 @@
+{"inkVersion":21,"root":[[{"->":"start"},["done",{"#n":"g-0"}],null],"done",{"start":["^Caller pre.","\n",{"->t->":"tunnel_a"},"^Caller post.","\n","end",null],"tunnel_a":["^A pre.","\n",{"->t->":"tunnel_b"},"^A post.","\n","ev","void","/ev","->->",null],"tunnel_b":["^B body.","\n","ev","void","/ev","->->",null]}],"listDefs":{}}
