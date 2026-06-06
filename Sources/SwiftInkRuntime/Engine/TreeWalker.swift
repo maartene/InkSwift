@@ -267,18 +267,14 @@ struct TreeWalker {
     private func resolveReadCountPath(_ key: String, relativeTo containerPath: [String]) -> String {
         guard key.hasPrefix(".") else { return key }
         var components = key.split(separator: ".").map(String.init)
-        // Build a "named-only" base path by filtering out anonymous numeric segments.
+        // Build a "named-only" base path by filtering out anonymous numeric segments —
+        // inklecate counts carets against the NAMED container hierarchy only.
         var namedBasePath = containerPath.filter { Int($0) == nil }
         while components.first == "^" {
             components.removeFirst()
             if !namedBasePath.isEmpty { namedBasePath.removeLast() }
         }
-        // The resolved key is used against visitCounts which uses FULL absolute paths
-        // (including numeric segments). We need to find the real path by looking up
-        // which visitCounts keys start with the named prefix + the target name.
-        // For simplicity, try the named-path resolution and also try inserting a "0":
-        let namedResult = (namedBasePath + components).joined(separator: ".")
-        return namedResult
+        return (namedBasePath + components).joined(separator: ".")
     }
 
     // MARK: - Stack operation helpers

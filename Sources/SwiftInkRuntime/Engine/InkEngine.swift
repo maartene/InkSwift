@@ -5,7 +5,7 @@ final class InkEngine {
     /// Bit 0 of a container's `#f` flags: the container tracks visit counts.
     private static let containerFlagCountVisits: Int = 0x1
 
-var state: StoryState
+    var state: StoryState
     let root: ContainerNode
     private var lastCompletedLine: String = ""
 
