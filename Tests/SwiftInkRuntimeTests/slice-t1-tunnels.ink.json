@@ -1,0 +1,1 @@
+{"inkVersion":21,"root":[[{"->":"start"},["done",{"#n":"g-0"}],null],"done",{"start":["^Before tunnel.","\n",{"->t->":"sub_room"},"^After tunnel.","\n","end",null],"sub_room":["^Sub room content.","\n","ev","void","/ev","->->",null]}],"listDefs":{}}

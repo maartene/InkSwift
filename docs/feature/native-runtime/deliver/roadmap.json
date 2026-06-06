@@ -1,0 +1,299 @@
+{
+  "roadmap": {
+    "project_id": "native-runtime",
+    "created_at": "2026-06-01T09:53:10Z",
+    "total_steps": 12,
+    "phases": 3
+  },
+  "phases": [
+    {
+      "id": "01",
+      "name": "JSON Decoding",
+      "description": "Implement the Decoder layer: NodeKind enum, ContainerNode struct, InkDecoder recursive JSON parser, and InkDecoder.probe() wired into Story.init(json:). Walking skeleton must be green by end of step 03.",
+      "steps": [
+        {
+          "id": "01-01",
+          "name": "Implement NodeKind enum with all node types",
+          "description": "Replace the scaffold NodeKind enum with a complete, compilable enum covering every node type found in the spike: text, newline, intValue, floatValue, controlCommand, nativeFunction, divert, choicePoint, variableAssignment, variableReference, tagOpen, tagClose, voidValue, and container. All cases must be internal (Rule R2). No fatalErrors remain in this file.",
+          "criteria": [
+            "NodeKind is declared `internal enum` — no `public` modifier anywhere on the type or its cases",
+            "All node kinds identified in spike/findings.md are present: .text, .newline, .intValue, .floatValue, .controlCommand, .nativeFunction, .divert, .choicePoint, .variableAssignment, .variableReference, .tagOpen, .tagClose, .voidValue, .container",
+            "`swift build` succeeds with zero errors and zero warnings on the SwiftInkRuntime target",
+            "No import of Engine or Facade layer types in NodeKind.swift (Rule R1)"
+          ],
+          "time_estimate_minutes": 30,
+          "dependencies": [],
+          "implementation_scope": [
+            "Sources/SwiftInkRuntime/Decoder/NodeKind.swift"
+          ],
+          "test_file": "",
+          "scenario_name": "",
+          "notes": "No acceptance test is enabled for this step — correctness is verified by the decoder tests in step 01-02 and 01-04. Build-green is the gate."
+        },
+        {
+          "id": "01-02",
+          "name": "Implement ContainerNode and InkDecoder.decode(_:) recursive parser",
+          "description": "Implement the recursive JSON-to-ContainerNode parser in InkDecoder using JSONSerialization. Apply the container invariant from the spike: last element null means no metadata; last element dict carries #f (flags), #n (name), and named sub-containers. Integer and float values must be correctly distinguished. ContainerNode struct must be fully populated from real JSON. Enable and green the first two Milestone 1 tests.",
+          "criteria": [
+            "Enabling `decoder parses minimal Ink JSON into a ContainerNode tree` and running `swift test --filter Milestone1_JSONDecodingTests/decoder_parses_minimal_Ink_JSON_into_a_ContainerNode_tree` produces a green result",
+            "Enabling `container null last element produces empty named content and zero flags` and running `swift test` produces a green result",
+            "Enabling `container dict last element populates named sub-containers` and running `swift test` produces a green result",
+            "Enabling `decoder classifies whole numbers as intValue not floatValue` and running `swift test` produces a green result",
+            "JSONSerialization is only called from InkDecoder.swift — no call sites in Engine or Facade (Rule R3)",
+            "`swift build` succeeds with zero errors"
+          ],
+          "time_estimate_minutes": 90,
+          "dependencies": ["01-01"],
+          "implementation_scope": [
+            "Sources/SwiftInkRuntime/Decoder/ContainerNode.swift",
+            "Sources/SwiftInkRuntime/Decoder/InkDecoder.swift"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Milestone1_JSONDecodingTests.swift",
+          "scenario_name": "`decoder parses minimal Ink JSON into a ContainerNode tree`"
+        },
+        {
+          "id": "01-03",
+          "name": "Implement InkDecoder.probe() and wire into Story.init(json:)",
+          "description": "Implement InkDecoder.probe() so it decodes the bundled test.ink.json fixture, asserts the result is a ContainerNode with at least one child, and verifies JSONSerialization can round-trip the fixture. Wire Story.init(json:) to call probe() before constructing the engine — throw StoryError.decoderProbeFailure(reason:) if probe fails, StoryError.invalidJSON for malformed input, and StoryError.unsupportedInkVersion for unsupported inkVersion values. This step must green the Walking Skeleton acceptance tests.",
+          "criteria": [
+            "Running `swift test --filter WalkingSkeletonTests` produces green for both: `story loads from a real bundle fixture and canContinue is true` and `Story init throws for malformed JSON`",
+            "Enabling `InkDecoder probe passes for the bundled test fixture` and running `swift test` produces a green result",
+            "Enabling `Story init throws for an unsupported ink version` and running `swift test` produces a green result",
+            "Story.init(json:) throws StoryError.decoderProbeFailure when probe() fails",
+            "Story.init(json:) throws StoryError.invalidJSON for non-JSON input",
+            "`swift build` succeeds with zero errors"
+          ],
+          "time_estimate_minutes": 60,
+          "dependencies": ["01-02"],
+          "implementation_scope": [
+            "Sources/SwiftInkRuntime/Decoder/InkDecoder.swift",
+            "Sources/SwiftInkRuntime/Facade/Story.swift"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/WalkingSkeletonTests.swift",
+          "scenario_name": "`story loads from a real bundle fixture and canContinue is true`"
+        },
+        {
+          "id": "01-04",
+          "name": "Enable and green all Milestone 1 acceptance tests",
+          "description": "Remove all .disabled(...) attributes from Milestone1_JSONDecodingTests.swift. All six tests must pass. Fix any remaining decoder issues discovered by the full suite. This step is purely test-enabling — if 01-01 through 01-03 are correct, no new production code should be required.",
+          "criteria": [
+            "Running `swift test --filter Milestone1_JSONDecodingTests` produces green for all six tests: `decoder parses minimal Ink JSON into a ContainerNode tree`, `InkDecoder probe passes for the bundled test fixture`, `Story init throws for an unsupported ink version`, `container null last element produces empty named content and zero flags`, `container dict last element populates named sub-containers`, `decoder classifies whole numbers as intValue not floatValue`",
+            "Running `swift test --filter WalkingSkeletonTests` remains green for both walking skeleton tests",
+            "No test is annotated with .disabled in the Milestone 1 test file",
+            "`swift test` exits with code 0 — zero failures, zero errors"
+          ],
+          "time_estimate_minutes": 30,
+          "dependencies": ["01-03"],
+          "implementation_scope": [
+            "Tests/SwiftInkRuntimeTests/Acceptance/Milestone1_JSONDecodingTests.swift",
+            "Sources/SwiftInkRuntime/Decoder/InkDecoder.swift",
+            "Sources/SwiftInkRuntime/Decoder/ContainerNode.swift",
+            "Sources/SwiftInkRuntime/Decoder/NodeKind.swift"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Milestone1_JSONDecodingTests.swift",
+          "scenario_name": "`decoder parses minimal Ink JSON into a ContainerNode tree`"
+        }
+      ]
+    },
+    {
+      "id": "02",
+      "name": "Story Execution",
+      "description": "Implement the Engine and Facade layers: TagParser pure functions, StoryState struct, TreeWalker recursive visitor, InkEngine orchestrator, and the Story facade wiring all layers together. The oracle comparison test drives correctness — output must match InkStory line-by-line.",
+      "steps": [
+        {
+          "id": "02-01",
+          "name": "Implement TagParser pure functions",
+          "description": "Implement TagParser.parse(_:) to convert a raw Ink tag string into a (key, value) tuple. A tag of the form 'key: value' returns key and optional value. A bare tag returns the full string as key with nil value. This is a pure function with no side effects — no JSONSerialization, no imports beyond Swift standard library.",
+          "criteria": [
+            "TagParser.parse(\"IMAGE: background.png\") returns (key: \"IMAGE\", value: \"background.png\")",
+            "TagParser.parse(\"NOTE\") returns (key: \"NOTE\", value: nil)",
+            "TagParser.parse(\"key: value with colon: inside\") treats only the first colon as the separator",
+            "TagParser.parse(\"\") returns (key: \"\", value: nil) without crashing",
+            "No import of Foundation, Decoder, or Facade layer types in TagParser.swift (Rule R1)",
+            "`swift build` succeeds with zero errors"
+          ],
+          "time_estimate_minutes": 30,
+          "dependencies": ["01-04"],
+          "implementation_scope": [
+            "Sources/SwiftInkRuntime/Engine/TagParser.swift"
+          ],
+          "test_file": "",
+          "scenario_name": "",
+          "notes": "TagParser is a pure domain function — its public signature IS the driving port. Unit tests for TagParser call it directly. No acceptance test is enabled in this step; correctness is verified transitively when tags appear in Milestone 2 tests."
+        },
+        {
+          "id": "02-02",
+          "name": "Implement StoryState struct with all fields for tree-walker execution",
+          "description": "Define all stored properties on StoryState required by the tree-walker: current pointer (container reference + index), call stack for knot/stitch navigation, visit counts dictionary, output stream buffer, variables state dictionary, current tags list, and a flag indicating whether the story has ended. StoryState must remain Codable (already declared in scaffold). No fatalErrors remain.",
+          "criteria": [
+            "StoryState compiles as a struct with Codable conformance — `swift build` succeeds",
+            "StoryState contains at minimum: a pointer to the current position in the container tree, an output stream buffer, a variables state store, a visit counts store, a current tags collection, and an isEnded flag",
+            "All stored properties use Codable-compatible types (no raw ContainerNode references stored directly — use path-based addressing)",
+            "No import of Facade layer types in StoryState.swift (Rule R1)",
+            "`swift build` succeeds with zero errors"
+          ],
+          "time_estimate_minutes": 45,
+          "dependencies": ["02-01"],
+          "implementation_scope": [
+            "Sources/SwiftInkRuntime/Engine/StoryState.swift"
+          ],
+          "test_file": "",
+          "scenario_name": "",
+          "notes": "StoryState fields are driven by what TreeWalker and InkEngine need. Define the minimal set required to green Milestone 2 tests — do not add fields speculatively."
+        },
+        {
+          "id": "02-03",
+          "name": "Implement TreeWalker — recursive visitor dispatching on NodeKind",
+          "description": "Implement TreeWalker.step(in:state:) to advance execution by one node, updating StoryState in place. Dispatch on NodeKind: text nodes append to output stream; newline nodes flush line; control commands (ev, /ev, str, /str, pop, done, end) update execution mode; diverts update the current pointer; choice points register available choices; variable assignments update variables state; variable references read from variables state; tagOpen/tagClose accumulate current tags. The walker must handle the recursive container structure — named sub-containers are reachable via divert targets.",
+          "criteria": [
+            "TreeWalker.step(in:state:) returns nil when the container is exhausted (no more nodes at current index)",
+            "Text nodes are accumulated in StoryState output stream",
+            "Newline nodes cause a line boundary in the output stream",
+            "A done or end control command sets StoryState.isEnded to true",
+            "No calls to JSONSerialization in TreeWalker.swift (Rule R3)",
+            "`swift build` succeeds with zero errors"
+          ],
+          "time_estimate_minutes": 120,
+          "dependencies": ["02-02"],
+          "implementation_scope": [
+            "Sources/SwiftInkRuntime/Engine/TreeWalker.swift"
+          ],
+          "test_file": "",
+          "scenario_name": "",
+          "notes": "TreeWalker is the most complex component. Implement incrementally, driven by unit tests for each NodeKind case. Use InkEngine (step 02-04) as the orchestration harness during integration."
+        },
+        {
+          "id": "02-04",
+          "name": "Implement InkEngine — owns state, drives walker, exposes computed properties",
+          "description": "Implement InkEngine with a complete init(root:) and orchestrate the TreeWalker to advance story execution, producing paragraphs of output. Expose all computed properties: canContinue, currentText, currentChoices, currentTags, globalTags, currentErrors. Implement chooseChoice(at:) to validate the index and update the current position. Implement saveState() and restoreState(_:) via state serialization on StoryState. No fatalErrors remain.",
+          "criteria": [
+            "InkEngine.init(root:) initialises StoryState to the beginning of the root container without crashing",
+            "InkEngine.canContinue returns true when there are unvisited nodes and the story has not ended",
+            "InkEngine.step() advances the walker until a line of output is ready or canContinue becomes false",
+            "InkEngine.currentText returns the most recently completed output line",
+            "InkEngine.currentChoices returns the choices registered by the walker at the current choice point",
+            "InkEngine.chooseChoice(at:) throws StoryError.invalidChoiceIndex for an out-of-range index",
+            "InkEngine.saveState() returns Data encodable from StoryState via JSONEncoder",
+            "InkEngine.restoreState(_:) decodes Data via JSONDecoder into StoryState; throws StoryError.invalidStateData for undecodable input",
+            "`swift build` succeeds with zero errors"
+          ],
+          "time_estimate_minutes": 90,
+          "dependencies": ["02-03"],
+          "implementation_scope": [
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift"
+          ],
+          "test_file": "",
+          "scenario_name": ""
+        },
+        {
+          "id": "02-05",
+          "name": "Wire Story facade and green all Milestone 2 tests",
+          "description": "Replace all fatalError stubs in Story.swift with delegation to InkEngine. Story.init(json:) calls InkDecoder.probe(), decodes the JSON into ContainerNode, and initialises InkEngine. All public properties and methods delegate to the engine. Remove all .disabled(...) attributes from Milestone2_StoryExecutionTests.swift. All seven tests must pass, including the oracle comparison against InkStory.",
+          "criteria": [
+            "Running `swift test --filter Milestone2_StoryExecutionTests` produces green for all seven tests: `linear story can be continued through all text without error`, `SwiftInkRuntime output matches InkSwift oracle for the test fixture`, `choices appear in currentChoices after continuing a passage`, `selecting a choice advances the story to the chosen path`, `chooseChoice throws for an out-of-range index`, `tags from a tagged passage appear in currentTags after continue`, `story ends gracefully with no errors when fully continued`",
+            "Running `swift test --filter WalkingSkeletonTests` remains green",
+            "Running `swift test --filter Milestone1_JSONDecodingTests` remains green",
+            "No test is annotated with .disabled in the Milestone 2 test file",
+            "No import of InkSwift in any production source file under Sources/SwiftInkRuntime/ (Rule from Decision 2a)",
+            "`swift test` exits with code 0"
+          ],
+          "time_estimate_minutes": 90,
+          "dependencies": ["02-04"],
+          "implementation_scope": [
+            "Sources/SwiftInkRuntime/Facade/Story.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Milestone2_StoryExecutionTests.swift"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Milestone2_StoryExecutionTests.swift",
+          "scenario_name": "`SwiftInkRuntime output matches InkSwift oracle for the test fixture`"
+        }
+      ]
+    },
+    {
+      "id": "03",
+      "name": "Save and Restore",
+      "description": "Implement the save/restore cycle using the Codable StoryState. InkEngine owns saveState() and restoreState(_:); Story delegates to the engine. All four Milestone 3 acceptance tests must be green.",
+      "steps": [
+        {
+          "id": "03-01",
+          "name": "Verify StoryState Codable conformance encodes and decodes a mid-story snapshot",
+          "description": "Confirm that StoryState (declared Codable in Phase 02) can round-trip through JSONEncoder/JSONDecoder with all fields populated at a mid-story point. If any fields added in Phase 02 are not Codable-compatible, fix them now. This step may require no new production code if Phase 02 already produced a complete Codable StoryState.",
+          "criteria": [
+            "A StoryState populated by stepping an InkEngine through at least one passage of test.ink.json can be encoded to Data by JSONEncoder without throwing",
+            "The encoded Data can be decoded back to a StoryState by JSONDecoder without throwing",
+            "The decoded StoryState equals the original StoryState (same current pointer, same output history, same visit counts)",
+            "`swift build` succeeds with zero errors"
+          ],
+          "time_estimate_minutes": 30,
+          "dependencies": ["02-05"],
+          "implementation_scope": [
+            "Sources/SwiftInkRuntime/Engine/StoryState.swift"
+          ],
+          "test_file": "",
+          "scenario_name": "",
+          "notes": "If StoryState.Codable is already complete from Phase 02, this step is a verification-only gate with no production file changes."
+        },
+        {
+          "id": "03-02",
+          "name": "Implement InkEngine.saveState() and InkEngine.restoreState(_:)",
+          "description": "Implement InkEngine.saveState() to encode the current StoryState to Data using JSONEncoder. Implement InkEngine.restoreState(_:) to decode Data into StoryState using JSONDecoder, replacing the current state; throw StoryError.invalidStateData if decoding fails. Both methods are already scaffolded — remove fatalErrors and provide real implementations.",
+          "criteria": [
+            "InkEngine.saveState() returns non-empty Data after at least one step has been taken",
+            "InkEngine.restoreState(_:) applied to Data from saveState() produces a StoryState equal to the saved snapshot",
+            "InkEngine.restoreState(_:) throws StoryError.invalidStateData when called with arbitrary non-JSON bytes",
+            "InkEngine.restoreState(_:) throws StoryError.invalidStateData when called with valid JSON that does not decode to StoryState",
+            "`swift build` succeeds with zero errors"
+          ],
+          "time_estimate_minutes": 45,
+          "dependencies": ["03-01"],
+          "implementation_scope": [
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift"
+          ],
+          "test_file": "",
+          "scenario_name": ""
+        },
+        {
+          "id": "03-03",
+          "name": "Wire Story save/restore and green all Milestone 3 tests",
+          "description": "Wire Story.saveState() and Story.restoreState(_:) to delegate to InkEngine. Remove all .disabled(...) attributes from Milestone3_SaveRestoreTests.swift. All four tests must pass: position preservation, choice-point restoration, invalid-data error, and round-trip stability.",
+          "criteria": [
+            "Running `swift test --filter Milestone3_SaveRestoreTests` produces green for all four tests: `save and restore preserves the story position`, `restore places the story at the saved choice point`, `restoring with invalid data throws StoryError invalidStateData`, `save-restore round trip is stable across repeated saves`",
+            "Running `swift test --filter WalkingSkeletonTests` remains green",
+            "Running `swift test --filter Milestone1_JSONDecodingTests` remains green",
+            "Running `swift test --filter Milestone2_StoryExecutionTests` remains green",
+            "No test is annotated with .disabled in the Milestone 3 test file",
+            "`swift test` exits with code 0 — all 13 tests across all milestones and the walking skeleton pass"
+          ],
+          "time_estimate_minutes": 45,
+          "dependencies": ["03-02"],
+          "implementation_scope": [
+            "Sources/SwiftInkRuntime/Facade/Story.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Milestone3_SaveRestoreTests.swift"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Milestone3_SaveRestoreTests.swift",
+          "scenario_name": "`save and restore preserves the story position`"
+        }
+      ]
+    }
+  ],
+  "implementation_scope": {
+    "source_directories": [
+      "Sources/SwiftInkRuntime/Decoder/",
+      "Sources/SwiftInkRuntime/Engine/",
+      "Sources/SwiftInkRuntime/Facade/"
+    ],
+    "test_directories": [
+      "Tests/SwiftInkRuntimeTests/Acceptance/"
+    ],
+    "excluded_patterns": [
+      "Sources/InkSwift/**",
+      "Tests/InkSwiftTests/**",
+      "**/*.DS_Store"
+    ]
+  },
+  "validation": {
+    "status": "approved",
+    "reviewer": "nw-solution-architect-reviewer",
+    "approved_at": "2026-06-01",
+    "review_notes": "APPROVED after revision. Prescriptive HOW details removed from 01-02 and 02-04 descriptions. All DISTILL scenarios covered, walking skeleton in Phase 1, all step IDs valid, dependency chain valid."
+  }
+}

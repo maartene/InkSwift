@@ -1,0 +1,410 @@
+import Foundation
+
+// MARK: - InkValue
+
+enum InkValue: Codable, Equatable {
+    case int(Int)
+    case float(Double)
+    case string(String)
+    case bool(Bool)
+    case variablePointer(name: String, contextIndex: Int)
+
+    private enum CodingKeys: String, CodingKey {
+        case type, intValue, floatValue, stringValue, boolValue, pointerName, pointerContextIndex
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let typeName = try container.decode(String.self, forKey: .type)
+        switch typeName {
+        case "int":
+            self = .int(try container.decode(Int.self, forKey: .intValue))
+        case "float":
+            self = .float(try container.decode(Double.self, forKey: .floatValue))
+        case "string":
+            self = .string(try container.decode(String.self, forKey: .stringValue))
+        case "bool":
+            self = .bool(try container.decode(Bool.self, forKey: .boolValue))
+        case "variablePointer":
+            let name = try container.decode(String.self, forKey: .pointerName)
+            let contextIndex = try container.decode(Int.self, forKey: .pointerContextIndex)
+            self = .variablePointer(name: name, contextIndex: contextIndex)
+        default:
+            throw DecodingError.dataCorruptedError(
+                forKey: .type,
+                in: container,
+                debugDescription: "Unknown InkValue type: \(typeName)"
+            )
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .int(let value):
+            try container.encode("int", forKey: .type)
+            try container.encode(value, forKey: .intValue)
+        case .float(let value):
+            try container.encode("float", forKey: .type)
+            try container.encode(value, forKey: .floatValue)
+        case .string(let value):
+            try container.encode("string", forKey: .type)
+            try container.encode(value, forKey: .stringValue)
+        case .bool(let value):
+            try container.encode("bool", forKey: .type)
+            try container.encode(value, forKey: .boolValue)
+        case .variablePointer(let name, let contextIndex):
+            try container.encode("variablePointer", forKey: .type)
+            try container.encode(name, forKey: .pointerName)
+            try container.encode(contextIndex, forKey: .pointerContextIndex)
+        }
+    }
+}
+
+// MARK: - InkValue arithmetic and conversion
+
+extension InkValue {
+
+    var asDouble: Double {
+        switch self {
+        case .int(let n): return Double(n)
+        case .float(let f): return f
+        case .bool(let b): return b ? 1.0 : 0.0
+        case .string: return 0.0
+        case .variablePointer: return 0.0
+        }
+    }
+
+    var asBool: Bool {
+        switch self {
+        case .bool(let b): return b
+        case .int(let n): return n != 0
+        case .float(let f): return f != 0.0
+        case .string(let s): return !s.isEmpty
+        case .variablePointer: return false
+        }
+    }
+
+    var asString: String {
+        switch self {
+        case .int(let n): return String(n)
+        case .float(let f): return String(f)
+        case .string(let s): return s
+        case .bool(let b): return b ? "true" : "false"
+        case .variablePointer(let name, _): return name
+        }
+    }
+
+    func adding(_ rhs: InkValue) -> InkValue {
+        switch (self, rhs) {
+        case (.int(let a), .int(let b)): return .int(a + b)
+        case (.string(let a), .string(let b)): return .string(a + b)
+        default: return .float(asDouble + rhs.asDouble)
+        }
+    }
+
+    func subtracting(_ rhs: InkValue) -> InkValue {
+        switch (self, rhs) {
+        case (.int(let a), .int(let b)): return .int(a - b)
+        default: return .float(asDouble - rhs.asDouble)
+        }
+    }
+
+    func multiplying(_ rhs: InkValue) -> InkValue {
+        switch (self, rhs) {
+        case (.int(let a), .int(let b)): return .int(a * b)
+        default: return .float(asDouble * rhs.asDouble)
+        }
+    }
+
+    func dividing(by rhs: InkValue) -> InkValue {
+        switch (self, rhs) {
+        case (.int(let a), .int(let b)) where b != 0: return .int(a / b)
+        default:
+            let divisor = rhs.asDouble
+            guard divisor != 0.0 else { return .float(0.0) }
+            return .float(asDouble / divisor)
+        }
+    }
+
+    func modulo(_ rhs: InkValue) -> InkValue {
+        switch (self, rhs) {
+        case (.int(let a), .int(let b)) where b != 0: return .int(a % b)
+        default:
+            let divisor = rhs.asDouble
+            guard divisor != 0.0 else { return .float(0.0) }
+            return .float(asDouble.truncatingRemainder(dividingBy: divisor))
+        }
+    }
+
+    func comparing(to rhs: InkValue, using op: (Double, Double) -> Bool) -> InkValue {
+        return .bool(op(asDouble, rhs.asDouble))
+    }
+
+    var floored: InkValue {
+        switch self {
+        case .float(let f): return .int(Int(Foundation.floor(f)))
+        default: return self
+        }
+    }
+
+    var ceiled: InkValue {
+        switch self {
+        case .float(let f): return .int(Int(Foundation.ceil(f)))
+        default: return self
+        }
+    }
+
+    var toInt: InkValue {
+        switch self {
+        case .int: return self
+        case .float(let f): return .int(Int(f))
+        case .bool(let b): return .int(b ? 1 : 0)
+        case .string(let s): return .int(Int(s) ?? 0)
+        case .variablePointer: return .int(0)
+        }
+    }
+
+    var toFloat: InkValue {
+        switch self {
+        case .float: return self
+        case .int(let n): return .float(Double(n))
+        case .bool(let b): return .float(b ? 1.0 : 0.0)
+        case .string(let s): return .float(Double(s) ?? 0.0)
+        case .variablePointer: return .float(0.0)
+        }
+    }
+}
+
+// MARK: - ChoiceFlags
+
+/// Typed bitmask for the `flg` field emitted by inklecate in choice-point JSON.
+/// Encodes as its raw `Int` value so saved states remain wire-compatible.
+struct ChoiceFlags: OptionSet, Codable {
+    let rawValue: Int
+
+    /// Bit 0: a boolean on the evalStack gates whether this choice is shown.
+    static let hasCondition      = ChoiceFlags(rawValue: 0x01)
+    /// Bit 3: invisible-default / gather fallback — never shown to the user.
+    static let isInvisibleDefault = ChoiceFlags(rawValue: 0x08)
+    /// Bit 4: once-only choice — suppressed after the first pick.
+    static let isOnceOnly        = ChoiceFlags(rawValue: 0x10)
+
+    /// Mask covering all bits that make a choice point visible to the user.
+    /// A choice with none of these set is treated as an invisible default.
+    static let visibleChoiceMask = ChoiceFlags(rawValue: 0x17)
+}
+
+// MARK: - Supporting types
+
+struct ChoiceData: Codable {
+    let text: String
+    let targetPath: String
+    /// Stack snapshot to install when this choice is selected. Captured at
+    /// choice-collection time so the continuation can be resumed even after a
+    /// save/restore round-trip (when in-memory resolution caches are gone).
+    let continuationFrames: [ContainerStackFrame]
+    let index: Int
+    /// Typed choice flags from the inklecate `flg` bitmask.
+    /// Decoded with `decodeIfPresent` so legacy saves without this key default to empty.
+    let flags: ChoiceFlags
+
+    private enum CodingKeys: String, CodingKey {
+        case text, targetPath, continuationFrames, index, flags
+    }
+
+    init(text: String, targetPath: String, continuationFrames: [ContainerStackFrame], index: Int, flags: ChoiceFlags = []) {
+        self.text = text
+        self.targetPath = targetPath
+        self.continuationFrames = continuationFrames
+        self.index = index
+        self.flags = flags
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        text               = try container.decode(String.self,               forKey: .text)
+        targetPath         = try container.decode(String.self,               forKey: .targetPath)
+        continuationFrames = try container.decode([ContainerStackFrame].self, forKey: .continuationFrames)
+        index              = try container.decode(Int.self,                  forKey: .index)
+        let rawFlags       = try container.decodeIfPresent(Int.self,         forKey: .flags) ?? 0
+        flags              = ChoiceFlags(rawValue: rawFlags)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(text,               forKey: .text)
+        try container.encode(targetPath,         forKey: .targetPath)
+        try container.encode(continuationFrames, forKey: .continuationFrames)
+        try container.encode(index,              forKey: .index)
+        try container.encode(flags.rawValue,     forKey: .flags)
+    }
+}
+
+struct StoryPointer: Codable {
+    var containerPath: [String]
+    var index: Int
+}
+
+/// One frame of the container execution stack, serialised for save/restore.
+/// `pathFromRoot` is the absolute path from root to this frame's container:
+/// each component is either a numeric index into the parent's `children`
+/// array, or a name lookup into the parent's `namedContent`. Empty array =
+/// root. `executionIndex` is the next-to-process position within the container.
+/// `isChoiceContinuationRoot` marks frames installed by chooseChoice so the
+/// engine stops walking when the continuation exhausts (one-level callstack).
+struct ContainerStackFrame: Codable {
+    var pathFromRoot: [String]
+    var executionIndex: Int
+    var isChoiceContinuationRoot: Bool
+
+    init(pathFromRoot: [String], executionIndex: Int, isChoiceContinuationRoot: Bool = false) {
+        self.pathFromRoot = pathFromRoot
+        self.executionIndex = executionIndex
+        self.isChoiceContinuationRoot = isChoiceContinuationRoot
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case pathFromRoot, executionIndex, isChoiceContinuationRoot
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        pathFromRoot = try container.decode([String].self, forKey: .pathFromRoot)
+        executionIndex = try container.decode(Int.self, forKey: .executionIndex)
+        isChoiceContinuationRoot = try container.decodeIfPresent(Bool.self, forKey: .isChoiceContinuationRoot) ?? false
+    }
+}
+
+// MARK: - StoryState
+
+struct StoryState: Codable {
+    var pointer: StoryPointer
+    var outputStream: [String]
+    var variablesState: [String: InkValue]
+    var visitCounts: [String: Int]
+    var currentTags: [String]
+    var isEnded: Bool
+    var currentChoices: [ChoiceData]
+
+    // Evaluation stack for expression evaluation
+    var evalStack: [InkValue]
+
+    // Tag accumulation state
+    var inTagMode: Bool
+    var tagAccumulator: String
+
+    // String accumulation mode (for "str"/"/str" control commands)
+    var inStringMode: Bool
+    var stringAccumulator: String
+
+    var lastCompletedLine: String
+
+    // Full container execution stack for save/restore.
+    // Each frame holds the child-index used to enter it (nil = root) and the
+    // current execution index within that container.
+    var stackFrames: [ContainerStackFrame]
+
+    // Call/return stack: push-divert-target nodes write here; variable-divert nodes pop from here.
+    var returnStack: [String]
+
+    /// Paths of choices that have already been taken (once-only suppression).
+    /// Serialised as a sorted array for deterministic JSON output.
+    var chosenChoiceTargets: Set<String>
+
+    /// When true, the next `\n` appended to the output stream is suppressed
+    /// (consumed by the glue `<>` that set this flag). Reset after one newline
+    /// is suppressed or when non-newline text is encountered.
+    var suppressNextNewline: Bool
+
+    /// Per-function-call temp-variable scope. Each frame is a `[String: InkValue]`
+    /// of local temp variables declared inside that function call. Pushed by
+    /// `applyFunctionCall`, popped by `applyFunctionReturn`. Empty outside any
+    /// function call.
+    ///
+    /// Without this, `temp= x` inside a function call leaks into
+    /// `variablesState` as a global. Two consecutive ref-param function calls
+    /// (e.g. The Intercept's `~ raise(forceful); ~ raise(evasive)`) corrupt
+    /// state because the second call's `temp= x` writes through the previous
+    /// call's stale pointer instead of replacing the local — see
+    /// `distill/upstream-issues.md` Issue 5 (bug 2). This implements the
+    /// DESIGN D5 Option A scope that was deferred at original Tier 3 delivery.
+    var callFrameVariables: [[String: InkValue]]
+
+    init() {
+        pointer = StoryPointer(containerPath: [], index: 0)
+        outputStream = []
+        variablesState = [:]
+        visitCounts = [:]
+        currentTags = []
+        isEnded = false
+        currentChoices = []
+        evalStack = []
+        inTagMode = false
+        tagAccumulator = ""
+        inStringMode = false
+        stringAccumulator = ""
+        lastCompletedLine = ""
+        stackFrames = []
+        returnStack = []
+        chosenChoiceTargets = []
+        suppressNextNewline = false
+        callFrameVariables = []
+    }
+
+    // MARK: - Codable
+
+    private enum CodingKeys: String, CodingKey {
+        case pointer, outputStream, variablesState, visitCounts, currentTags
+        case isEnded, currentChoices, evalStack
+        case inTagMode, tagAccumulator, inStringMode, stringAccumulator
+        case lastCompletedLine, stackFrames, returnStack
+        case chosenChoiceTargets, suppressNextNewline
+        case callFrameVariables
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        pointer              = try container.decode(StoryPointer.self,         forKey: .pointer)
+        outputStream         = try container.decode([String].self,             forKey: .outputStream)
+        variablesState       = try container.decode([String: InkValue].self,   forKey: .variablesState)
+        visitCounts          = try container.decode([String: Int].self,        forKey: .visitCounts)
+        currentTags          = try container.decode([String].self,             forKey: .currentTags)
+        isEnded              = try container.decode(Bool.self,                 forKey: .isEnded)
+        currentChoices       = try container.decode([ChoiceData].self,         forKey: .currentChoices)
+        evalStack            = try container.decode([InkValue].self,           forKey: .evalStack)
+        inTagMode            = try container.decode(Bool.self,                 forKey: .inTagMode)
+        tagAccumulator       = try container.decode(String.self,               forKey: .tagAccumulator)
+        inStringMode         = try container.decode(Bool.self,                 forKey: .inStringMode)
+        stringAccumulator    = try container.decode(String.self,               forKey: .stringAccumulator)
+        lastCompletedLine    = try container.decode(String.self,               forKey: .lastCompletedLine)
+        stackFrames          = try container.decode([ContainerStackFrame].self, forKey: .stackFrames)
+        returnStack          = try container.decodeIfPresent([String].self,    forKey: .returnStack) ?? []
+        let chosenTargetsArray = try container.decodeIfPresent([String].self,  forKey: .chosenChoiceTargets) ?? []
+        chosenChoiceTargets  = Set(chosenTargetsArray)
+        suppressNextNewline  = try container.decodeIfPresent(Bool.self,        forKey: .suppressNextNewline) ?? false
+        callFrameVariables   = try container.decodeIfPresent([[String: InkValue]].self, forKey: .callFrameVariables) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(pointer,           forKey: .pointer)
+        try container.encode(outputStream,      forKey: .outputStream)
+        try container.encode(variablesState,    forKey: .variablesState)
+        try container.encode(visitCounts,       forKey: .visitCounts)
+        try container.encode(currentTags,       forKey: .currentTags)
+        try container.encode(isEnded,           forKey: .isEnded)
+        try container.encode(currentChoices,    forKey: .currentChoices)
+        try container.encode(evalStack,         forKey: .evalStack)
+        try container.encode(inTagMode,         forKey: .inTagMode)
+        try container.encode(tagAccumulator,    forKey: .tagAccumulator)
+        try container.encode(inStringMode,      forKey: .inStringMode)
+        try container.encode(stringAccumulator, forKey: .stringAccumulator)
+        try container.encode(lastCompletedLine, forKey: .lastCompletedLine)
+        try container.encode(stackFrames,       forKey: .stackFrames)
+        try container.encode(returnStack,       forKey: .returnStack)
+        try container.encode(Array(chosenChoiceTargets).sorted(), forKey: .chosenChoiceTargets)
+        try container.encode(suppressNextNewline, forKey: .suppressNextNewline)
+        try container.encode(callFrameVariables,  forKey: .callFrameVariables)
+    }
+}

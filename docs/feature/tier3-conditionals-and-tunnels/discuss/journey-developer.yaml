@@ -1,0 +1,220 @@
+schema_version: 1
+
+journey:
+  name: "Developer Plays Tier 3 Ink Story"
+  goal: "Drive a SwiftInkRuntime Story instance through Ink features requiring conditional text, functions, and tunnels — producing output identical to the JS-bridge oracle"
+  persona: "Ava — Swift game developer integrating SwiftInkRuntime into a narrative game"
+
+  emotional_arc:
+    start: "Confident — Ink syntax familiar; knows what the story should produce"
+    middle: "Briefly uncertain — 'Has the engine wired this up correctly?'"
+    end: "Relieved and confident — green tests confirm engine fidelity"
+
+steps:
+  - id: 1
+    name: "Write Ink source with Tier 3 features"
+    command: "Author writes .ink file in Inky or text editor"
+
+    tui_mockup: |
+      (Ink source editor — not a CLI concern; no mockup required)
+      Ava writes:
+        {visited_café > 0: You remember the smell.|First time here.}
+        -> interview ->
+        === function greet(name) ===
+            Hello, {name}.
+        === interview ===
+            ...
+            ->->
+
+    shared_artifacts:
+      - name: "ink_source"
+        source: "author's .ink file"
+        displayed_as: "story.ink"
+        consumers: ["inklecate compiler", "test fixture documentation"]
+
+    emotional_state:
+      entry: "Confident — familiar Ink syntax"
+      exit: "Confident — source captures intended behaviour"
+
+    integration_checkpoint: |
+      Ink source compiles cleanly with inklecate before any engine work begins.
+
+    failure_modes:
+      - "Ink syntax error prevents compilation — caught before engine work starts"
+
+    gherkin: |
+      Scenario: Ink source with conditional text compiles successfully
+        Given Ava has written an Ink file using inline conditionals and functions
+        When she runs inklecate on the file
+        Then inklecate exits without errors
+        And produces a .ink.json file
+
+  - id: 2
+    name: "Compile with inklecate"
+    command: "/Users/maartene/Downloads/inklecate_mac/inklecate -o story.ink.json story.ink"
+
+    tui_mockup: |
+      $ /Users/maartene/Downloads/inklecate_mac/inklecate -o story.ink.json story.ink
+      (no output on success)
+      $ ls story.ink.json
+      story.ink.json
+
+    shared_artifacts:
+      - name: "ink_json_fixture"
+        source: "inklecate compiler output"
+        displayed_as: "story.ink.json"
+        consumers:
+          - "SwiftInkRuntimeTests test bundle"
+          - "InkSwiftTests oracle fixture"
+          - "Step 3 (Story initialisation)"
+          - "Step 4 (oracle comparison)"
+
+    emotional_state:
+      entry: "Neutral — mechanical compilation step"
+      exit: "Neutral — fixture ready"
+
+    integration_checkpoint: |
+      .ink.json file exists and is valid JSON before any Swift code is written.
+      No hand-crafted JSON permitted — compiler output only.
+
+    failure_modes:
+      - "inklecate not found at expected path — check /Users/maartene/Downloads/inklecate_mac/inklecate"
+      - "Ink syntax error — fix source before proceeding"
+
+    gherkin: |
+      Scenario: inklecate produces valid JSON fixture
+        Given a valid .ink source file using Tier 3 features
+        When inklecate compiles it
+        Then the output .ink.json is valid JSON
+        And the inkVersion field is present
+
+  - id: 3
+    name: "Drive Story API"
+    command: "swift test (via Xcode or CLI)"
+
+    tui_mockup: |
+      // SwiftInkRuntimeTests — Integration test
+      let data = try Data(contentsOf: fixtureURL)
+      let story = try Story(json: data)
+
+      // Inline conditional
+      let line1 = story.continue()
+      // currentText: "First time here."
+
+      // After marking visit, inline conditional flips
+      story.setVariable("visited_café", to: 1)
+      story.resetTo(start)
+      let line2 = story.continue()
+      // currentText: "You remember the smell."
+
+      // Tunnel — story enters sub-knot and returns
+      story.continue()    // tunnel entry text
+      story.continue()    // tunnel body
+      story.continue()    // post-tunnel continuation
+
+    shared_artifacts:
+      - name: "story_current_text"
+        source: "SwiftInkRuntime.Story.currentText"
+        displayed_as: "story.continue() return value"
+        consumers: ["acceptance test assertions", "oracle comparison"]
+      - name: "story_current_choices"
+        source: "SwiftInkRuntime.Story.currentChoices"
+        displayed_as: "story.currentChoices"
+        consumers: ["choice-related acceptance tests"]
+
+    emotional_state:
+      entry: "Slightly uncertain — first run may reveal unimplemented paths"
+      exit: "Relieved — text matches expectation"
+
+    integration_checkpoint: |
+      story.currentText matches expected output for each Tier 3 feature type
+      before oracle comparison is run.
+
+    failure_modes:
+      - "story.currentText is empty — conditional text evaluator not wired"
+      - "story.canContinue is false prematurely — tunnel return not implemented"
+      - "void literal appears in output — function return handling incomplete"
+      - "Story.init(json:) throws — new node kinds unrecognised by InkDecoder"
+
+    gherkin: |
+      Scenario: Inline conditional produces correct branch text
+        Given a Story loaded from a fixture containing an inline conditional
+        And the condition variable is false
+        When the developer calls story.continue()
+        Then story.currentText contains the false-branch text
+        And story.currentText does not contain the true-branch text
+
+      Scenario: Ink function call produces correct return value in output
+        Given a Story loaded from a fixture containing an inline function call
+        When the developer calls story.continue() to reach the function call site
+        Then story.currentText contains the function's return value interpolated correctly
+        And story.currentText does not contain the literal "void"
+
+      Scenario: Tunnel executes sub-knot and returns to caller
+        Given a Story loaded from a fixture containing a tunnel divert
+        When the developer calls story.continue() through the tunnel entry
+        And the developer calls story.continue() through the tunnel body
+        Then story.continue() after the tunnel returns the post-tunnel continuation text
+        And the story has not ended prematurely
+
+  - id: 4
+    name: "Assert Output Matches Oracle"
+    command: "swift test — integration tests comparing SwiftInkRuntime output with InkSwift oracle"
+
+    tui_mockup: |
+      Test Suite 'SwiftInkRuntimeTests' started
+      Test Case 'Integration/ConditionalTextTests/inline conditional matches oracle' started
+      Test Case 'Integration/ConditionalTextTests/inline conditional matches oracle' passed (0.012 seconds)
+      Test Case 'Integration/FunctionTests/function return value matches oracle' started
+      Test Case 'Integration/FunctionTests/function return value matches oracle' passed (0.008 seconds)
+      Test Case 'Integration/TunnelTests/tunnel produces correct continuation text' started
+      Test Case 'Integration/TunnelTests/tunnel produces correct continuation text' passed (0.011 seconds)
+      ...
+      Test Suite 'SwiftInkRuntimeTests' passed — N tests, 0 failures
+
+    shared_artifacts:
+      - name: "oracle_output"
+        source: "InkSwift.InkStory (frozen module)"
+        displayed_as: "oracle.continue() sequence"
+        consumers: ["Integration test XCTAssertEqual calls"]
+
+    emotional_state:
+      entry: "Anticipatory — waiting for green"
+      exit: "Confident and satisfied — The Intercept ceiling within reach"
+
+    integration_checkpoint: |
+      All new acceptance tests green.
+      Zero regressions in existing Tier 1 and Tier 2 tests.
+      Total test count increases by expected number of new scenarios.
+
+    failure_modes:
+      - "New test RED, existing tests still green — new implementation incomplete"
+      - "Existing test RED — regression introduced; must be fixed before merge"
+      - "Oracle diverges from expected — verify InkSwift module not accidentally modified (it is frozen)"
+
+    gherkin: |
+      Scenario: SwiftInkRuntime output matches JS-bridge oracle for conditional text story
+        Given both Story (native) and InkStory (oracle) are loaded from the same .ink.json fixture
+        When both are driven through the full story with identical choice selections
+        Then every line of text from Story.continue() matches the corresponding InkStory.continue()
+        And the final choice lists are identical
+
+      Scenario: No regressions in Tier 1 and Tier 2 test suite
+        Given all existing SwiftInkRuntimeTests are passing before Tier 3 work begins
+        When Tier 3 slices are implemented one at a time
+        Then after each slice the full test suite remains green
+        And no previously passing test fails
+
+integration_validation:
+  shared_artifact_consistency:
+    - artifact: "ink_json_fixture"
+      must_match_across: [2, 3, 4]
+      failure_message: "Test fixture used in Steps 3–4 must be identical inklecate-compiled output from Step 2. Hand-crafted JSON will miss numeric path prefixes and produce false-green tests."
+    - artifact: "story_current_text"
+      must_match_across: [3, 4]
+      failure_message: "Step 3 assertions and Step 4 oracle comparison must test the same Story instance output."
+
+changelog:
+  - date: "2026-06-05"
+    feature: "tier3-conditionals-and-tunnels"
+    change: "Initial journey schema created for DISCUSS wave"

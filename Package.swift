@@ -15,12 +15,15 @@ let package = Package(
         .library(
             name: "InkSwift",
             targets: ["InkSwift"]),
+        .library(
+            name: "SwiftInkRuntime",
+            targets: ["SwiftInkRuntime"]),
     ],
     dependencies: [
         // Dependencies declare other packages that this package depends on.
         // .package(url: /* package url */, from: "1.0.0"),
-         .package(url: "https://github.com/jectivex/JXKit.git", .upToNextMajor(from: "3.0.0")),
-         .package(url: "https://github.com/neallester/JSONEquality.git", branch: "master"),
+        .package(url: "https://github.com/jectivex/JXKit.git", .upToNextMajor(from: "3.0.0")),
+        .package(url: "https://github.com/neallester/JSONEquality.git", branch: "master"),
     ],
     targets: [
         // Targets are the basic building blocks of a package. A target can define a module or a test suite.
@@ -29,7 +32,8 @@ let package = Package(
             name: "InkSwift",
             dependencies: ["JXKit"],
             resources: [
-                .process("ink-full.js")]
+                .process("ink-full.js")
+            ]
         ),
         .testTarget(
             name: "InkSwiftTests",
@@ -40,6 +44,52 @@ let package = Package(
                 .process("compare.json"),
                 .process("TheIntercept.ink"),
             ]
-        )
+        ),
+        .target(
+            name: "SwiftInkRuntime",
+            dependencies: [],
+            resources: [
+                .process("test.ink.json")
+            ]
+        ),
+        .testTarget(
+            name: "SwiftInkRuntimeTests",
+            dependencies: [
+                "SwiftInkRuntime",
+                .target(name: "InkSwift", condition: .when(platforms: [.macOS])),
+                "JSONEquality"
+            ],
+            exclude: [
+                "slice01-once-only.ink",
+                "slice02-conditional.ink",
+                "slice03-read-counts.ink",
+                "slice04-invisible-defaults.ink",
+                "slice-c1-inline-conditionals.ink",
+                "slice-c2-block-conditionals.ink",
+                "slice-c3-functions.ink",
+                "slice-t1-tunnels.ink",
+                "slice-t2-nested-tunnels.ink",
+                "slice-t3-ref-params.ink",
+                "slice-bug-glue-after-choice.ink",
+                "slice-bug-conditional-choice-cluster.ink",
+            ],
+            resources: [
+                .process("test.ink.json"),
+                .process("slice01-once-only.ink.json"),
+                .process("slice02-conditional.ink.json"),
+                .process("slice03-read-counts.ink.json"),
+                .process("slice04-invisible-defaults.ink.json"),
+                .process("slice-c1-inline-conditionals.ink.json"),
+                .process("slice-c2-block-conditionals.ink.json"),
+                .process("slice-c3-functions.ink.json"),
+                .process("slice-t1-tunnels.ink.json"),
+                .process("slice-t2-nested-tunnels.ink.json"),
+                .process("slice-t3-ref-params.ink.json"),
+                .process("slice-bug-glue-after-choice.ink.json"),
+                .process("slice-bug-conditional-choice-cluster.ink.json"),
+                .process("TheIntercept.ink.json"),
+                .process("TheIntercept_oracle_walkthrough.json"),
+            ]
+        ),
     ]
 )

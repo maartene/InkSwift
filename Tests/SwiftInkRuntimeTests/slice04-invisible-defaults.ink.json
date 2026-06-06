@@ -1,0 +1,1 @@
+{"inkVersion":21,"root":[[["ev","str","^Ask about the shop.","/str","/ev",{"*":".^.c-0","flg":20},{"*":".^.c-1","flg":0},{"c-0":["^ ",{"->":".^.^"},"\n",{"->":"0.g-0"},{"#f":5}],"c-1":["^ The conversation drifts naturally to a close.","\n","end",{"->":"0.g-0"},null],"#n":"gather"}],{"g-0":["done",null]}],"done",null],"listDefs":{}}

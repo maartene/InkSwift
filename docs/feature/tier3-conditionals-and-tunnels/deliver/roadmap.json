@@ -1,0 +1,83 @@
+{
+  "roadmap": {
+    "project_id": "tier3-conditionals-and-tunnels",
+    "created_at": "2026-06-05T17:02:51Z",
+    "total_steps": 7,
+    "phases": 1
+  },
+  "phases": [
+    {
+      "id": "01",
+      "name": "Tier 3 Conditionals and Tunnels",
+      "steps": [
+        {
+          "id": "01-01",
+          "name": "C1 — Inline Conditional Text",
+          "criteria": "Given the C1 fixture compiled from slice-c1-inline-conditionals.ink.json, when choice 0 is selected (condition false), then 'She's a stranger.' appears in output and 'You know her.' does not appear. When choice 1 is selected (condition true), then 'You know her.' appears and 'She's a stranger.' does not appear. Both selections survive save/restore round-trip. Oracle tests match JS bridge output.",
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Milestone5_Tier3ConditionalsAndTunnelsTests.swift",
+          "scenario_name": "Slice C1 — Inline Conditional Text"
+        },
+        {
+          "id": "01-02",
+          "name": "C2 — Block and Switch Conditionals",
+          "criteria": "Given the C2 fixture from slice-c2-block-conditionals.ink.json, choices 0 and 1 exercise if/else branches producing 'You failed.' and 'You passed.' respectively. Choices 2, 3, and 4 exercise switch-style dispatch producing 'Arrested.', 'Escaped.', and 'Unknown.' respectively. All five if/else and switch selections survive save/restore round-trip. Oracle output matches JS bridge for all 5 choices.",
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Milestone5_Tier3ConditionalsAndTunnelsTests.swift",
+          "scenario_name": "Slice C2 — Block and Switch Conditionals"
+        },
+        {
+          "id": "01-03",
+          "name": "C3 — Ink Functions",
+          "criteria": "Given the C3 fixture from slice-c3-functions.ink.json, choice 0 produces 'The result is 10.' (inline return value from function call). Choice 1 produces 'Stored: 14.' (return value assigned to temp variable). Choice 2 produces 'Done.' with no 'void' literal in output (void suppression via 'out' control command). All three cases survive save/restore round-trip. Oracle output matches JS bridge.",
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Milestone5_Tier3ConditionalsAndTunnelsTests.swift",
+          "scenario_name": "Slice C3 — Ink Functions"
+        },
+        {
+          "id": "01-04",
+          "name": "T1 — Single-Level Tunnels",
+          "criteria": "Given the T1 fixture from slice-t1-tunnels.ink.json, three successive continue() calls produce 'Before tunnel.', 'Sub room content.', and 'After tunnel.' in that order. canContinue remains true after the tunnel body and becomes false only after 'After tunnel.' is consumed. Full sequence is correct when the story is rebuilt from save/restore at each continuation step. Oracle output matches JS bridge.",
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Milestone5_Tier3ConditionalsAndTunnelsTests.swift",
+          "scenario_name": "Slice T1 — Single-Level Tunnels"
+        },
+        {
+          "id": "01-05",
+          "name": "T2 — Nested Tunnels",
+          "criteria": "Given the T2 fixture from slice-t2-nested-tunnels.ink.json, five successive continue() calls produce 'Caller pre.', 'A pre.', 'B body.', 'A post.', and 'Caller post.' in that exact order. 'A post.' appears before 'Caller post.' confirming the outer return address is preserved across nested tunnel entry. Full sequence is correct when the story is rebuilt from save/restore at each continuation step. Oracle output matches JS bridge.",
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Milestone5_Tier3ConditionalsAndTunnelsTests.swift",
+          "scenario_name": "Slice T2 — Nested Tunnels"
+        },
+        {
+          "id": "01-06",
+          "name": "T3 — Reference Parameters",
+          "criteria": "Given the T3 fixture from slice-t3-ref-params.ink.json, calling add(ref score, 10) mutates the global variable 'score' from 0 to 10. Output contains 'Score is 10.' and does NOT contain 'Score is 0.'. The mutated value of 'score' survives save/restore round-trip (restored state reflects the updated value). Oracle output matches JS bridge.",
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Milestone5_Tier3ConditionalsAndTunnelsTests.swift",
+          "scenario_name": "Slice T3 — Reference Parameters"
+        },
+        {
+          "id": "01-07",
+          "name": "Fix global-decl isEnded leak; slice + Intercept smoke gate green",
+          "criteria": "After InkEngine.initializeGlobalVariables() completes, state.isEnded is false and state.pointer.index is 0 regardless of whether the decl ends with the 'end' or 'done' control command. A new unit test asserts canContinue is true immediately after Story.init(json:) when the fixture's global decl ends with 'end'. All six existing slice acceptance suites (Slice_C1, Slice_C2, Slice_C3, Slice_T1, Slice_T2, Slice_T3) pass. The two existing Intercept smoke tests pass: 'The Intercept loads from bundle and canContinue is true' and 'The Intercept first 15 steps produce identical output in-memory vs save-restore'. The full-playthrough oracle test (DWD-04 #3) is allowed to remain red — it is out of scope for this delivery and will be addressed in a separate feature. The 'Debug Intercept' diagnostic helper is not a gate.",
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Milestone5_Tier3ConditionalsAndTunnelsTests.swift",
+          "scenario_name": "Global-decl isEnded leak — slice + Intercept smoke gate"
+        }
+      ]
+    }
+  ],
+  "implementation_scope": {
+    "source_directories": [
+      "Sources/SwiftInkRuntime/",
+      "Tests/SwiftInkRuntimeTests/"
+    ],
+    "test_directories": [
+      "Tests/SwiftInkRuntimeTests/"
+    ],
+    "excluded_patterns": [
+      "*.ink",
+      "*.ink.json"
+    ]
+  },
+  "validation": {
+    "status": "approved",
+    "reviewer": "nw-acceptance-designer-reviewer",
+    "approved_at": "2026-06-05"
+  }
+}

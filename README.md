@@ -1,5 +1,7 @@
-![Swift 5.6](https://img.shields.io/badge/swift-5.6-orange.svg)[![CircleCI](https://circleci.com/gh/maartene/InkSwift.svg?style=shield)](https://circleci.com/gh/maartene/InkSwift)
+![Swift 5.6](https://img.shields.io/badge/swift-5.6-orange.svg)
 # InkSwift
+
+🚧 Now also contains an experimental Swift native runner in SwiftInkRuntime. No need for JavaScriptCore or JXKit. Plays the first 100 lines of the Intercept story exactly as the JavaScript version does. More details to follow as this matures.
 
 Swift wrapper for the Ink narrative scripting language. Based on InkJS.
 
