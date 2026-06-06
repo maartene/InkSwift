@@ -229,12 +229,8 @@ final class InkEngine {
             walker.dispatchNode(currentChild, state: &state)
 
             if case .divert(let target, let isConditional, let isVariable) = currentChild {
-                // f():-prefixed targets are function calls: push return address first.
                 if target.hasPrefix("f():") {
-                    let actualTarget = String(target.dropFirst(4))
-                    let returnAddr = buildFunctionReturnAddress()
-                    state.returnStack.append(returnAddr)
-                    applyDivert(target: actualTarget)
+                    applyFunctionCall(target: String(target.dropFirst(4)))
                     suppressConsumeAfterDivert = state.outputStream.last == "\n"
                     continue
                 }
@@ -446,6 +442,14 @@ final class InkEngine {
         guard let top = containerStack.last else { return "fnret:|0" }
         let pathStr = top.pathFromRoot.joined(separator: ".")
         return "fnret:\(pathStr)|\(top.index)"
+    }
+
+    /// Push a function return address for the current execution position and
+    /// divert to the function body. Called when a divert node's target is
+    /// `f():`-prefixed (an Ink function call rather than a plain goto).
+    private func applyFunctionCall(target: String) {
+        state.returnStack.append(buildFunctionReturnAddress())
+        applyDivert(target: target)
     }
 
     /// Restore execution to the position encoded in a function return address.
