@@ -145,17 +145,18 @@ change alters the visible choice count at some step.
 `Tests/SwiftInkRuntimeTests/TheIntercept_oracle_walkthrough.json` (added to
 `SwiftInkRuntimeTests` resources in `Package.swift`).
 
-**Current state**: **RED**. Diagnosis was corrected on a second pass.
-Lines 0-10 match the oracle line-for-line; the first divergence is at
-index 11 (NOT index 67 as initially reported), immediately after picking
-`* {tellme} [Deny] -> pushes_cup` in the `waited` knot. The native engine
-re-enters the depth-2 choice cluster after emitting the labeled-gather
-body instead of advancing past it, producing 69 line mismatches downstream
-as the engine then follows a different scene through different
-`teacup`/`forceful` state. See `distill/upstream-issues.md` Issue 5 (which
-has also been corrected) for the full divergence detail and the failed
-reproducer attempts. A focused follow-on bugfix feature is needed —
-engine-level state instrumentation is required to root-cause it.
+**Current state**: **RED** (partial progress as of 2026-06-06).
+Lines 0-15 now match the oracle line-for-line (was 0-10 before the
+caret-math fix). The originally-diagnosed root cause — `parseRelativePath`
+counting carets as stack-frame depth instead of compiled-path-component
+depth — is fixed and verified against the canonical C# runtime semantic
+(see Issue 5 in `distill/upstream-issues.md`). All 148 pre-existing
+tests stay green.
+
+Two follow-on bugs remain visible on the non-trivial path: a glue-not-
+preserved-across-function-call-divert issue at line 16, and a downstream
+content divergence around char 1318 of the concatenated transcript.
+Both are deferred to a separate focused bugfix feature.
 
 ---
 

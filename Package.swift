@@ -70,6 +70,7 @@ let package = Package(
                 "slice-t1-tunnels.ink",
                 "slice-t2-nested-tunnels.ink",
                 "slice-t3-ref-params.ink",
+                "slice-bug-glue-after-choice.ink",
             ],
             resources: [
                 .process("test.ink.json"),
@@ -83,6 +84,7 @@ let package = Package(
                 .process("slice-t1-tunnels.ink.json"),
                 .process("slice-t2-nested-tunnels.ink.json"),
                 .process("slice-t3-ref-params.ink.json"),
+                .process("slice-bug-glue-after-choice.ink.json"),
                 .process("TheIntercept.ink.json"),
                 .process("TheIntercept_oracle_walkthrough.json"),
             ]

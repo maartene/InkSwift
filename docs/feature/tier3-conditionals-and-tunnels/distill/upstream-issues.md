@@ -206,6 +206,57 @@ at every step around the Deny-cluster exit. The combination of accumulated
 state from earlier choices (Wait → "Tell me what..." → Deny) is required
 to trigger the bug — narrowing it without that state has so far failed.
 
+**Update 2026-06-06 — Partial fix landed**: a lockstep engine-state trace
+revealed the root cause: `InkEngine.parseRelativePath` was counting carets
+as **execution-stack frames** (`containerStack.count - caretCount`), but
+the canonical C# runtime counts carets as **compiled path-component depth**
+(verified against `ink-engine-runtime/Path.cs:220-223` and `Object.cs:106-123`,
+where each caret returns `Container.parent` — the static tree parent set
+at JSON-load time). When `applyDivert` resolved a relative path with
+multi-component descent (e.g. `.^.^.c-6.3.pushes_cup`), it pushed ONE frame
+for the destination with a `pathFromRoot` of 3 extra components but only
+1 extra frame on the stack. Subsequent relative diverts from that
+destination (like the 5-caret `.^.^.^.^.^.g-2` exiting `pushes_cup`)
+overshot their intended anchor by N components.
+
+The fix changes `parseRelativePath` to compute the anchor from the top
+frame's `pathFromRoot.dropLast(caretCount - 1)`, and introduces a
+`installDestinationFrame` helper that replaces the stack with the
+destination frame plus preserved strict-prefix ancestors (propagating
+`isChoiceContinuationRoot` from discarded frames). The four callers
+(`applyDivert`, `applyConditionalBranch`, `buildContinuationFrames`,
+`resolveRelativePath`) plus `resolveReadCountKey` and
+`resolveToAbsoluteComponents` are updated to use the new API. See the
+commit titled `fix(engine): caret math counts path-component depth, not stack-frame depth`.
+
+**Result**: the original line-11 divergence is **resolved**. The
+non-trivial Intercept playthrough test now matches the oracle line-for-line
+through index 15. The full pre-existing suite (148 tests) stays green —
+zero regressions.
+
+**Remaining gaps (deferred to a follow-on bugfix feature)**:
+
+1. **Line 16 — glue not preserved across function-call diverts**: native
+   emits "I reply" + ", sipping at my tea…" as two lines; oracle merges
+   them via the `<>` glue at the start of the conditional gather body
+   that follows `~ raise(forceful)` / `~ raise(evasive)` function calls.
+   Text content is identical — only the line break differs. Likely the
+   `suppressConsumeAfterDivert` flag in `stepToNextLine` does not survive
+   the function-call+return round-trip, or it needs to be set on the
+   `f():` divert path too.
+2. **Char ~1318 — real content divergence**: after the line-16 split, the
+   engine then takes a different scene around the missing-reel passage
+   ("My odds, then, are one in four…" vs native's "But this is still a
+   mere formality…"). Whether this is downstream of bug #1 (different
+   conditional state due to mis-flushed line context) or a new flow
+   control bug is unclear without further instrumentation. The
+   reproducer (`TheInterceptNonTrivialPlaythroughTests`) is fully
+   deterministic for the next investigator.
+
+The committed regression test `Bug_GlueAfterChoiceTests` covers the
+glue-after-choice patterns that DO work, as a baseline against which any
+future fix can be validated without regression.
+
 **Why it was not caught by Tier 3 slice tests OR the always-pick-0
 ceiling proof**: slice fixtures isolate single mechanisms; always-pick-0
 on The Intercept loops on "Think" in the opening cluster and never reaches
