@@ -267,22 +267,38 @@ zero regressions.
    the oracle (was 0-20). See the commit
    `fix(engine): per-frame temp variable scope for function calls`.
 
-3. **Line 28+ — Say-nothing conditional choice filtered (still open)**.
-   At the "You want to explain that?" cluster in the `admitted_to_something`
-   knot, the native engine shows only `[Explain]` where the oracle shows
-   `[Explain, "Say nothing"]`. The `Say nothing` choice is gated by
-   `{drugged}`, and `drugged=int(1)` at the relevant moment, no stale
-   function-frames on the stack, so the bug looks unrelated to bug 2.
-   Slice 02 (conditional choice gating) tests still pass — the basic
-   mechanism works for simpler fixtures. The compiled JSON for this
-   cluster has a deeply-nested ev/.../ev structure inside an outer
-   `{not drugged}` conditional gather body. Possibly an interaction
-   between the new `evalBlockDepth` tracking and how nested choice
-   conditions get evaluated, or an unrelated quirk in the conditional
-   branch handling. Deferred to a separate bugfix feature; diagnosis
-   should start by adding evalStack-snapshot instrumentation at
-   `collectChoicePoint` and comparing native vs. oracle stack states
-   step-by-step through the cluster.
+3. ~~Line 28+ — Say-nothing conditional choice filtered~~. **FIXED 2026-06-06.**
+   The diagnosis was misleading: `Say nothing`'s `{drugged}` condition was
+   never actually evaluated, because the engine was **abandoning the
+   cluster** after collecting the first choice (`Explain`). Mechanism:
+   a buffered line (e.g. `"Q?"\n` from a preceding gather body that ran
+   the `else` branch of a multi-line `{not drugged: A. - else: B.}`
+   conditional) sat in `outputStream`. After the first choicePoint was
+   collected, the engine processed the next choice's `ev/.../ev` block
+   and at the `/ev` boundary the flush guard fired — `consumeNextLine`
+   returned the buffered line and `stepToNextLine` exited. The caller
+   then saw `canContinue == false` (because `currentChoices` was
+   non-empty) and stopped calling `continue()` → subsequent
+   choicePoints in the cluster were never visited.
+
+   The fix adds `else if !state.currentChoices.isEmpty { }` to the
+   `stepToNextLine` flush-defer ladder, matching the canonical C# runtime
+   behaviour (`state.canContinue` depends on pointer, NOT on choices, so
+   `Continue()` keeps stepping past choicePoints until the container
+   exhausts). The buffered line is still returned via
+   `flushRemainingOutput` when the loop exits — no content is lost.
+
+   Result: **TheInterceptNonTrivialPlaythroughTests now passes — all 100
+   lines match the JS-bridge oracle line-for-line.** The 50 mismatches
+   from the previous report are gone. All 153 pre-existing tests still
+   pass.
+
+   The committed regression test
+   `Bug_DeferFlushDuringChoiceClusterTests` with fixture
+   `slice-bug-conditional-choice-cluster.ink{.json}` covers the trigger
+   pattern (multi-line `{cond: a - else: b}` conditional + intervening
+   text + cluster with `{var}`-gated choice) as a baseline against
+   regressions.
 
 The committed regression test `Bug_GlueAfterChoiceTests` covers the
 glue-after-choice patterns that DO work, as a baseline against which any
@@ -306,4 +322,4 @@ combination.
 | `"pop"` command unhandled | MEDIUM | T3 | YES — not mentioned |
 | `ci == -1` for globals | HIGH | T3 | YES — assumed `ci == 0` |
 | Void function implicit `null` return | MEDIUM | C3 | YES — only `~ret` described |
-| Flow control after `* [Bracketed] -> labeled_gather` re-enters cluster | MEDIUM-HIGH | DWD-07 test | engine bug, not design (corrected diagnosis 2026-06-06) |
+| Flow control after `* [Bracketed] -> labeled_gather` re-enters cluster | RESOLVED | DWD-07 test | four-bug cascade, all fixed; non-trivial Intercept passes |

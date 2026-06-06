@@ -145,18 +145,43 @@ change alters the visible choice count at some step.
 `Tests/SwiftInkRuntimeTests/TheIntercept_oracle_walkthrough.json` (added to
 `SwiftInkRuntimeTests` resources in `Package.swift`).
 
-**Current state**: **RED** (partial progress as of 2026-06-06).
-Lines 0-15 now match the oracle line-for-line (was 0-10 before the
-caret-math fix). The originally-diagnosed root cause — `parseRelativePath`
-counting carets as stack-frame depth instead of compiled-path-component
-depth — is fixed and verified against the canonical C# runtime semantic
-(see Issue 5 in `distill/upstream-issues.md`). All 148 pre-existing
-tests stay green.
+**Current state**: **GREEN as of 2026-06-06.** All 100 oracle lines
+match the JS-bridge reference line-for-line. The RED state from initial
+DISTILL was driven by four cascading engine bugs that the non-trivial
+path exposed (none reachable on the always-pick-0 ceiling). Each was
+diagnosed and fixed in turn, with C# runtime cross-reference, landing
+in its own commit:
 
-Two follow-on bugs remain visible on the non-trivial path: a glue-not-
-preserved-across-function-call-divert issue at line 16, and a downstream
-content divergence around char 1318 of the concatenated transcript.
-Both are deferred to a separate focused bugfix feature.
+1. **Caret math used stack-frame depth instead of compiled-path-component
+   depth** — `parseRelativePath` overshot when the destination was
+   reached via multi-component descent that compressed N path components
+   into 1 stack frame. Fix: switch to path-component math via
+   `topFrame.pathFromRoot.dropLast(caretCount - 1)`.
+2. **Line flushed at `ev` boundary before downstream glue could fuse it** —
+   `stepToNextLine` flushed pending lines inside eval blocks containing
+   function-call diverts whose destinations had `<>` glue. Fix:
+   `evalBlockDepth` counter; flush deferred while depth > 0. Also made
+   `flushRemainingOutput` line-aware and `canContinue` allow draining
+   buffered lines after `isEnded`.
+3. **Function-local `temp= x` leaked into globals** —
+   `handleVariableAssignment` wrote both `VAR=` and `temp=` into the
+   single `variablesState` dict, so consecutive ref-param calls corrupted
+   each other. Fix: implement the deferred T3 DESIGN D5 Option A
+   `callFrameVariables: [[String: InkValue]]` per-frame scope, pushed by
+   `applyFunctionCall` and popped by `applyFunctionReturn`.
+4. **Flush at `/ev` boundary mid-cluster abandoned subsequent choices** —
+   after collecting the first choicePoint in a multi-choice cluster, the
+   engine returned a buffered line at the next `/ev` boundary; the
+   caller then saw `canContinue == false` (currentChoices non-empty) and
+   never continued, leaving c-1, c-2, ... unvisited. Fix: defer flush
+   while `currentChoices` is non-empty, matching C# `Continue()`'s loop
+   semantic.
+
+Three baseline regression tests
+(`Bug_GlueAfterChoiceTests`,
+`Bug_DeferFlushDuringChoiceClusterTests`) plus the main
+`TheInterceptNonTrivialPlaythroughTests` guard against regressions in
+this area.
 
 ---
 

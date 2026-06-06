@@ -281,9 +281,23 @@ final class InkEngine {
             // After a .newline node we defer the check so that a subsequent glue
             // (<>) has a chance to remove the newline before we return. The line
             // will be flushed on a later iteration (after the next text/glue node).
+            // Defer flush across a multi-choice cluster: once a choicePoint
+            // has been collected (`currentChoices` non-empty), continue stepping
+            // through the rest of the cluster's choicePoints + their eval blocks
+            // in the same stepToNextLine call. Otherwise a buffered line
+            // (e.g. a gather text emitted just before the cluster) flushes at
+            // the first /ev boundary AFTER c-0, returning early and leaving
+            // c-1, c-2, ... unvisited. This matches the canonical C# runtime:
+            // `state.canContinue` depends on pointer position, NOT on
+            // currentChoices, so its Continue() loop keeps stepping past
+            // choicePoints until the container exhausts. Any pending line
+            // here will be returned by `flushRemainingOutput` when the loop
+            // exits (with a single line at a time per the consumeNextLine
+            // semantic).
             if case .newline = currentChild { }
             else if suppressConsumeAfterDivert { }
             else if evalBlockDepth > 0 { }
+            else if !state.currentChoices.isEmpty { }
             else {
                 if let line = consumeNextLine() { return line }
             }
