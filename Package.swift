@@ -72,6 +72,7 @@ let package = Package(
                 "slice-t3-ref-params.ink",
                 "slice-bug-glue-after-choice.ink",
                 "slice-bug-conditional-choice-cluster.ink",
+                "slice-move-to-knot.ink",
             ],
             resources: [
                 .process("test.ink.json"),
@@ -89,6 +90,7 @@ let package = Package(
                 .process("slice-bug-conditional-choice-cluster.ink.json"),
                 .process("TheIntercept.ink.json"),
                 .process("TheIntercept_oracle_walkthrough.json"),
+                .process("slice-move-to-knot.ink.json"),
             ]
         ),
     ]

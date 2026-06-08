@@ -632,6 +632,94 @@ The component responsibility annotations are updated:
 | [ADR-002](./adr-002-api-contract.md) | API Contract: Clean Redesign, Story Type Name, InkStory Frozen | Accepted |
 | [ADR-003](./adr-003-state-serialization.md) | State Serialization: Codable Format, No inkjs Compatibility | Accepted |
 | [ADR-004](./adr-004-callreturn-mechanism.md) | Call/Return Mechanism: Return Address Stack in StoryState | Accepted |
+| [ADR-005](./adr-005-moveto-knot-jump-strategy.md) | moveToKnot Jump Strategy: Reset and Stack Installation | Accepted |
+
+---
+
+### native-move-to-knot (Feature Addition)
+
+This subsection records the concrete architectural decisions for the `native-move-to-knot` feature. It adds `public func moveToKnot(_ knot: String, stitch: String? = nil) throws` to the `Story` facade, enabling developers to jump a running story to a named knot or stitch.
+
+No new source files are introduced. All changes are localised to two existing files: `Facade/Story.swift` and `Engine/InkEngine.swift`. No new `StoryState` fields are added — the serialisation format is unchanged.
+
+#### Quality Attributes (ranked by priority for this feature)
+
+1. **Correctness** — post-jump `continue()` output must match the JS-bridge oracle (`InkStory.moveToKnitStitch`) line-for-line.
+2. **Reliability** — failed jumps (knot not found) must not corrupt the current story state.
+3. **Maintainability** — reset logic must be auditable; reset field list is explicit and references the authoritative DISCUSS decision.
+4. **API cleanliness** — the public signature mirrors the JS-bridge convention; `throws` makes the error contract explicit where the JS bridge silently swallows errors.
+
+#### Reuse Analysis
+
+| Existing Component | File | Overlap | Decision | Justification |
+|---|---|---|---|---|
+| `Story` (facade) | `Facade/Story.swift` | Hosts all public API; delegates to engine | EXTEND | +1 public method following established delegation pattern |
+| `StoryError` | `Facade/Story.swift` | Error taxonomy for all throwing public methods | EXTEND | +1 case `knotNotFound(String)`; `Equatable` conformance is automatic |
+| `InkEngine` | `Engine/InkEngine.swift` | Owns `state` and `containerStack`; `chooseChoice` demonstrates the reset-then-install pattern | EXTEND | +1 internal method; reset mirrors `chooseChoice`, stack installation reuses `applyDivert` |
+| `StoryState` | `Engine/StoryState.swift` | Holds all 12 fields to be reset | NO CHANGE | No new fields, no new methods |
+| `applyDivert(target:)` | `Engine/InkEngine.swift` | Canonical stack-installation mechanism used by all diverts | REUSE AS-IS | Replaces `containerStack` with a single new frame; validated by 154 existing tests |
+| `buildStackFrameSnapshot()` | `Engine/InkEngine.swift` | Serialises `containerStack` into `state.stackFrames` at save time | REUSE AS-IS | Automatically captures the post-jump single frame when `saveState()` is called |
+| `ContainerNode.namedContent` | `Decoder/ContainerNode.swift` | Named sub-container lookup by string key | REUSE AS-IS | `root.namedContent[knot]` and `.namedContent[stitch]` are the direct resolution mechanism |
+
+#### D1 — Reset Strategy: Direct Field Mutation (Option A)
+
+The 12 `StoryState` fields cleared by a successful jump (per RD-01) are assigned in the body of `InkEngine.moveToKnot`:
+
+| Field | Value After Jump |
+|---|---|
+| `returnStack` | `[]` |
+| `evalStack` | `[]` |
+| `currentChoices` | `[]` |
+| `outputStream` | `[]` |
+| `callFrameVariables` | `[]` |
+| `suppressNextNewline` | `false` |
+| `isEnded` | `false` |
+| `inTagMode` | `false` |
+| `tagAccumulator` | `""` |
+| `inStringMode` | `false` |
+| `stringAccumulator` | `""` |
+| `stackFrames` | not cleared here; overwritten at next `saveState()` |
+
+Fields preserved: `variablesState`, `visitCounts`, `chosenChoiceTargets`.
+
+See Options Considered in `docs/feature/native-move-to-knot/design/wave-decisions.md` for the two rejected alternatives.
+
+#### D2 — Path Resolution: Direct `namedContent` Lookup
+
+Knot/stitch names are top-level named identifiers in the Ink content model. Resolution uses `root.namedContent[knot]` (knot-only) and `root.namedContent[knot]?.namedContent[stitch]` (compound). The existing `navigateAbsolute(_:)` dotted-path walker is NOT used, because it conflates name-based navigation with index-based navigation and could produce false positives on numeric path components.
+
+#### D3 — Error Contract: Guard-Then-Throw
+
+Resolution is performed in a single `guard` block before the first field mutation. If the knot or stitch cannot be found, `StoryError.knotNotFound(attemptedPath)` is thrown with the attempted path string:
+
+| Scenario | Attempted Path |
+|---|---|
+| Knot not found | `"knot"` |
+| Stitch not found on valid knot | `"knot.stitch"` |
+| Empty knot name | `""` |
+
+#### D4 — Stack Installation: Delegate to `applyDivert`
+
+After state reset, `applyDivert(target: targetPath)` is called with the resolved dotted-path string (e.g. `"interrogation"` or `"investigation.lab"`). This replaces `containerStack` with a single new `ContainerFrame` and updates `state.pointer.containerPath`. No new stack-rebuilding logic is introduced.
+
+#### C4 Component Diagram
+
+No new components are introduced. The existing C4 Level 3 diagram for `SwiftInkRuntime` remains valid.
+
+Updated component responsibility annotations:
+
+- **Story (Facade)**: gains `moveToKnot(_:stitch:) throws` public method.
+- **StoryError**: gains `knotNotFound(String)` case.
+- **InkEngine**: gains `moveToKnot(_:stitch:) throws` internal method; reuses `applyDivert` for stack installation.
+- **StoryState**: unchanged.
+- **InkDecoder**, **NodeKind**, **TreeWalker**, **TagParser**: unchanged.
+
+#### Implementation Notes
+
+1. The `guard` block that resolves the path is the only place a throw can occur. Everything after it is guaranteed to succeed (no throwing calls between the guard and the `applyDivert` call).
+2. `applyDivert` with an absolute dotted-path string (no leading `.`) follows the `navigateAbsolute` branch and sets `containerStack` to a fresh single-element array. This is the same code path exercised by all absolute diverts in the engine.
+3. The oracle comparison test must account for the JS-bridge auto-continue: `InkStory.moveToKnitStitch` calls `continueStory()` internally, producing the first line. The native `Story.moveToKnot` does not. The oracle test must call `story.continue()` once after `moveToKnot` to get the first line on the native side.
+4. `lastCompletedLine` (a non-`StoryState` field on `InkEngine`) is NOT explicitly cleared by the jump. Its value becomes stale but is overwritten by the first `step()` call after the jump. This is acceptable because `story.currentText` (which reads `engine.currentText` which reads `lastCompletedLine`) is only meaningful after `continue()` — the AC for US-01 does not assert on `currentText` before the first post-jump `continue()`.
 
 ---
 

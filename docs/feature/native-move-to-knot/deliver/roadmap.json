@@ -1,0 +1,88 @@
+{
+  "roadmap": {
+    "project_id": "native-move-to-knot",
+    "created_at": "2026-06-08T08:26:03Z",
+    "total_steps": 1,
+    "phases": 1
+  },
+  "phases": [
+    {
+      "id": "01",
+      "name": "Implementation",
+      "steps": [
+        {
+          "id": "01-01",
+          "name": "Implement InkEngine.moveToKnot guard-reset-install",
+          "description": "Replace the RED scaffold stub in InkEngine.moveToKnot with the real implementation: (1) guard-then-throw path resolution using root.namedContent, (2) direct mutation of 12 StoryState fields listed in RD-01, (3) delegate to applyDivert(target:) for containerStack installation. Remove the SCAFFOLD comment from both InkEngine.swift and Story.swift.",
+          "acceptance_criteria": [
+            "moveToKnot with valid knot name does not throw and canContinue is true after the call",
+            "continue() after moveToKnot returns the first line of the target knot",
+            "moveToKnot from ended story resets canContinue to true",
+            "multiple consecutive moveToKnot calls each produce correct target content",
+            "continue after moveToKnot does not contain text from before the jump",
+            "moveToKnot from mid-execution state with choices clears currentChoices",
+            "global variables (variablesState) are preserved across a jump",
+            "moveToKnot with nonexistent knot name throws StoryError.knotNotFound(knotName)",
+            "knotNotFound carries the attempted knot name as associated value",
+            "moveToKnot with empty string throws knotNotFound with empty string",
+            "engine state is unchanged after a failed jump (no state mutation before throw)",
+            "stitch not found on valid knot throws knotNotFound with compound 'knot.stitch' path",
+            "moveToKnot with stitch resolves compound path and canContinue is true",
+            "continue after compound path jump returns first line of stitch",
+            "moveToKnot with nil stitch jumps to knot root",
+            "save/restore after jump resumes from the jumped-to knot",
+            "pre-jump save is unaffected by a later jump",
+            "stale frames do not survive reset and save cycle",
+            "native moveToKnot continue output matches JS-bridge oracle (macOS only)"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Milestone6_MoveToKnotTests.swift",
+          "criteria": "All 24 RED acceptance tests in Milestone6_MoveToKnotTests.swift pass GREEN; all 154 pre-existing tests remain GREEN; no state mutation occurs before a failed jump throw.",
+          "scenario_name": "US-01 — Jump to a Named Knot",
+          "quality_gates": [
+            "All 24 previously-RED acceptance tests pass",
+            "All 154 pre-existing tests remain GREEN",
+            "No regressions in other test suites"
+          ],
+          "implementation_notes": [
+            "Scaffold stubs already exist in both Story.swift and InkEngine.swift — only InkEngine needs real logic; Story.swift delegation is already correct",
+            "Guard block must resolve ALL paths before ANY state mutation (D3: atomicity)",
+            "12 StoryState fields to reset: returnStack, evalStack, currentChoices, outputStream, callFrameVariables, suppressNextNewline, isEnded, inTagMode, tagAccumulator, inStringMode, stringAccumulator — stackFrames is NOT cleared here",
+            "Fields to preserve: variablesState, visitCounts, chosenChoiceTargets",
+            "Path resolution: root.namedContent[knot] for knot-only; .namedContent[stitch] chained for compound",
+            "Stack installation: applyDivert(target: targetPath) where targetPath is 'knot' or 'knot.stitch'",
+            "Error paths: throw StoryError.knotNotFound(knot) if knot missing; throw StoryError.knotNotFound('knot.stitch') if stitch missing on valid knot",
+            "One test is already GREEN (engine state unchanged after failed jump) — the scaffold correctly throws before mutation",
+            "Do NOT call applyDivert with a compound 'knot.stitch' path unless inklecate actually encodes stitch containers under namedContent with that dotted key — verify by inspecting how applyDivert resolves dotted paths"
+          ],
+          "dependencies": [],
+          "estimated_hours": 1.0,
+          "deliverables": [
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift (SCAFFOLD removed, real implementation)",
+            "Sources/SwiftInkRuntime/Facade/Story.swift (SCAFFOLD comment removed)"
+          ],
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift",
+            "Sources/SwiftInkRuntime/Facade/Story.swift"
+          ]
+        }
+      ]
+    }
+  ],
+  "implementation_scope": {
+    "source_directories": [
+      "Sources/SwiftInkRuntime/"
+    ],
+    "test_directories": [
+      "Tests/SwiftInkRuntimeTests/"
+    ],
+    "excluded_patterns": [
+      "*.ink",
+      "*.ink.json"
+    ]
+  },
+  "validation": {
+    "status": "approved",
+    "reviewer": "nw-deliver-orchestrator",
+    "approved_at": "2026-06-08"
+  }
+}
