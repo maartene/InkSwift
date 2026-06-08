@@ -1,0 +1,180 @@
+schema_version: 1
+
+journey:
+  name: "Programmatic Knot Jump"
+  goal: "Ava wants to redirect a running Ink story to a named knot or stitch without reloading the story from scratch"
+  persona: "Ava — Swift developer building a narrative game using SwiftInkRuntime"
+
+  emotional_arc:
+    start: "Confident — Ava already knows the existing JS-bridge API (moveToKnitStitch) and expects the same contract"
+    middle: "Focused — verifying that state is fully reset and canContinue is true; concerned about edge cases around stale callstack"
+    end: "Satisfied — story jumps cleanly; test suite stays green; API mirrors C# reference"
+
+steps:
+  - id: 1
+    name: "Load story and reach a jump point"
+    action: "Story is initialised; developer continues until a scene-change event occurs"
+
+    integration_checkpoint: |
+      Story is in a mid-execution state: containerStack non-trivial,
+      returnStack may have tunnel frames, currentChoices may be populated.
+      This is the 'dirty' state that moveToKnot must fully discard.
+
+    failure_modes:
+      - "Story is already ended (isEnded == true) — jump should still work"
+      - "Story has active tunnel frames on returnStack — must be cleared"
+
+    gherkin: |
+      Scenario: Story is in a mid-execution state when jump is triggered
+        Given Ava has loaded a story from a valid inklecate-compiled fixture
+        And she has called continue() at least once
+        When she inspects story.canContinue
+        Then canContinue is true or false (either state is a valid precondition for moveToKnot)
+
+  - id: 2
+    name: "Call moveToKnot with a valid knot name"
+    action: "story.moveToKnot(\"interrogation\")"
+
+    shared_artifacts:
+      - name: "knot_name"
+        source: "caller-supplied string literal"
+        displayed_as: "knot parameter"
+        consumers: ["path resolution inside InkEngine", "StoryError message if not found"]
+
+    integration_checkpoint: |
+      Engine must resolve "interrogation" against root.namedContent.
+      Path = "interrogation". If found: proceed to state reset.
+      If not found: throw StoryError.knotNotFound("interrogation").
+
+    failure_modes:
+      - "knot name misspelled — throws knotNotFound"
+      - "knot name is empty string — throws knotNotFound"
+      - "knot name uses wrong case — Ink names are case-sensitive"
+
+    gherkin: |
+      Scenario: Valid knot name resolves without error
+        Given Ava has a story containing knot "interrogation"
+        When Ava calls story.moveToKnot("interrogation")
+        Then the call returns without throwing
+        And story.canContinue is true
+
+      Scenario: Non-existent knot name throws knotNotFound
+        Given Ava has a story that does NOT contain knot "ghost_town"
+        When Ava calls story.moveToKnot("ghost_town")
+        Then StoryError.knotNotFound is thrown
+
+  - id: 3
+    name: "Call moveToKnot with a valid knot + stitch"
+    action: "story.moveToKnot(\"investigation\", stitch: \"lab\")"
+
+    shared_artifacts:
+      - name: "stitch_name"
+        source: "caller-supplied optional string"
+        displayed_as: "stitch parameter"
+        consumers: ["path construction: knot + '.' + stitch", "StoryError message if not found"]
+
+    integration_checkpoint: |
+      Engine builds compound path "investigation.lab".
+      Resolves: root.namedContent["investigation"].namedContent["lab"].
+      If stitch not found within the knot: throw StoryError.knotNotFound("investigation.lab").
+
+    failure_modes:
+      - "knot exists but stitch does not — throws knotNotFound with compound path"
+      - "knot does not exist — throws knotNotFound before stitch lookup"
+
+    gherkin: |
+      Scenario: Valid knot and stitch resolves without error
+        Given Ava has a story containing knot "investigation" with stitch "lab"
+        When Ava calls story.moveToKnot("investigation", stitch: "lab")
+        Then the call returns without throwing
+        And story.canContinue is true
+
+      Scenario: Valid knot but non-existent stitch throws knotNotFound
+        Given Ava has a story with knot "investigation" but no stitch "ghost_alley"
+        When Ava calls story.moveToKnot("investigation", stitch: "ghost_alley")
+        Then StoryError.knotNotFound is thrown
+
+  - id: 4
+    name: "Engine performs full state reset"
+    action: "Internal: InkEngine resets callstack, output, choices, flags before installing new pointer"
+
+    integration_checkpoint: |
+      After moveToKnot returns without error:
+        containerStack has exactly one frame pointing to the target container
+        returnStack is empty
+        evalStack is empty
+        currentChoices is empty
+        outputStream is empty
+        callFrameVariables is empty
+        suppressNextNewline is false
+        isEnded is false
+
+    failure_modes:
+      - "Stale returnStack frames cause story to return to wrong location after first continue()"
+      - "Stale evalStack values corrupt first expression evaluation in new knot"
+      - "isEnded not reset — canContinue returns false immediately after jump"
+
+    gherkin: |
+      Scenario: State is fully reset after a successful jump
+        Given Ava calls story.moveToKnot("interrogation") on a story with active tunnel frames
+        Then story.canContinue is true
+        And the first continue() call returns the first line of "interrogation"
+        And no text from before the jump appears in currentText
+
+  - id: 5
+    name: "Continue from new location"
+    action: "story.continue() — developer drives story forward from the new knot"
+
+    integration_checkpoint: |
+      canContinue must be true immediately after a successful jump.
+      First continue() call must return content from the target knot/stitch.
+      Output must match the JS-bridge oracle for the same fixture + jump.
+
+    failure_modes:
+      - "canContinue is false immediately after jump (isEnded was not reset)"
+      - "First continue() returns empty string (outputStream not cleared)"
+      - "Output does not match oracle (pointer installed at wrong location)"
+
+    gherkin: |
+      Scenario: First continue() after jump returns target knot content
+        Given Ava has called story.moveToKnot("interrogation")
+        When Ava calls story.continue()
+        Then story.currentText contains the first line of the "interrogation" knot
+        And story.currentText does not contain text from before the jump
+
+      Scenario: Post-jump output matches JS-bridge oracle
+        Given both Story (native) and InkStory (oracle) are loaded from the same fixture
+        When both jump to "interrogation" and then continue()
+        Then Story.currentText equals InkStory.currentText
+
+  - id: 6
+    name: "Save/restore round-trip after jump"
+    action: "story.saveState() followed by restoreState() in a fresh Story instance"
+
+    integration_checkpoint: |
+      After moveToKnot + continue() + saveState():
+        restored story produces identical output to in-memory story.
+
+    failure_modes:
+      - "savedState contains stale stack frames from before jump"
+      - "Restored story resumes from wrong location"
+
+    gherkin: |
+      Scenario: Save/restore after jump produces identical output
+        Given Ava has called story.moveToKnot("interrogation") and then continue()
+        When Ava saves state and restores into a fresh Story
+        Then the restored story.continue() produces the same text as the in-memory story
+
+integration_validation:
+  shared_artifact_consistency:
+    - artifact: "knot_name"
+      must_match_across: [2, 3, 4, 5]
+      failure_message: "Path built in step 2/3 must be the same path the engine resolves in step 4 and the pointer installed for step 5"
+    - artifact: "state_reset"
+      must_match_across: [4, 5, 6]
+      failure_message: "All state fields cleared in step 4 must remain cleared through steps 5 and 6 (no re-hydration of old values)"
+
+changelog:
+  - date: "2026-06-08"
+    feature: "native-move-to-knot"
+    change: "Initial journey schema — DISCUSS wave"
