@@ -1105,4 +1105,34 @@ final class InkEngine {
         }
         return rebuilt.isEmpty ? [ContainerFrame(container: root, index: 0, pathFromRoot: [])] : rebuilt
     }
+
+    func moveToKnot(_ knot: String, stitch: String? = nil) throws {
+        // D3: resolve ALL paths before ANY state mutation
+        guard let knotContainer = root.namedContent[knot] else {
+            throw StoryError.knotNotFound(knot)
+        }
+        let targetPath: String
+        if let stitch = stitch {
+            guard knotContainer.namedContent[stitch] != nil else {
+                throw StoryError.knotNotFound("\(knot).\(stitch)")
+            }
+            targetPath = "\(knot).\(stitch)"
+        } else {
+            targetPath = knot
+        }
+        // D1: reset 12 StoryState fields (RD-01); stackFrames intentionally NOT cleared
+        state.returnStack = []
+        state.evalStack = []
+        state.currentChoices = []
+        state.outputStream = []
+        state.callFrameVariables = []
+        state.suppressNextNewline = false
+        state.isEnded = false
+        state.inTagMode = false
+        state.tagAccumulator = ""
+        state.inStringMode = false
+        state.stringAccumulator = ""
+        // D4: delegate stack installation to applyDivert
+        applyDivert(target: targetPath)
+    }
 }

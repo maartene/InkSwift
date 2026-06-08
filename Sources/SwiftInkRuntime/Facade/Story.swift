@@ -12,6 +12,7 @@ public enum StoryError: Error, Equatable {
     case unsupportedInkVersion(Int)
     case invalidChoiceIndex(Int)
     case invalidStateData
+    case knotNotFound(String)
 }
 
 public final class Story {
@@ -95,5 +96,9 @@ public final class Story {
 
     public func restoreState(_ data: Data) throws {
         try engine.restoreState(data)
+    }
+
+    public func moveToKnot(_ knot: String, stitch: String? = nil) throws {
+        try engine.moveToKnot(knot, stitch: stitch)
     }
 }
