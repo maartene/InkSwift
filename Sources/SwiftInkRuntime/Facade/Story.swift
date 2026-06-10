@@ -101,4 +101,22 @@ public final class Story {
     public func moveToKnot(_ knot: String, stitch: String? = nil) throws {
         try engine.moveToKnot(knot, stitch: stitch)
     }
+
+    // SCAFFOLD: story-testability — replaced during DELIVER
+
+    public func getVariable(_ name: String) -> Any? {
+        nil
+    }
+
+    public func setVariable(_ name: String, to value: some Any) {
+    }
+
+    public func visitCount(forKnot name: String) -> Int {
+        0
+    }
+
+    @discardableResult
+    public func continueMaximally() -> String {
+        ""
+    }
 }

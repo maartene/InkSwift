@@ -740,3 +740,152 @@ Configuration:
 Supplementary: **Swift compiler access control** enforces `internal`/`public` at compile time — R2 (NodeKind stays internal) is enforced by the language itself.
 
 CI gate: SwiftLint runs in the `lint` CI stage before `build`. A single violation blocks the build.
+
+---
+
+### story-testability (Feature Addition)
+
+This subsection records the concrete architectural decisions for the `story-testability` feature. It adds four methods to the `Story` facade — `getVariable`, `setVariable`, `visitCount`, `continueMaximally` — and one test-only method `setVisitCount` in a new redistributable `SwiftInkRuntimeTestSupport` SPM target.
+
+One new source file is introduced in `Sources/SwiftInkRuntimeTestSupport/`. No new files in `Sources/SwiftInkRuntime/` (see Decision ST-04 below).
+
+#### Changed Assumptions vs DISCUSS Wave
+
+| DISCUSS Assumption | DESIGN Decision | Rationale |
+|---|---|---|
+| D-04 assumed `setVisitCount(forKnot:to:)` would be a plain `public` method on `Story` | `setVisitCount` is NOT on the `Story` public API; it lives in a separate `SwiftInkRuntimeTestSupport` SPM target (Option C) | User explicitly constrained: "Setting of knot visit count should be test only: its for testing purposes only." A plain `public` method would be callable in production code. |
+| D-07 ("no new source files") applied to all slices | Relaxed for the test-support target: one new SPM target + source file in `Sources/SwiftInkRuntimeTestSupport/StoryTestSupport.swift` | The test-only constraint takes precedence. The target is also the right foundation for future test helpers (`assertOutput`, `setChoiceHistory`, etc.). |
+
+---
+
+#### Reuse Analysis
+
+| Existing Component | File | Overlap | Decision | Justification |
+|---|---|---|---|---|
+| `Story` (Facade) | `Facade/Story.swift` | Hosts all public API; delegation pattern established by `moveToKnot`, `chooseChoice`, `continue`, etc. | EXTEND | +3 public methods (`getVariable`, `setVariable`, `visitCount`) + 1 discardable (`continueMaximally`); `setVisitCount` excluded from this file by design |
+| `StoryError` | `Facade/Story.swift` | Error taxonomy for throwing methods | NO CHANGE | All four US methods are non-throwing (D-02: silent no-op for unknowns); no new error cases |
+| `InkEngine` | `Engine/InkEngine.swift` | Owns `state: StoryState`; `moveToKnot` demonstrates the state-mutation delegation pattern | EXTEND | +4 internal accessors: `getVariable`, `setVariable`, `visitCount`, `setVisitCount`; `continueMaximally` is facade-only |
+| `StoryState` | `Engine/StoryState.swift` | `variablesState: [String: InkValue]` and `visitCounts: [String: Int]` both already present | NO CHANGE | Both dictionaries already exist from the Tier 2 / Tier 3 implementation; no new fields required |
+| `SwiftInkRuntimeTestSupport` target | `Package.swift` / `Sources/SwiftInkRuntimeTestSupport/` | New redistributable SPM library for test helpers | CREATE NEW | Story authors need `setVisitCount` in their own test suites; Option B (test-target extension) cannot be imported by external consumers. New target is the correct structure and the right foundation for future helpers. |
+
+---
+
+#### US-01 Design: `getVariable`
+
+**Method signature**: `public func getVariable(_ name: String) -> Any?`
+
+**Delegation**: `Story.getVariable` → `InkEngine.getVariable` → read `state.variablesState[name]` → bridge `InkValue` to Swift native type.
+
+**Bridging table**:
+
+| `InkValue` case | Returned as |
+|---|---|
+| `.int(let n)` | `n` (type `Int`) |
+| `.float(let f)` | `Double(f)` (widened to `Double`) |
+| `.string(let s)` | `s` (type `String`) |
+| `.bool(let b)` | `b` (type `Bool`) |
+| `.variablePointer(...)` | `nil` (internal ref-param mechanism, not user-accessible) |
+| key absent | `nil` |
+
+`InkValue` does not appear in the public method signature — constraint D-03 satisfied.
+
+---
+
+#### US-02 Design: `setVariable`
+
+**Method signature**: `public func setVariable(_ name: String, to value: some Any)`
+
+**Delegation**: `Story.setVariable` → `InkEngine.setVariable` → bridge Swift native type to `InkValue` → write `state.variablesState[name] = bridgedValue` only if key exists.
+
+**Open question OQ-1 resolved — pure no-op for unknown names**: If `state.variablesState[name]` does not exist, the method returns without writing. It does not create a new key. Rationale: the inkjs reference runtime only allows assignment to variables declared in the compiled story (`VAR` declarations). Creating new keys for misspelled names would silently corrupt the variable namespace. Production host apps setting initial variable values (e.g., `player_name`) must have those variables declared in the `.ink` source, so the keys will already exist after `initializeGlobalVariables()`.
+
+**Open question OQ-2 resolved — `some Any` over per-type overloads**: A single `some Any` parameter centralises the `InkValue` bridging logic in one engine accessor. Four per-type overloads would duplicate the delegation chain and expand the public API surface without adding type-safety (Swift's type inference handles `story.setVariable("score", to: 42)` correctly without overloads). Consistent with the AC in US-02 which names this exact signature.
+
+**Bridging table (reverse of getVariable)**:
+
+| Swift type | `InkValue` case written |
+|---|---|
+| `Int` | `.int` |
+| `Double` or `Float` | `.float` |
+| `String` | `.string` |
+| `Bool` | `.bool` |
+| Any other type | no-op (unrecognised type, value not written) |
+
+`setVariable` is production-safe — it is needed by host apps for pre-story state injection (e.g., setting player name). It is NOT test-only.
+
+---
+
+#### US-03 Design: `visitCount` and `setVisitCount`
+
+##### visitCount (production-safe, public)
+
+**Method signature**: `public func visitCount(forKnot name: String) -> Int`
+
+Returns `state.visitCounts[name] ?? 0`. Named knots only. Unknown name returns `0` silently. This method is NOT test-only — there are legitimate production use cases (e.g., a game UI that shows "you have visited this location N times").
+
+##### setVisitCount (test-only — Decision ST-04)
+
+`setVisitCount(forKnot:to:)` is **not** declared on `Story` in `Sources/SwiftInkRuntime/Facade/Story.swift`. It does not exist in the `SwiftInkRuntime` module public API.
+
+Instead, it is declared in `Sources/SwiftInkRuntimeTestSupport/StoryTestSupport.swift` as an extension on `Story` in a separate SPM library target `SwiftInkRuntimeTestSupport`. Story authors add this target as a test dependency in their own `Package.swift`. This is Option C from the three options evaluated (see ST-04 below).
+
+The internal engine accessor `InkEngine.setVisitCount(forKnot:to:)` IS added to `InkEngine.swift` as an `internal` method, accessible from `SwiftInkRuntimeTestSupport` via `@testable import`.
+
+---
+
+#### US-04 Design: `continueMaximally`
+
+**Method signature**: `@discardableResult public func continueMaximally() -> String`
+
+**Implementation**: Entirely within `Story` facade. Loop calling `self.continue()` (which already calls `cleanOutputWhitespace`) until `canContinue == false`. Concatenate all returned strings. Return concatenated result (empty string if `canContinue` was already false on entry).
+
+**Open question OQ-3 resolved — continue looping on errors**: Errors accumulate in `currentErrors`; the drain loop does not halt. This preserves the equivalence invariant in AC: "Result is identical to manual `while canContinue { output += continue() }` loop." A loop that halted on errors would break this equivalence. Consistent with `continue()` error contract and the reference C# `ContinueMaximally()`.
+
+`continueMaximally` is NOT test-only — it is also needed in production headless rendering (server-side story execution).
+
+No `InkEngine` changes needed. Pure facade delegation.
+
+---
+
+#### ST-04: setVisitCount Test-Only Visibility Decision
+
+Three options were evaluated for making `setVisitCount` test-only.
+
+**Option A — `#if DEBUG` conditional compilation**: Wrap `setVisitCount` in `#if DEBUG` in `Story.swift`. Available in debug builds (tests run debug), absent from release builds. No new files.
+
+Trade-off: The boundary is debug/release, not test/production. A host-app developer building in debug mode can accidentally call the method in production code. It appears in DocC documentation in debug mode. The guarantee is a convention (`#if DEBUG`), not a structural module-system guarantee.
+
+**Option B — Test-target extension file**: Declare `setVisitCount` in a new file `Tests/SwiftInkRuntimeTests/TestSupport/StoryTestSupport.swift` added only to the `SwiftInkRuntimeTests` target. The method is not part of the `SwiftInkRuntime` module. The extension accesses `InkEngine` via `@testable import`.
+
+Trade-off: `setVisitCount` is absent from the `SwiftInkRuntime` module — any production call site will fail to compile. However, story authors who depend on InkSwift as a package cannot use the method in their own test suites. The feature's whole point is to enable story authors to test their stories; restricting the method to InkSwift's internal test target defeats that purpose.
+
+**Option C — Separate `SwiftInkRuntimeTestSupport` SPM target (CHOSEN)**: A new SPM library target `SwiftInkRuntimeTestSupport` under `Sources/SwiftInkRuntimeTestSupport/`. Redistributable: story authors add it as a test dependency in their own `Package.swift`. Extends `Story` with test helpers via `@testable import SwiftInkRuntime`.
+
+Trade-off: One new SPM target + source directory + source file in `Sources/`. Story authors using InkSwift as a package can write `import SwiftInkRuntimeTestSupport` in their test targets and call `setVisitCount`. A production app target that accidentally adds `SwiftInkRuntimeTestSupport` as a dependency would be a misconfigured `Package.swift` — an explicit, auditable mistake.
+
+**Decision: Option C**. The feature's persona (Raya) is an external story author, not an InkSwift contributor. She needs `setVisitCount` available when she imports InkSwift into her own project. Option B only serves InkSwift's internal tests. Option C is also the correct foundation for future test helpers (e.g., `assertOutput`, `setChoiceHistory`) — "only one method now" is not a reason to build the wrong structure.
+
+**SPM change**: `Package.swift` gains a new `SwiftInkRuntimeTestSupport` library target and product. Story authors add it as a `.testTarget` dependency. The target depends on `SwiftInkRuntime` and uses `@testable import` to access `InkEngine` internals.
+
+---
+
+#### C4 Diagrams
+
+The existing C4 Level 1, Level 2, and Level 3 diagrams remain valid for the production module. The new `SwiftInkRuntimeTestSupport` target is a test-support library; it does not appear in production C4 diagrams. A future documentation pass may add a C4 Container entry for it if consumers warrant it.
+
+Updated component responsibility annotations (L3 — Story facade):
+
+- **Story (Facade)**: gains `getVariable(_ name: String) -> Any?`, `setVariable(_ name: String, to value: some Any)`, `visitCount(forKnot name: String) -> Int`, and `@discardableResult continueMaximally() -> String`. Does NOT gain `setVisitCount` — that method is in `SwiftInkRuntimeTestSupport` only.
+- **InkEngine**: gains four internal accessors: `getVariable`, `setVariable`, `visitCount`, `setVisitCount`.
+- **StoryState**: unchanged (all required dictionaries already present).
+- All other components (TreeWalker, NodeKind, InkDecoder, TagParser): unchanged.
+
+---
+
+#### Architecture Enforcement for story-testability
+
+The existing enforcement rules (R1, R2, R3, SwiftLint) cover this feature without change. An additional SwiftLint rule is recommended:
+
+**R4 — setVisitCount must not appear in Sources/SwiftInkRuntime/**: A `custom_rules` regex in `.swiftlint.yml` that matches `setVisitCount` in any file under `Sources/SwiftInkRuntime/` and raises an error. This guards against accidental back-migration of the test-only method into the production module.
+
+The module-system boundary (Option C: separate target) is the primary enforcement. R4 is supplementary.

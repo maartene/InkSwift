@@ -1,0 +1,42 @@
+# Product Jobs Register — InkSwift
+# Seed created by: story-testability DISCUSS wave (2026-06-10)
+# Maintainer: nw-product-owner
+# Format: Jobs-to-Be-Done (JTBD) job statements
+
+schema_version: 1
+
+jobs:
+  - id: "job-story-logic-verification"
+    status: "active"
+    persona: "Raya — Swift developer and Ink story author"
+    statement: >
+      When I have written an Ink story with branching logic,
+      I want to verify that specific narrative branches behave correctly for given variable states,
+      so I can ship the story with confidence that the logic matches my intent
+      and catch regressions when I edit the story.
+    features:
+      - id: "story-testability"
+        contribution: "Adds getVariable, setVariable, visitCount, setVisitCount, continueMaximally to Story facade — enables GWT unit tests for individual story branches"
+        status: "in DESIGN wave"
+      - id: "native-move-to-knot"
+        contribution: "Adds moveToKnot to Story facade — enables direct navigation to any named knot without choice-replay"
+        status: "delivered (archived)"
+    outcome_kpis:
+      - "Story authors write ≥1 variable-assertion test per branching knot"
+      - "Tests survive choice-reordering story edits without modification"
+      - "continueMaximally eliminates while-loop boilerplate from WHEN steps"
+
+  - id: "job-story-playback"
+    status: "active"
+    persona: "Maarten — Swift app developer embedding Ink stories"
+    statement: >
+      When I am building a Swift app or game that tells Ink stories,
+      I want a pure-Swift runtime that executes the full Ink specification,
+      so I can ship on any Apple platform without a JavaScript engine dependency.
+    features:
+      - id: "native-runtime"
+        contribution: "SwiftInkRuntime module: pure-Swift tree-walker engine executing Ink JSON; supports CORE, STANDARD, and ADVANCED features up to The Intercept ceiling"
+        status: "delivered (archived)"
+    outcome_kpis:
+      - "SwiftInkRuntime executes The Intercept (28 knots, 47 stitches, 21 variables) line-for-line identical to inkjs oracle"
+      - "No JavaScript engine dependency in production builds"

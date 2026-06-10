@@ -1,0 +1,42 @@
+schema_version: 1
+
+# Single Source of Truth: Story Author Journey
+# Seed created by: story-testability DISCUSS wave (2026-06-10)
+# Maintainer: nw-product-owner
+
+persona:
+  name: "Raya"
+  role: "Swift developer and Ink story author"
+  description: "A developer who writes Ink stories and embeds them in Swift applications. Thinks in GWT (Given-When-Then) test structure. Knows the Story public API from production use. Wants to verify story logic with automated tests."
+
+primary_job:
+  statement: "When I have written an Ink story with branching logic, I want to verify that specific narrative branches behave correctly for given variable states, so I can ship the story with confidence that the logic matches my intent."
+
+journeys:
+  - id: "story-testability"
+    name: "Ink Story Unit Testing"
+    file: "docs/feature/story-testability/discuss/journey-story-author.yaml"
+    status: "active"
+    feature: "story-testability"
+    created: "2026-06-10"
+    description: "Author creates a Story, positions at a named knot, injects variable/visit-count state, executes via continueMaximally, asserts on output and post-state."
+
+  - id: "story-navigation"
+    name: "Jump to a Named Knot"
+    file: "docs/feature/native-move-to-knot/discuss/journey-story-author.yaml"
+    status: "archived"
+    feature: "native-move-to-knot"
+    created: "2026-06-04"
+    description: "Author uses moveToKnot to position a story at a specific knot for testing or gameplay control."
+
+mental_model:
+  - "GWT test structure: Given (set state) / When (execute) / Then (assert)"
+  - "moveToKnot positions the cursor — it's the navigation primitive"
+  - "Variables are the mechanism for conditional story logic (Pattern A)"
+  - "Visit counts are the mechanism for revisit-aware story logic (Pattern B)"
+  - "continueMaximally drains output to the next choice point"
+  - "Story object is the single facade — no internal types exposed"
+
+emotional_arc_across_journeys:
+  baseline: "Frustrated — tests are fragile and break on story edits"
+  post_story_testability: "Confident — story logic is provably correct; tests survive refactoring"

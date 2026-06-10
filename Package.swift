@@ -18,6 +18,9 @@ let package = Package(
         .library(
             name: "SwiftInkRuntime",
             targets: ["SwiftInkRuntime"]),
+        .library(
+            name: "SwiftInkRuntimeTestSupport",
+            targets: ["SwiftInkRuntimeTestSupport"]),
     ],
     dependencies: [
         // Dependencies declare other packages that this package depends on.
@@ -52,10 +55,15 @@ let package = Package(
                 .process("test.ink.json")
             ]
         ),
+        .target(
+            name: "SwiftInkRuntimeTestSupport",
+            dependencies: ["SwiftInkRuntime"]
+        ),
         .testTarget(
             name: "SwiftInkRuntimeTests",
             dependencies: [
                 "SwiftInkRuntime",
+                "SwiftInkRuntimeTestSupport",
                 .target(name: "InkSwift", condition: .when(platforms: [.macOS])),
                 "JSONEquality"
             ],
@@ -73,6 +81,7 @@ let package = Package(
                 "slice-bug-glue-after-choice.ink",
                 "slice-bug-conditional-choice-cluster.ink",
                 "slice-move-to-knot.ink",
+                "slice-story-testability.ink",
             ],
             resources: [
                 .process("test.ink.json"),
@@ -91,6 +100,7 @@ let package = Package(
                 .process("TheIntercept.ink.json"),
                 .process("TheIntercept_oracle_walkthrough.json"),
                 .process("slice-move-to-knot.ink.json"),
+                .process("slice-story-testability.ink.json"),
             ]
         ),
     ]

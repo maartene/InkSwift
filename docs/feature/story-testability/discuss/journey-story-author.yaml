@@ -1,0 +1,250 @@
+schema_version: 1
+
+journey:
+  name: "Ink Story Unit Testing"
+  goal: "Write automated Given-When-Then tests that verify story logic without playing through the whole story"
+  persona: "Raya — Swift developer and Ink story author"
+
+  emotional_arc:
+    start: "Frustrated — existing tests break whenever choice ordering changes; fragile, untrustworthy"
+    middle: "Focused and in control — state is set programmatically; no brittle choice-replay chain"
+    end: "Confident — test suite catches logic errors before players see them; story logic is provably correct"
+
+steps:
+  - id: 1
+    name: "Create Story Instance"
+    action: "Initialise Story from compiled .ink.json fixture"
+    api_call: "Story(json: storyJSON)"
+
+    shared_artifacts:
+      - name: story_instance
+        source: "Story(json:) — StoryBlueprint parsed from .ink.json"
+        displayed_as: "$story"
+        consumers:
+          - "all subsequent API calls in the test"
+
+    emotional_state:
+      entry: "Neutral — familiar init call, same as production usage"
+      exit: "Ready — story object in hand, waiting to set state"
+
+    integration_checkpoint: |
+      Story initialises without throwing.
+      canContinue reflects true initial state of the loaded JSON.
+
+    failure_modes:
+      - "JSON is malformed → throws StoryError.invalidJSON"
+      - "inkVersion unsupported → throws StoryError.unsupportedInkVersion"
+
+    gherkin: |
+      Scenario: Story loads from compiled fixture
+        Given a compiled Ink story fixture exists at the test bundle path
+        When Raya initialises Story(json: storyJSON)
+        Then story is non-nil and no error is thrown
+
+  - id: 2
+    name: "Position Story at Target Knot (GIVEN setup — navigation)"
+    action: "Jump to the knot under test using the existing moveToKnot API"
+    api_call: "try story.moveToKnot(\"reward_check\")"
+
+    shared_artifacts:
+      - name: knot_name
+        source: "String literal matching inklecate-compiled knot identifier in .ink source"
+        displayed_as: "$knotName"
+        consumers:
+          - "moveToKnot call"
+          - "test assertion comments"
+
+    emotional_state:
+      entry: "Hopeful — knows the knot exists, trusts moveToKnot from prior work"
+      exit: "Positioned — story execution cursor is at the knot entry point"
+
+    integration_checkpoint: |
+      canContinue is true after moveToKnot.
+      currentChoices is empty (pre-continue state).
+
+    failure_modes:
+      - "Knot name typo → throws StoryError.knotNotFound"
+      - "Empty string → throws StoryError.knotNotFound"
+
+    gherkin: |
+      Scenario: Author positions story at a named knot
+        Given a Story instance is loaded
+        When Raya calls try story.moveToKnot("reward_check")
+        Then story.canContinue is true
+        And story.currentChoices is empty
+
+  - id: 3
+    name: "Inject Variable State (GIVEN setup — variables)"
+    action: "Write story variables to establish test preconditions"
+    api_call: "story.setVariable(\"score\", to: 10)"
+
+    shared_artifacts:
+      - name: variable_name
+        source: "String matching VAR declaration name in .ink source"
+        displayed_as: "$varName"
+        consumers:
+          - "setVariable call"
+          - "getVariable assertion"
+          - "continueMaximally output"
+      - name: variable_value
+        source: "Test precondition — value chosen by story author"
+        displayed_as: "$varValue"
+        consumers:
+          - "setVariable call"
+          - "getVariable read-back assertion"
+
+    emotional_state:
+      entry: "In control — this is the moment the old workflow lacked; state injection is the key unlock"
+      exit: "Set up — preconditions established in one line, no brittle choice-replay chain"
+
+    integration_checkpoint: |
+      getVariable returns the same value that was passed to setVariable.
+      Setting an unknown variable is a no-op (silent, no throw).
+
+    failure_modes:
+      - "Variable name does not exist in story → silent no-op (no throw, getVariable returns nil)"
+      - "Type mismatch (e.g., passing String where Ink expects Int) → value stored as-is; runtime may produce unexpected output"
+
+    gherkin: |
+      Scenario: Author sets a story variable as a test precondition
+        Given Raya has a positioned Story instance
+        When Raya calls story.setVariable("score", to: 10)
+        Then story.getVariable("score") returns 10
+
+      Scenario: Reading an unknown variable returns nil
+        Given a Story instance is loaded
+        When Raya calls story.getVariable("ghost_variable")
+        Then the return value is nil
+
+  - id: 4
+    name: "Inject Visit Count (GIVEN setup — visit counts)"
+    action: "Write knot visit counts to establish test preconditions for visit-count-dependent story logic"
+    api_call: "story.setVisitCount(forKnot: \"prologue\", to: 2)"
+
+    shared_artifacts:
+      - name: knot_visit_key
+        source: "String matching top-level knot name in .ink source (not anonymous containers)"
+        displayed_as: "$knotKey"
+        consumers:
+          - "setVisitCount call"
+          - "visitCount read-back assertion"
+
+    emotional_state:
+      entry: "Curious — less commonly needed than variables, but essential for stories using {knotName} visit syntax"
+      exit: "Satisfied — both state injection mechanisms covered; can reach any deterministic story state"
+
+    integration_checkpoint: |
+      visitCount(forKnot:) returns the value set by setVisitCount.
+      Unknown knot returns 0 (never throws).
+
+    failure_modes:
+      - "Knot name not in story → returns 0 for read; write is a no-op (no throw)"
+      - "Anonymous container paths are not exposed; only named knots are valid keys"
+
+    gherkin: |
+      Scenario: Author sets a knot visit count as a test precondition
+        Given Raya has a Story instance
+        When Raya calls story.setVisitCount(forKnot: "prologue", to: 2)
+        Then story.visitCount(forKnot: "prologue") returns 2
+
+      Scenario: Reading visit count for unknown knot returns zero
+        Given a Story instance is loaded
+        When Raya calls story.visitCount(forKnot: "nonexistent_knot")
+        Then the return value is 0
+
+  - id: 5
+    name: "Execute and Collect Output (WHEN)"
+    action: "Advance story to next choice point, collecting all output text"
+    api_call: "let output = story.continueMaximally()"
+
+    shared_artifacts:
+      - name: output_text
+        source: "Concatenation of all continue() return values until canContinue == false"
+        displayed_as: "$output"
+        consumers:
+          - "#expect assertion on output content"
+          - "optional: split by newline for line-by-line assertions"
+
+    emotional_state:
+      entry: "Anticipating — the WHEN step; about to see if the story logic behaves correctly"
+      exit: "In the moment — output in hand; the assertion is one line away"
+
+    integration_checkpoint: |
+      continueMaximally() returns a non-empty String when the knot has output text.
+      canContinue is false after the call (or story is at a choice point).
+
+    failure_modes:
+      - "Story has no more content → returns empty string, canContinue == false"
+      - "Story is already ended → returns empty string immediately"
+
+    gherkin: |
+      Scenario: Author drains all output from a positioned story
+        Given Raya has a positioned Story instance with preconditions set
+        When Raya calls story.continueMaximally()
+        Then the return value contains all output lines from the current position to the next choice point
+        And story.canContinue is false (or story is at a choice point)
+
+      Scenario: continueMaximally on ended story returns empty string
+        Given a Story instance that has reached its END
+        When Raya calls story.continueMaximally()
+        Then the return value is an empty string
+
+  - id: 6
+    name: "Assert on Output and Post-State (THEN)"
+    action: "Use #expect to verify the observable output and/or variable values after execution"
+    api_call: |
+      #expect(output.contains("You earned the gold badge."))
+      #expect(story.getVariable("badge_awarded") as? Bool == true)
+
+    shared_artifacts:
+      - name: expected_output
+        source: "String literal derived from .ink source — the expected narrative text"
+        displayed_as: "$expectedOutput"
+        consumers:
+          - "#expect(output.contains(...))"
+      - name: post_state_variable
+        source: "Variable updated by Ink story logic during execution"
+        displayed_as: "$postStateVar"
+        consumers:
+          - "#expect(story.getVariable(...))"
+
+    emotional_state:
+      entry: "Focused — assertion is the purpose of the whole test"
+      exit: "Confident — test is green; story logic is provably correct for this scenario. If red: the story logic has a bug, not the test."
+
+    integration_checkpoint: |
+      All #expect assertions pass without force-unwrapping.
+      getVariable returns the correct type (cast via as? is idiomatic).
+
+    failure_modes:
+      - "Story output does not match expected → test fails; story author investigates Ink logic"
+      - "Variable not updated as expected → test fails; story author checks variable assignment in .ink"
+      - "Nil return from getVariable causes as? cast to return nil → test fails with clear #expect message"
+
+    gherkin: |
+      Scenario: Author asserts on story output text after execution
+        Given Raya has collected output from continueMaximally()
+        When Raya checks #expect(output.contains("You earned the gold badge."))
+        Then the assertion passes if the story logic branched correctly
+
+      Scenario: Author asserts on variable post-state
+        Given Raya has called continueMaximally()
+        When Raya checks #expect(story.getVariable("badge_awarded") as? Bool == true)
+        Then the assertion passes if the Ink logic set the variable correctly
+
+integration_validation:
+  shared_artifact_consistency:
+    - artifact: "variable_name"
+      must_match_across: [3, 6]
+      failure_message: "Variable name in setVariable must match name in getVariable assertion; both must match the VAR declaration in the .ink source"
+    - artifact: "knot_name"
+      must_match_across: [2, 4]
+      failure_message: "Knot names in moveToKnot and setVisitCount must match inklecate-compiled knot identifiers exactly (case-sensitive)"
+    - artifact: "output_text"
+      must_match_across: [5, 6]
+      failure_message: "continueMaximally() return value must be stored and used in #expect; cannot assert on stale currentText"
+
+changelog:
+  - date: "2026-06-10"
+    feature: "story-testability"
+    change: "Initial DISCUSS wave — journey created from conversation context and architecture brief"
