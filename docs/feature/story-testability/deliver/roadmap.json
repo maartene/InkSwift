@@ -1,0 +1,196 @@
+{
+  "roadmap": {
+    "project_id": "story-testability",
+    "created_at": "2026-06-11T00:00:00Z",
+    "total_steps": 4,
+    "phases": 1
+  },
+  "phases": [
+    {
+      "id": "01",
+      "name": "Story Testability API",
+      "steps": [
+        {
+          "id": "01-01",
+          "name": "Implement Story.getVariable and InkEngine.getVariable",
+          "description": "Replace the SCAFFOLD stub for getVariable in Story.swift with real delegation to a new InkEngine.getVariable accessor. The accessor reads state.variablesState[name] and bridges the InkValue to a Swift native type (Int, Double, String, Bool) or nil. Walking skeleton: Story(json:) → getVariable('score') → returns 0 as Int.",
+          "acceptance_criteria": [
+            "initial integer variable value is readable via getVariable",
+            "integer variable reads as Int",
+            "boolean variable reads as Bool",
+            "string variable reads as String",
+            "integer variable reads updated value after engine sets it via score_setup",
+            "boolean variable is true after story logic sets it during execution",
+            "unknown variable name returns nil without throwing",
+            "getVariable compiles with the correct public signature"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Milestone7_StoryTestabilityTests.swift",
+          "scenario_name": "Walking Skeleton — getVariable initial value + US-01 — getVariable",
+          "quality_gates": [
+            "All 8 US-01 acceptance tests pass GREEN",
+            "Walking skeleton test passes",
+            "All pre-existing tests remain GREEN",
+            "No regressions"
+          ],
+          "implementation_notes": [
+            "Scaffold stub: public func getVariable(_ name: String) -> Any? { nil } — replace with real engine delegation",
+            "Add internal func getVariable(_ name: String) -> Any? to InkEngine — reads state.variablesState[name]",
+            "Bridge InkValue to Any?: .int(n) → n, .float(f) → Double(f), .string(s) → s, .bool(b) → b, .variablePointer → nil, missing key → nil",
+            "InkValue must NOT appear in the public signature (constraint D-03)",
+            "variablesState is initialized with global VAR defaults after Story(json:) — check InkDecoder for where initializeGlobalVariables is called",
+            "score_setup knot: ~ score = 42 — sets variablesState['score'] to .int(42); reward_check: ~ badge_awarded = true if score >= 10"
+          ],
+          "dependencies": [],
+          "estimated_hours": 0.5,
+          "deliverables": [
+            "Sources/SwiftInkRuntime/Facade/Story.swift (getVariable real implementation)",
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift (new internal getVariable accessor)"
+          ],
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Facade/Story.swift",
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift"
+          ]
+        },
+        {
+          "id": "01-02",
+          "name": "Implement Story.setVariable and InkEngine.setVariable",
+          "description": "Replace the SCAFFOLD stub for setVariable in Story.swift with real delegation to a new InkEngine.setVariable accessor. The accessor bridges the Swift value to InkValue and writes to state.variablesState[name] — only if the key already exists (pure no-op for unknown names).",
+          "acceptance_criteria": [
+            "setVariable for Int is readable back via getVariable",
+            "setVariable for Bool is readable back via getVariable",
+            "setVariable for String is readable back via getVariable",
+            "setVariable with score 10 causes reward_check to output gold badge line",
+            "setVariable with has_key true causes locked_door to output door opens line",
+            "setVariable for player_name personalises start knot output",
+            "setVariable for unknown variable does not throw",
+            "setVariable does not change canContinue or currentChoices"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Milestone7_StoryTestabilityTests.swift",
+          "scenario_name": "US-02 — setVariable",
+          "quality_gates": [
+            "All 8 US-02 acceptance tests pass GREEN",
+            "All US-01 tests remain GREEN",
+            "All pre-existing tests remain GREEN",
+            "No regressions"
+          ],
+          "implementation_notes": [
+            "Scaffold stub: public func setVariable(_ name: String, to value: some Any) {} — replace with real engine delegation",
+            "Add internal func setVariable(_ name: String, to value: some Any) to InkEngine",
+            "Pure no-op if state.variablesState[name] == nil — do NOT create new keys",
+            "Bridge: Int → .int, Double/Float → .float, String → .string, Bool → .bool, other → no-op",
+            "IMPORTANT: Test setVariable with Bool true for has_key → locked_door outputs 'The door swings open.' — verify fixture has this knot",
+            "The fixture slice-story-testability.ink.json must have: locked_door knot with { has_key: The door swings open. - else: You need a key. }",
+            "Inspect the fixture JSON to verify the knot names and variable names match exactly"
+          ],
+          "dependencies": ["01-01"],
+          "estimated_hours": 0.5,
+          "deliverables": [
+            "Sources/SwiftInkRuntime/Facade/Story.swift (setVariable real implementation)",
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift (new internal setVariable accessor)"
+          ],
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Facade/Story.swift",
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift"
+          ]
+        },
+        {
+          "id": "01-03",
+          "name": "Implement Story.visitCount, InkEngine.visitCount/setVisitCount, and StoryTestSupport.setVisitCount",
+          "description": "Replace the SCAFFOLD stubs for visitCount in Story.swift (returns 0) and setVisitCount in StoryTestSupport.swift (no-op). Add InkEngine.visitCount and InkEngine.setVisitCount internal accessors. Story.visitCount reads state.visitCounts[name] ?? 0. setVisitCount in StoryTestSupport delegates to the engine accessor. Unknown name: no-op for set, 0 for get.",
+          "acceptance_criteria": [
+            "visitCount returns 0 for unvisited knot",
+            "visitCount returns 1 after natural execution of prologue knot",
+            "setVisitCount write is readable back via visitCount",
+            "setVisitCount to 2 causes greeting to output welcome back line",
+            "greeting shows hello stranger when prologue visit count is 0",
+            "visitCount for unknown knot returns 0 without throwing",
+            "setVisitCount for unknown knot does not throw"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Milestone7_StoryTestabilityTests.swift",
+          "scenario_name": "US-03 — visitCount and setVisitCount",
+          "quality_gates": [
+            "All 7 US-03 acceptance tests pass GREEN",
+            "All US-01 and US-02 tests remain GREEN",
+            "All pre-existing tests remain GREEN",
+            "No regressions"
+          ],
+          "implementation_notes": [
+            "Story.visitCount(forKnot:) — replace stub return 0 with: engine.visitCount(forKnot: name)",
+            "Add InkEngine.visitCount(forKnot name: String) -> Int: return state.visitCounts[name] ?? 0",
+            "Add InkEngine.setVisitCount(forKnot name: String, to count: Int): guard state.visitCounts[name] != nil else { return }; state.visitCounts[name] = count",
+            "StoryTestSupport.swift: replace stub no-op with: engine.setVisitCount(forKnot: name, to: count) — uses @testable import for InkEngine access",
+            "IMPORTANT: verify visitCounts key format — inklecate uses dotted paths like 'prologue' or 'story.prologue'; inspect slice-story-testability.ink.json to confirm key format",
+            "Package.swift SwiftInkRuntimeTestSupport target is already declared — no Package.swift changes needed",
+            "setVisitCount unknown name: guard state.visitCounts[name] != nil — do NOT create new keys"
+          ],
+          "dependencies": ["01-02"],
+          "estimated_hours": 0.5,
+          "deliverables": [
+            "Sources/SwiftInkRuntime/Facade/Story.swift (visitCount real implementation)",
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift (new internal visitCount + setVisitCount accessors)",
+            "Sources/SwiftInkRuntimeTestSupport/StoryTestSupport.swift (setVisitCount real implementation)"
+          ],
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Facade/Story.swift",
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift",
+            "Sources/SwiftInkRuntimeTestSupport/StoryTestSupport.swift"
+          ]
+        },
+        {
+          "id": "01-04",
+          "name": "Implement Story.continueMaximally",
+          "description": "Replace the SCAFFOLD stub for continueMaximally in Story.swift with a real implementation: a while-loop over self.continue() that accumulates output strings. The loop exits when canContinue is false (either story ended or choice point reached). Decorated with @discardableResult.",
+          "acceptance_criteria": [
+            "continueMaximally collects all lines from multi_line knot",
+            "continueMaximally output equals manual while-canContinue loop output",
+            "continueMaximally stops at choice point and currentChoices is non-empty",
+            "continueMaximally on ended story returns empty string",
+            "continueMaximally return value may be discarded without compiler warning",
+            "canContinue is false after continueMaximally drains terminal knot"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Milestone7_StoryTestabilityTests.swift",
+          "scenario_name": "US-04 — continueMaximally",
+          "quality_gates": [
+            "All 6 US-04 acceptance tests pass GREEN",
+            "All US-01, US-02, US-03 tests remain GREEN",
+            "All pre-existing tests remain GREEN",
+            "Full Milestone7 suite: 28/28 tests GREEN"
+          ],
+          "implementation_notes": [
+            "Scaffold stub: @discardableResult public func continueMaximally() -> String { \"\" } — replace with real loop",
+            "Implementation is ENTIRELY facade-only: var output = \"\"; while canContinue { output += self.continue() }; return output",
+            "No InkEngine changes required for this step",
+            "The @discardableResult attribute is already on the scaffold — keep it",
+            "Verify the fixture has multi_line knot with three output lines, and with_choices knot with at least one choice"
+          ],
+          "dependencies": ["01-03"],
+          "estimated_hours": 0.5,
+          "deliverables": [
+            "Sources/SwiftInkRuntime/Facade/Story.swift (continueMaximally real implementation)"
+          ],
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Facade/Story.swift"
+          ]
+        }
+      ]
+    }
+  ],
+  "implementation_scope": {
+    "source_directories": [
+      "Sources/SwiftInkRuntime/",
+      "Sources/SwiftInkRuntimeTestSupport/"
+    ],
+    "test_directories": [
+      "Tests/SwiftInkRuntimeTests/"
+    ],
+    "excluded_patterns": [
+      "*.ink",
+      "*.ink.json"
+    ]
+  },
+  "validation": {
+    "status": "approved",
+    "reviewer": "nw-deliver-orchestrator",
+    "approved_at": "2026-06-11"
+  }
+}

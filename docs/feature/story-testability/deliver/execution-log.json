@@ -107,5 +107,12 @@
       "timestamp": "2026-06-11T09:38:00Z",
       "notes": "Committed as 5446632: feat(story-testability): implement visitCount and setVisitCount. Step-ID: 01-03. Files modified: InkEngine.swift, Story.swift, StoryTestSupport.swift. New file: InkEngineVisitCountTests.swift."
     }
+    ,{
+      "step_id": "01-04",
+      "phase": "MERGED_INTO_01-02",
+      "status": "COMPLETE",
+      "timestamp": "2026-06-11T09:31:00Z",
+      "notes": "Story.continueMaximally() was implemented within step 01-02 GREEN phase (commit 4013eab). The crafter recognised that 3 US-02 tests required continueMaximally to be non-stub in order to pass. Implementation: @discardableResult while-canContinue accumulation loop, entirely facade-only, no InkEngine changes. All 6 US-04 acceptance tests GREEN as of 01-02 commit. No separate step entry required since work is covered by 01-02 commit log and git diff."
+    }
   ]
 }
