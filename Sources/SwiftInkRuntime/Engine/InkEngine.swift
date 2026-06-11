@@ -1149,7 +1149,7 @@ final class InkEngine {
         guard let value = state.variablesState[name] else { return nil }
         switch value {
         case .int(let n):    return n
-        case .float(let f):  return Double(f)
+        case .float(let f):  return f
         case .string(let s): return s
         case .bool(let b):   return b
         case .variablePointer: return nil
