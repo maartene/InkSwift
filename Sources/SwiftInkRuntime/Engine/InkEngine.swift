@@ -1124,6 +1124,25 @@ final class InkEngine {
 
     // MARK: - Variable access
 
+    /// Write a Swift native value to a global variable by name.
+    /// No-op when the key does not already exist (design decision OQ-1).
+    /// Bool is checked before Int to prevent coercion to .int via integer literal conformance.
+    func setVariable(_ name: String, to value: some Any) {
+        guard state.variablesState[name] != nil else { return }
+        if let b = value as? Bool {
+            state.variablesState[name] = .bool(b)
+        } else if let n = value as? Int {
+            state.variablesState[name] = .int(n)
+        } else if let d = value as? Double {
+            state.variablesState[name] = .float(d)
+        } else if let f = value as? Float {
+            state.variablesState[name] = .float(Double(f))
+        } else if let s = value as? String {
+            state.variablesState[name] = .string(s)
+        }
+        // Unknown type: pure no-op
+    }
+
     /// Read a global variable by name and bridge its InkValue to a Swift native type.
     /// Returns Int, Double, String, or Bool. Returns nil for absent keys and .variablePointer.
     func getVariable(_ name: String) -> Any? {

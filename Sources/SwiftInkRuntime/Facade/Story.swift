@@ -106,8 +106,8 @@ public final class Story {
         engine.getVariable(name)
     }
 
-    // SCAFFOLD: story-testability — replaced during DELIVER
     public func setVariable(_ name: String, to value: some Any) {
+        engine.setVariable(name, to: value)
     }
 
     public func visitCount(forKnot name: String) -> Int {
@@ -116,6 +116,10 @@ public final class Story {
 
     @discardableResult
     public func continueMaximally() -> String {
-        ""
+        var output = ""
+        while canContinue {
+            output += `continue`()
+        }
+        return output
     }
 }
