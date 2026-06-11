@@ -71,6 +71,41 @@
       "status": "COMPLETE",
       "timestamp": "2026-06-11T09:32:00Z",
       "notes": "Committed as 4013eab: feat(story-testability): implement Story.setVariable with InkValue bridging. Step-ID: 01-02. Files modified: InkEngine.swift, Story.swift. New file: InkEngineSetVariableTests.swift."
+    },
+    {
+      "step_id": "01-03",
+      "phase": "PREPARE",
+      "status": "COMPLETE",
+      "timestamp": "2026-06-11T09:33:00Z",
+      "notes": "Loaded nw-tdd-methodology, nw-quality-framework, nw-hexagonal-testing skills. Read Story.swift (visitCount scaffold returns 0), InkEngine.swift (no visitCount/setVisitCount methods), StoryTestSupport.swift (setVisitCount no-op stub). Inspected slice-story-testability.ink.json: prologue knot has #f:1 (CountVisits), greeting uses CNT? prologue. Confirmed visitCounts key format is bare knot name 'prologue' (set in applyDivert via components.joined). Ran swift test: 213 tests, 4 issues (all US-03)."
+    },
+    {
+      "step_id": "01-03",
+      "phase": "RED_ACCEPTANCE",
+      "status": "COMPLETE",
+      "timestamp": "2026-06-11T09:34:00Z",
+      "notes": "Confirmed 3 failing US-03 tests are RED for business-logic reasons: (1) visitCount returns 1 after natural execution — scaffold returns 0; (2) setVisitCount write is readable back — no-op stub + stub visitCount; (3) setVisitCount to 2 causes greeting to output welcome back line — 2 assertion failures. Port-to-port: tests call story.visitCount(forKnot:) and story.setVisitCount(forKnot:) through Story driving port and StoryTestSupport extension."
+    },
+    {
+      "step_id": "01-03",
+      "phase": "RED_UNIT",
+      "status": "COMPLETE",
+      "timestamp": "2026-06-11T09:35:00Z",
+      "notes": "Created InkEngineVisitCountTests.swift. Test budget: 4 behaviors x 2 = 8 max, used 4 (B1: visitCount returns 0 for absent key; B2: visitCount returns stored count; B3: setVisitCount writes for knot in root.namedContent; B4: setVisitCount no-op for knot absent from root.namedContent). Build fails with 'value of type InkEngine has no member visitCount/setVisitCount' — correct RED reason."
+    },
+    {
+      "step_id": "01-03",
+      "phase": "GREEN",
+      "status": "COMPLETE",
+      "timestamp": "2026-06-11T09:37:00Z",
+      "notes": "Added InkEngine.visitCount(forKnot:)->Int: state.visitCounts[name] ?? 0. Added InkEngine.setVisitCount(forKnot:to:): guards on root.namedContent[name] != nil (not on visitCounts key presence — acceptance test requires write to succeed for unvisited but structurally-present knots); writes state.visitCounts[name] = count. Changed Story.engine from private to internal (needed for @testable import access in StoryTestSupport). Replaced Story.visitCount scaffold with engine.visitCount delegation. Replaced StoryTestSupport.setVisitCount stub with engine.setVisitCount delegation. Post-GREEN wiring: all 3 files_to_modify in git diff. All 217 tests GREEN (4 new unit + 213 pre-existing). Milestone7 suite: 29/29 GREEN. US-03: 7/7 GREEN."
+    },
+    {
+      "step_id": "01-03",
+      "phase": "COMMIT",
+      "status": "COMPLETE",
+      "timestamp": "2026-06-11T09:38:00Z",
+      "notes": "Committed as 5446632: feat(story-testability): implement visitCount and setVisitCount. Step-ID: 01-03. Files modified: InkEngine.swift, Story.swift, StoryTestSupport.swift. New file: InkEngineVisitCountTests.swift."
     }
   ]
 }
