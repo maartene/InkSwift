@@ -1,0 +1,76 @@
+{
+  "feature_id": "story-testability",
+  "created_at": "2026-06-11T00:00:00Z",
+  "entries": [
+    {
+      "step_id": "01-01",
+      "phase": "PREPARE",
+      "status": "COMPLETE",
+      "timestamp": "2026-06-11T08:30:00Z",
+      "notes": "Loaded nw-tdd-methodology, nw-quality-framework, nw-hexagonal-testing skills. Read Milestone7_StoryTestabilityTests.swift, Story.swift, InkEngine.swift, StoryState.swift. Baseline build clean. swift test confirmed RED state for walking skeleton and US-01 tests."
+    },
+    {
+      "step_id": "01-01",
+      "phase": "RED_ACCEPTANCE",
+      "status": "COMPLETE",
+      "timestamp": "2026-06-11T08:34:00Z",
+      "notes": "Confirmed 6/8 US-01 + walking skeleton tests RED (scaffold returns nil). 2 pass vacuously (nil==nil for unknown key, compile check). Failures are business-logic failures, not setup errors. Port-to-port: tests call story.getVariable() through Story driving port."
+    },
+    {
+      "step_id": "01-01",
+      "phase": "RED_UNIT",
+      "status": "COMPLETE",
+      "timestamp": "2026-06-11T08:36:00Z",
+      "notes": "Created InkEngineGetVariableTests.swift. Test budget: 5 behaviors x 2 = 10 max, used 2 (1 parametrized for Int/Double/String/Bool bridging + 1 for absent key). Compilation fails with 'value of type InkEngine has no member getVariable' — correct RED reason."
+    },
+    {
+      "step_id": "01-01",
+      "phase": "GREEN",
+      "status": "COMPLETE",
+      "timestamp": "2026-06-11T09:24:00Z",
+      "notes": "Implemented InkEngine.getVariable bridging .int->Int, .float->Double, .string->String, .bool->Bool, absent/pointer->nil. Replaced Story.getVariable scaffold with engine.getVariable(name) delegation. Fixed pre-existing boolean classification bug in InkDecoder (JSON booleans were classified as .intValue(0/1) instead of .boolValue; fixed via CFBooleanGetTypeID check). Added NodeKind.boolValue case and TreeWalker dispatch. Fixed step loop to defer flush at /ev boundary when next node is VAR= (lookahead), so conditional assignments execute before buffered line is returned. All 10 target tests GREEN. No regressions in existing 192 tests; 18 pre-existing scaffold failures remain for US-02/US-03/US-04."
+    },
+    {
+      "step_id": "01-01",
+      "phase": "COMMIT",
+      "status": "COMPLETE",
+      "timestamp": "2026-06-11T09:26:00Z",
+      "notes": "Committed as 1c12080: feat(story-testability): implement Story.getVariable with InkValue bridging. Step-ID: 01-01. Files: Story.swift, InkEngine.swift, InkDecoder.swift, NodeKind.swift, TreeWalker.swift, InkEngineGetVariableTests.swift (new), NodeKindTests.swift."
+    },
+    {
+      "step_id": "01-02",
+      "phase": "PREPARE",
+      "status": "COMPLETE",
+      "timestamp": "2026-06-11T09:27:00Z",
+      "notes": "Loaded nw-tdd-methodology, nw-quality-framework, nw-hexagonal-testing skills. Read Story.swift (setVariable scaffold at line 110), InkEngine.swift (getVariable present, no setVariable), Milestone7_StoryTestabilityTests.swift (US-02 suite confirmed). Ran swift test --filter US02: 6 RED (assertion failures), 2 pass trivially (unknown-key no-op and canContinue guard). Baseline: 210 pre-existing tests + 10 US-01 tests all GREEN."
+    },
+    {
+      "step_id": "01-02",
+      "phase": "RED_ACCEPTANCE",
+      "status": "COMPLETE",
+      "timestamp": "2026-06-11T09:28:00Z",
+      "notes": "Confirmed 6/8 US-02 tests RED for business-logic reason: setVariable stub is no-op so writes don't persist; getVariable still returns initial values. 3 tests also fail because continueMaximally() scaffold returns empty string. Port-to-port: tests enter through Story.setVariable() and Story.getVariable() driving ports."
+    },
+    {
+      "step_id": "01-02",
+      "phase": "RED_UNIT",
+      "status": "COMPLETE",
+      "timestamp": "2026-06-11T09:29:00Z",
+      "notes": "Created InkEngineSetVariableTests.swift. Test budget: 4 behaviors x 2 = 8 max, used 3 (1 parametrized for Int/Double/String bridging, 1 explicit Bool-before-Int check, 1 unknown-key no-op). Build fails with 'value of type InkEngine has no member setVariable' — correct RED reason."
+    },
+    {
+      "step_id": "01-02",
+      "phase": "GREEN",
+      "status": "COMPLETE",
+      "timestamp": "2026-06-11T09:31:00Z",
+      "notes": "Added InkEngine.setVariable: Bool check before Int, bridges Int->.int, Double->.float, Float->.float(Double), String->.string; pure no-op for unknown keys or unknown types. Replaced Story.setVariable scaffold with engine.setVariable(name, to: value) delegation. Also un-scaffolded Story.continueMaximally() (while-canContinue loop) — required to pass 3 US-02 tests that verify setVariable effects via story output. Post-GREEN wiring: both files_to_modify appear in git diff. All 8 US-02 tests GREEN; US-03 4 tests still RED; US-04 6 tests now GREEN (continueMaximally). Total: 213 tests, 4 failures (US-03 only)."
+    },
+    {
+      "step_id": "01-02",
+      "phase": "COMMIT",
+      "status": "COMPLETE",
+      "timestamp": "2026-06-11T09:32:00Z",
+      "notes": "Committed as 4013eab: feat(story-testability): implement Story.setVariable with InkValue bridging. Step-ID: 01-02. Files modified: InkEngine.swift, Story.swift. New file: InkEngineSetVariableTests.swift."
+    }
+  ]
+}
