@@ -62,6 +62,9 @@ struct TreeWalker {
         case .floatValue(let value):
             state.evalStack.append(.float(value))
 
+        case .boolValue(let value):
+            state.evalStack.append(.bool(value))
+
         case .tagOpen:
             state.inTagMode = true
             state.tagAccumulator = ""

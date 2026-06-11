@@ -102,12 +102,11 @@ public final class Story {
         try engine.moveToKnot(knot, stitch: stitch)
     }
 
-    // SCAFFOLD: story-testability — replaced during DELIVER
-
     public func getVariable(_ name: String) -> Any? {
-        nil
+        engine.getVariable(name)
     }
 
+    // SCAFFOLD: story-testability — replaced during DELIVER
     public func setVariable(_ name: String, to value: some Any) {
     }
 

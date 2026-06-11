@@ -294,9 +294,25 @@ final class InkEngine {
             // here will be returned by `flushRemainingOutput` when the loop
             // exits (with a single line at a time per the consumeNextLine
             // semantic).
+            // After /ev, peek at the next node: if it is a VAR= assignment, defer
+            // the flush so that the assignment executes before the buffered line is
+            // returned. This matches the C# runtime where Continue() keeps stepping
+            // past /ev when the immediately-following node is a pure side-effect
+            // (writes to variablesState, no output). A VAR= node after /ev is
+            // semantically part of the same Ink statement as the preceding eval block.
+            let nextIsAssignment: Bool = {
+                guard case .controlCommand("/ev") = currentChild,
+                      evalBlockDepth == 0,
+                      let nextTop = containerStack.last,
+                      nextTop.index < nextTop.container.children.count,
+                      case .variableAssignment = nextTop.container.children[nextTop.index]
+                else { return false }
+                return true
+            }()
             if case .newline = currentChild { }
             else if suppressConsumeAfterDivert { }
             else if evalBlockDepth > 0 { }
+            else if nextIsAssignment { }
             else if !state.currentChoices.isEmpty { }
             else {
                 if let line = consumeNextLine() { return line }
@@ -1104,6 +1120,21 @@ final class InkEngine {
             ))
         }
         return rebuilt.isEmpty ? [ContainerFrame(container: root, index: 0, pathFromRoot: [])] : rebuilt
+    }
+
+    // MARK: - Variable access
+
+    /// Read a global variable by name and bridge its InkValue to a Swift native type.
+    /// Returns Int, Double, String, or Bool. Returns nil for absent keys and .variablePointer.
+    func getVariable(_ name: String) -> Any? {
+        guard let value = state.variablesState[name] else { return nil }
+        switch value {
+        case .int(let n):    return n
+        case .float(let f):  return Double(f)
+        case .string(let s): return s
+        case .bool(let b):   return b
+        case .variablePointer: return nil
+        }
     }
 
     func moveToKnot(_ knot: String, stitch: String? = nil) throws {

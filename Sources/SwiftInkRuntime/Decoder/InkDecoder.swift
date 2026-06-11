@@ -121,6 +121,11 @@ struct InkDecoder {
     }
 
     private func classifyNumber(_ number: NSNumber) -> NodeKind {
+        // JSON booleans arrive as NSNumber backed by CFBoolean — detect before integer check
+        // because CFBooleanGetTypeID differs from CFNumberGetTypeID.
+        if CFGetTypeID(number) == CFBooleanGetTypeID() {
+            return .boolValue(number.boolValue)
+        }
         let cfType = CFNumberGetType(number as CFNumber)
         switch cfType {
         case .sInt8Type, .sInt16Type, .sInt32Type, .sInt64Type,

@@ -11,6 +11,7 @@ internal enum NodeKind {
     case nativeFunction(String)
     case intValue(Int)
     case floatValue(Double)
+    case boolValue(Bool)
     case variableAssignment(name: String, isGlobal: Bool)
     case variableReference(name: String)
     case tagOpen
