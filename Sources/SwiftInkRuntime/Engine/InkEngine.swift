@@ -1156,6 +1156,20 @@ final class InkEngine {
         }
     }
 
+    // MARK: - Visit count access
+
+    /// Return the visit count for a knot by name. Returns 0 for unknown knots.
+    func visitCount(forKnot name: String) -> Int {
+        state.visitCounts[name] ?? 0
+    }
+
+    /// Set the visit count for a knot by name.
+    /// Pure no-op when the knot does not exist in the story structure.
+    func setVisitCount(forKnot name: String, to count: Int) {
+        guard root.namedContent[name] != nil else { return }
+        state.visitCounts[name] = count
+    }
+
     func moveToKnot(_ knot: String, stitch: String? = nil) throws {
         // D3: resolve ALL paths before ANY state mutation
         guard let knotContainer = root.namedContent[knot] else {

@@ -17,7 +17,7 @@ public enum StoryError: Error, Equatable {
 
 public final class Story {
 
-    private let engine: InkEngine
+    let engine: InkEngine
 
     public init(blueprint: StoryBlueprint) {
         engine = InkEngine(root: blueprint.root)
@@ -111,7 +111,7 @@ public final class Story {
     }
 
     public func visitCount(forKnot name: String) -> Int {
-        0
+        engine.visitCount(forKnot: name)
     }
 
     @discardableResult
