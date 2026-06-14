@@ -237,6 +237,7 @@ public enum InkParser {
             return
         }
         if trimmed.contains("{") {
+            try UnsupportedConstructDetector.check(line: trimmed, lineNumber: position.line)
             let segments = try parseContentSegments(trimmed)
             statements.append(InkStatement(kind: .content(segments), position: position))
             return
