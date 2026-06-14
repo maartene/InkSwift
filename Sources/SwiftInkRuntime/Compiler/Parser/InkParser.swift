@@ -392,27 +392,33 @@ public enum InkParser {
     /// Split a `[choice-only] body` remainder into the bracketed choice-only
     /// label and the outcome body. With no brackets the whole remainder is body.
     private static func splitChoiceOnlyLabel(_ remainder: String) -> (label: String?, body: String) {
-        guard remainder.hasPrefix("["),
-              let close = remainder.firstIndex(of: "]") else {
-            return (nil, remainder)
-        }
-        let label = String(remainder[remainder.index(after: remainder.startIndex)..<close])
-        let body = String(remainder[remainder.index(after: close)...])
-            .trimmingCharacters(in: .whitespaces)
-        return (label, body)
+        let split = splitBracketedLabel(remainder, open: "[", close: "]")
+        return (split.label, split.rest)
     }
 
     /// Split a `(name) outcome` remainder into the optional gather label and the
     /// outcome text. With no parenthesised label the whole remainder is outcome.
     private static func splitGatherLabel(_ remainder: String) -> (label: String?, outcome: String) {
-        guard remainder.hasPrefix("("),
-              let close = remainder.firstIndex(of: ")") else {
+        let split = splitBracketedLabel(remainder, open: "(", close: ")")
+        return (split.label, split.rest)
+    }
+
+    /// Split a `<open>label<close> rest` remainder into the bracketed label and
+    /// the trimmed text after it. With no leading `open`…`close` pair the whole
+    /// remainder is the trailing text and the label is `nil`.
+    private static func splitBracketedLabel(
+        _ remainder: String,
+        open: Character,
+        close: Character
+    ) -> (label: String?, rest: String) {
+        guard remainder.first == open,
+              let closeIndex = remainder.firstIndex(of: close) else {
             return (nil, remainder)
         }
-        let label = String(remainder[remainder.index(after: remainder.startIndex)..<close])
-        let outcome = String(remainder[remainder.index(after: close)...])
+        let label = String(remainder[remainder.index(after: remainder.startIndex)..<closeIndex])
+        let rest = String(remainder[remainder.index(after: closeIndex)...])
             .trimmingCharacters(in: .whitespaces)
-        return (label, outcome)
+        return (label, rest)
     }
 
     private static func headerKind(of trimmed: String) throws -> InkStatementKind? {

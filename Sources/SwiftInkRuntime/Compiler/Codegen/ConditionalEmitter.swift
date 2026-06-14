@@ -83,9 +83,9 @@ enum ConditionalEmitter {
         }
 
         dispatch.append(unconditionalDivert(to: elseKey.map { path(keyPrefix, $0) } ?? endPath))
-        named[endKey] = ContainerNode(
-            children: continuationChildren(continuation, keyPrefix: keyPrefix + [endKey], lowerBranch: lowerBranch, named: &named, endKey: endKey),
-            namedContent: [:], flags: 0, name: endKey
+        registerContinuation(
+            continuation, endKey: endKey, keyPrefix: keyPrefix,
+            named: &named, lowerBranch: lowerBranch
         )
         return dispatch
     }
@@ -149,21 +149,23 @@ enum ConditionalEmitter {
         return armKey
     }
 
-    /// Children of the continuation container: the post-conditional statements,
-    /// lowered under the continuation's own key-prefix into the shared collector.
-    private static func continuationChildren(
+    /// Register the shared `-end` continuation container: lower the
+    /// post-conditional statements under the continuation's own key-prefix, then
+    /// promote any nested conditional containers they declared into the parent
+    /// collector so sibling/nested rejoin targets resolve from root.
+    private static func registerContinuation(
         _ continuation: [InkStatement],
+        endKey: String,
         keyPrefix: [String],
-        lowerBranch: BranchLowerer,
         named: inout [String: ContainerNode],
-        endKey: String
-    ) -> [NodeKind] {
+        lowerBranch: BranchLowerer
+    ) {
         var endNamed: [String: ContainerNode] = [:]
-        let children = lowerBranch(continuation, keyPrefix, &endNamed)
+        let children = lowerBranch(continuation, keyPrefix + [endKey], &endNamed)
         for (innerKey, container) in endNamed {
             named[innerKey] = container
         }
-        return children
+        named[endKey] = ContainerNode(children: children, namedContent: [:], flags: 0, name: endKey)
     }
 
     private static func inlineBranchContainer(_ text: String, key: String, endPath: [String]) -> ContainerNode {

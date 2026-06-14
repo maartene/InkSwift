@@ -373,22 +373,16 @@ private struct WeaveResolver {
         keyPrefix: [String],
         looseEnd: FallThrough
     ) throws -> ContainerNode {
-        var children: [NodeKind] = []
+        var lead: [NodeKind] = []
         if choice.echoesLabel {
-            children.append(.text(choice.label))
-            children.append(.newline)
+            lead.append(.text(choice.label))
+            lead.append(.newline)
         }
-        var named: [String: ContainerNode] = [:]
-        children.append(contentsOf: lowerStatement(choice.body))
-
-        if let nested = choice.nested {
-            let resolved = try resolve(nested, keyPrefix: keyPrefix, fallThrough: looseEnd)
-            children.append(contentsOf: stripDone(resolved.children))
-            named = resolved.named
-        } else if endsWithDivert(choice.body) == false {
-            children.append(contentsOf: fallThroughNodes(looseEnd))
-        }
-        return ContainerNode(children: children, namedContent: named, flags: 0, name: key)
+        lead.append(contentsOf: lowerStatement(choice.body))
+        return try containerSpliced(
+            lead: lead, body: choice.body, nested: choice.nested,
+            key: key, nestedKeyPrefix: keyPrefix, looseEnd: looseEnd
+        )
     }
 
     // MARK: Gather lowering
@@ -403,14 +397,31 @@ private struct WeaveResolver {
         keyPrefix: [String],
         looseEnd: FallThrough
     ) throws -> ContainerNode {
-        var children = lowerStatement(gather.body)
-        var named: [String: ContainerNode] = [:]
+        try containerSpliced(
+            lead: lowerStatement(gather.body), body: gather.body, nested: gather.nested,
+            key: key, nestedKeyPrefix: keyPrefix + [key], looseEnd: looseEnd
+        )
+    }
 
-        if let nested = gather.nested {
-            let resolved = try resolve(nested, keyPrefix: keyPrefix + [key], fallThrough: looseEnd)
+    /// Build an outcome/gather container from its already-lowered `lead` prose:
+    /// when a nested weave is present, resolve it (under `nestedKeyPrefix`) and
+    /// splice its de-`done`d children plus contributed named content; otherwise,
+    /// unless `body` already diverts away, append the loose-end fall-through.
+    private func containerSpliced(
+        lead: [NodeKind],
+        body: [InkStatement],
+        nested: WeaveBlock?,
+        key: String,
+        nestedKeyPrefix: [String],
+        looseEnd: FallThrough
+    ) throws -> ContainerNode {
+        var children = lead
+        var named: [String: ContainerNode] = [:]
+        if let nested {
+            let resolved = try resolve(nested, keyPrefix: nestedKeyPrefix, fallThrough: looseEnd)
             children.append(contentsOf: stripDone(resolved.children))
             named = resolved.named
-        } else if endsWithDivert(gather.body) == false {
+        } else if endsWithDivert(body) == false {
             children.append(contentsOf: fallThroughNodes(looseEnd))
         }
         return ContainerNode(children: children, namedContent: named, flags: 0, name: key)

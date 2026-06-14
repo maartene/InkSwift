@@ -134,13 +134,12 @@ enum RuntimeObjectEmitter {
         }
         guard globals.isEmpty == false else { return nil }
 
-        var children: [NodeKind] = [.controlCommand("ev")]
+        var assignments: [NodeKind] = []
         for global in globals {
-            children.append(contentsOf: lowerValue(global.value, context: context))
-            children.append(.variableAssignment(name: global.name, isGlobal: true))
+            assignments.append(contentsOf: lowerValue(global.value, context: context))
+            assignments.append(.variableAssignment(name: global.name, isGlobal: true))
         }
-        children.append(.controlCommand("/ev"))
-        children.append(.controlCommand("end"))
+        let children = evalGroup(assignments) + [.controlCommand("end")]
         return ContainerNode(children: children, namedContent: [:], flags: 0, name: nil)
     }
 
@@ -163,11 +162,14 @@ enum RuntimeObjectEmitter {
         _ expression: InkExpression,
         context: LoweringContext
     ) -> [NodeKind] {
-        var nodes: [NodeKind] = [.controlCommand("ev")]
-        nodes.append(contentsOf: lowerExpression(expression, context: context))
-        nodes.append(.controlCommand("out"))
-        nodes.append(.controlCommand("/ev"))
-        return nodes
+        evalGroup(lowerExpression(expression, context: context) + [.controlCommand("out")])
+    }
+
+    /// Wrap eval-stack nodes in the runtime's `ev` … `/ev` evaluation block. The
+    /// shared shape behind inline-print, return, assignment, and discarded-call
+    /// lowering: each supplies the body that runs between the markers.
+    private static func evalGroup(_ body: [NodeKind]) -> [NodeKind] {
+        [.controlCommand("ev")] + body + [.controlCommand("/ev")]
     }
 
     /// Lower an expression to POSTFIX runtime nodes, inlining any CONST
@@ -584,11 +586,7 @@ enum RuntimeObjectEmitter {
         _ call: InkExpression,
         context: LoweringContext
     ) -> [NodeKind] {
-        var nodes: [NodeKind] = [.controlCommand("ev")]
-        nodes.append(contentsOf: lowerExpression(call, context: context))
-        nodes.append(.controlCommand("pop"))
-        nodes.append(.controlCommand("/ev"))
-        return nodes
+        evalGroup(lowerExpression(call, context: context) + [.controlCommand("pop")])
     }
 
     /// Lower a function return `~ return [expr]`: evaluate the optional value onto
@@ -598,13 +596,8 @@ enum RuntimeObjectEmitter {
         _ value: InkExpression?,
         context: LoweringContext
     ) -> [NodeKind] {
-        var nodes: [NodeKind] = [.controlCommand("ev")]
-        if let value {
-            nodes.append(contentsOf: lowerExpression(value, context: context))
-        }
-        nodes.append(.controlCommand("/ev"))
-        nodes.append(.controlCommand("~ret"))
-        return nodes
+        let valueNodes = value.map { lowerExpression($0, context: context) } ?? []
+        return evalGroup(valueNodes) + [.controlCommand("~ret")]
     }
 
     /// Lower a content line: literal segments emit text, expression segments emit
@@ -652,11 +645,8 @@ enum RuntimeObjectEmitter {
         isGlobal: Bool,
         context: LoweringContext
     ) -> [NodeKind] {
-        var nodes: [NodeKind] = [.controlCommand("ev")]
-        nodes.append(contentsOf: lowerExpression(value, context: context))
-        nodes.append(.controlCommand("/ev"))
-        nodes.append(.variableAssignment(name: name, isGlobal: isGlobal))
-        return nodes
+        evalGroup(lowerExpression(value, context: context))
+            + [.variableAssignment(name: name, isGlobal: isGlobal)]
     }
 
     private static func isGlue(_ statements: [InkStatement], at index: Int) -> Bool {
