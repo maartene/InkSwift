@@ -40,3 +40,49 @@ jobs:
     outcome_kpis:
       - "SwiftInkRuntime executes The Intercept (28 knots, 47 stitches, 21 variables) line-for-line identical to inkjs oracle"
       - "No JavaScript engine dependency in production builds"
+
+  - id: "job-native-compilation"
+    status: "active"
+    persona: "Maarten — Swift app developer embedding Ink stories"
+    related_jobs:
+      - id: "job-story-playback"
+        relationship: >
+          Completes the toolchain that job-story-playback started. Playback removed
+          the JavaScript engine from the RUN side; native compilation removes the
+          external inklecate binary from the BUILD side. Together they make the whole
+          Ink pipeline pure-Swift, end to end.
+    statement: >
+      When I author an Ink story for my Swift app and need to turn it into something
+      my app can play, I want to compile it to a runnable story entirely within my
+      Swift toolchain, so I can build and ship without depending on the external
+      inklecate binary — and get a clear error the moment I use a feature my runtime
+      cannot play, instead of shipping a silently broken story.
+    forces:
+      push: >
+        The runtime is already pure Swift, but every build still shells out to the
+        external inklecate (C#) binary to compile .ink to .ink.json. That binary must
+        be installed, version-matched, and invoked out-of-process on every machine and
+        CI runner.
+      pull: >
+        One Swift toolchain that both compiles and runs Ink. In-process compilation,
+        no external binary, and a compiled story object the runtime can consume directly.
+      anxiety: >
+        A hand-written Swift compiler might produce output that diverges silently from
+        inklecate, or might accept an unsupported feature and emit a subtly wrong story.
+      habit: >
+        An established "inklecate file.ink -o file.ink.json" build step, and trust in
+        inklecate as the ground truth.
+    features:
+      - id: "native-ink-compiler"
+        contribution: >
+          Native Swift compiler: reads .ink source, produces an in-memory story the
+          SwiftInkRuntime Story can play directly; scope bounded to the runtime's
+          supported feature set; rejects unsupported Ink constructs with a clear,
+          located error naming the construct; ships a supported/unsupported feature
+          reference document; oracle-validated against inklecate execution equivalence.
+        status: "in DISCUSS wave"
+    outcome_kpis:
+      - "Stories within the supported feature set compile in-process and play line-for-line identically to the inklecate-compiled equivalent (execution-equivalence oracle)"
+      - "Every unsupported Ink construct produces a clear, located compile error naming the construct — zero silent wrong output"
+      - "A published supported/unsupported feature reference lets authors stay inside the supported set without trial and error"
+      - "No dependency on the external inklecate binary for compiling supported stories"

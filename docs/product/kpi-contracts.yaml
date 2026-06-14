@@ -1,0 +1,85 @@
+# KPI Contracts — InkSwift (SSOT)
+#
+# The library analog of dashboards/alerts. For each outcome KPI, this maps the
+# KPI to its CI instrument: the data source, the collecting test/check, the pass
+# threshold, and the failure/guardrail semantics. There is NO runtime telemetry
+# (this is a library, not a service) — every KPI is a CI gate (a test assertion).
+#
+# Owner: Apex (nw-platform-architect). Created: 2026-06-14 (DEVOPS wave).
+
+version: 1
+project: InkSwift
+
+features:
+  native-ink-compiler:
+    north_star:
+      description: >
+        % of supported-corpus stories that compile in-process and play
+        line-for-line identical to the inklecate oracle.
+      target: 100%
+      instrument: kpi-1
+    kpis:
+      - id: kpi-1
+        name: Oracle execution-equivalence
+        type: leading
+        who: developer with a supported story
+        does_what: compiles + plays it in-process, oracle-identical
+        ci_data_source: >
+          committed .ink.json fixtures + .ink source corpus, replayed through the
+          InkSwift JS-bridge oracle on macOS (env: with-oracle-macos)
+        collecting_check: execution-equivalence oracle test suite (per-slice + TheIntercept end-to-end)
+        pass_threshold: 100% of supported-corpus stories play line-for-line / choice-for-choice identical
+        guardrail_semantics: >
+          any divergent line or choice fails CI (blocking). This is the North-Star
+          gate; a regression here blocks merge.
+        baseline: 0% (inklecate required for all compilation today)
+
+      - id: kpi-2
+        name: Unsupported-construct rejection
+        type: leading
+        who: developer using an unsupported construct
+        does_what: gets a clear located error, not a broken story
+        ci_data_source: unsupported-construct corpus (one construct per fixture; rows 25-28, 36-39)
+        collecting_check: unsupported-construct corpus test asserting named + located error and NO story produced
+        pass_threshold: 100% rejected with a named, located error
+        guardrail_semantics: >
+          HARD GUARDRAIL — 0% silent wrong output. If any unsupported construct
+          compiles to a story (silently), CI fails. This must never regress; it is
+          the defining safety property of the feature (D2).
+        baseline: n/a (native path absent today)
+
+      - id: kpi-3
+        name: Doc-vs-compiler consistency
+        type: leading
+        who: author planning a story
+        does_what: predicts compile/reject from the reference document
+        ci_data_source: supported/unsupported feature reference document (US-07) + actual compiler behaviour
+        collecting_check: doc-vs-compiler consistency test iterating the reference construct list
+        pass_threshold: 100% of constructs documented; every documented status matches compiler behaviour
+        guardrail_semantics: >
+          a documented status that disagrees with the compiler fails CI (blocking).
+          Keeps the reference truthful as the compiler evolves.
+        baseline: no reference exists today
+
+      - id: kpi-4
+        name: No-inklecate guardrail
+        type: leading
+        who: the developer's build
+        does_what: compiles supported stories without inklecate
+        ci_data_source: production Compiler/ source + compile-path process behaviour
+        collecting_check: >
+          no-inklecate guardrail — (a) a build-time source guard asserting production
+          Compiler/ code references no Process / inklecate symbol, and (b) a test that
+          fails if an inklecate subprocess is spawned during native compilation
+        pass_threshold: 0 inklecate invocations for supported builds
+        guardrail_semantics: >
+          any reference to Process/inklecate in production Compiler/ code, or any
+          inklecate subprocess spawned during a supported compile, fails CI (blocking).
+          inklecate remains test-only/offline for fixture generation only.
+        baseline: every build invokes inklecate today
+
+    monitoring_model:
+      runtime_telemetry: none           # library, not a service — no dashboards/alerts at runtime
+      instrument_kind: ci-test-gate     # every KPI is a CI assertion
+      cadence: per CI run (every push / pull_request)
+      environment: with-oracle-macos    # KPI #1/#3 need the macOS InkSwift oracle; #2/#4 are oracle-independent

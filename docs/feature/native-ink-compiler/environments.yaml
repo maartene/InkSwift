@@ -1,0 +1,103 @@
+# Environments — native-ink-compiler (DEVOPS wave, DISTILL Mandate-4 consumer)
+#
+# This is a Swift Package Manager LIBRARY, not a deployed service. "Environments"
+# here describe ORACLE AVAILABILITY and PLATFORM, not install-state or running
+# infrastructure. There are no servers, containers, or runtime topology.
+#
+# Density: lean. Author: Apex (nw-platform-architect). Date: 2026-06-14.
+
+feature: native-ink-compiler
+artifact_kind: library-test-environments
+deployment_model: spm-library-distribution   # no servers/containers; "release" = tag + version bump
+
+environments:
+  clean:
+    description: >
+      Fresh checkout with no oracle present. Builds the package and runs native
+      compiler unit tests that need no oracle (parser/AST/codegen units, error
+      reporting, unsupported-construct rejection). This is the portability floor.
+    platform: [macos, linux]
+    oracle: none
+    runs:
+      - swift build
+      - native compiler unit tests (oracle-independent)
+      - unsupported-construct rejection corpus (US-06; no oracle needed)
+    preconditions:
+      - Swift toolchain >= 5.8 (raised from 5.6 when Compiler/ lands; DDD-11)
+      - no JXKit / InkSwift JS-bridge required
+    notes: >
+      Linux is build-only / best-effort portability. Execution-equivalence
+      (KPI #1) does NOT run here because the InkSwift JS-bridge oracle is macOS-only.
+
+  with-oracle-macos:
+    description: >
+      macOS with the InkSwift JS-bridge oracle available. The execution-equivalence
+      tests (KPI #1) run here: committed .ink.json fixtures + .ink source corpus are
+      compiled natively, played through SwiftInkRuntime, and compared line-for-line
+      and choice-for-choice against the InkSwift JS-bridge oracle. THIS IS THE
+      SUPPORTED CI ENVIRONMENT (matches the existing Forgejo macos-arm64 runner).
+    platform: [macos]
+    oracle: inkswift-js-bridge
+    runs:
+      - swift build
+      - full native compiler unit tests
+      - execution-equivalence oracle suite (KPI #1) over the supported corpus
+      - unsupported-construct rejection corpus (KPI #2)
+      - doc-vs-compiler consistency check (KPI #3)
+      - no-inklecate guardrail (KPI #4)
+    preconditions:
+      - InkSwift module builds (JXKit / JS-bridge present and resolvable)
+      - committed .ink.json fixtures present (generated offline; see with-inklecate-local)
+      - Swift toolchain >= 5.8
+    notes: >
+      inklecate is NOT invoked here. The oracle at CI time is the in-process
+      InkSwift JS-bridge replaying committed fixtures. This is the only environment
+      where the North-Star KPI is measured.
+
+  with-inklecate-local:
+    description: >
+      Local developer machine with inklecate present, used OFFLINE to (re)generate
+      the committed .ink.json oracle fixtures from .ink sources. NOT a CI environment
+      and NOT a runtime/production dependency. Gated behind a REGEN env flag so it
+      never runs in normal CI.
+    platform: [macos, linux]
+    oracle: inklecate-offline-fixture-generation
+    runs:
+      - REGEN-gated regeneration of .ink.json fixtures from .ink corpus
+    preconditions:
+      - inklecate on PATH (e.g. /Users/Maarten.Engels/.local/bin/inklecate)
+      - REGEN environment flag explicitly set
+    notes: >
+      inklecate is a TEST-ONLY, local/offline tool for fixture provenance. Its
+      output (.ink.json) is committed to the repo; CI consumes the committed
+      fixtures, never inklecate itself. Production Compiler/ code references no
+      Process/inklecate (enforced by the no-inklecate guardrail, KPI #4).
+
+coexistence_matrix:
+  - concern: Existing Forgejo CI (.forgejo/workflows/tests.yml)
+    requirement: must keep working (swift test on macos-arm64, push + pull_request)
+    impact_of_feature: additive only; SwiftLint + no-inklecate gates wired alongside first Compiler/ slice so green CI is never pre-emptively broken
+  - concern: Frozen InkSwift (JS-bridge) module + JXKit dependency
+    requirement: untouched (D8); remains the macOS execution oracle
+    impact_of_feature: none; compiler imports nothing from InkSwift; JXKit unchanged
+  - concern: Existing 154-test runtime suite
+    requirement: must stay green
+    impact_of_feature: none; compiler additions are new files under Compiler/ and additive Facade/ inits; no change to the public StoryBlueprint(json:) path
+  - concern: Public API surface
+    requirement: StoryBlueprint(json:) path unchanged (D8, DDD-2)
+    impact_of_feature: only an internal StoryBlueprint(root:) init + a new compile entry point are added
+
+platform_coverage:
+  supported_ci_target: macos        # macos-arm64; the execution-equivalence oracle needs the macOS-only InkSwift JS-bridge
+  best_effort: linux                # build-only portability of the oracle-independent compiler; no oracle run there
+  unsupported: []                   # no iOS/tvOS CI run (library builds for them, but the compiler is a build-time tool path)
+
+deployment_assumptions:
+  - Compiler additions must NOT change the public StoryBlueprint(json:) path.
+  - The frozen InkSwift module and JXKit must not be modified (D8).
+  - CI must remain green incrementally, per slice (S0..S6); SwiftLint + no-inklecate
+    gates land alongside the first Compiler/ slice in DELIVER, not before.
+  - The R5/R1/R3 SwiftLint boundary gate must pass on every push/PR.
+  - Compiler accepted set == runtime supported set (D1); over-acceptance is forbidden.
+  - "Release" is a git tag + SPM version bump; rollback is reverting the tag. No
+    rollout, canary, blue-green, or runtime telemetry applies (library, not service).

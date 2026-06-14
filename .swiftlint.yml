@@ -1,0 +1,93 @@
+# SwiftLint configuration — InkSwift
+#
+# Purpose: enforce the architectural boundary rules from
+# docs/product/architecture/brief.md (Paradigm and Boundary Rules) in CI.
+# These custom_rules are path-scoped regexes following the R1/R3 precedent.
+#
+# Activation note (native-ink-compiler DEVOPS wave): the Compiler/ layer does
+# not exist yet. The R5 rules below therefore match NOTHING on the current tree
+# and pass trivially; they activate automatically as Compiler/ files land per
+# slice. R3 already applies to the existing tree and passes (JSONSerialization
+# lives only in Decoder/InkDecoder.swift).
+#
+# Scope decision: only_rules restricts SwiftLint to the boundary custom_rules.
+# Default style rules are intentionally NOT run here — this config is an
+# architecture gate, not a style gate, and must never red an otherwise-green
+# build. (A separate style config can be layered in later if desired.)
+
+included:
+  - Sources
+
+# Run ONLY the boundary custom_rules — no opinionated style rules.
+only_rules:
+  - r1_decoder_no_upward_import
+  - r3_jsonserialization_boundary
+  - r4_no_setvisitcount_in_facade
+  - r5_compiler_no_engine_import
+  - r5_compiler_no_jsonserialization
+  - r5_no_compiler_import_from_decoder_engine
+
+custom_rules:
+  # R4 — setVisitCount must not surface on the public Story facade. The internal
+  # InkEngine.setVisitCount accessor (Engine/) is intentional per ST-04 Option C;
+  # the public Story.setVisitCount extension lives ONLY in SwiftInkRuntimeTestSupport.
+  # This rule guards the production public surface (Facade/), NOT the whole module.
+  # Passes today: Facade/Story.swift exposes visitCount but not setVisitCount.
+  # Source: brief.md R4 (re-scoped 2026-06-14).
+  r4_no_setvisitcount_in_facade:
+    name: "R4 setVisitCount not on public Story facade"
+    included: "Sources/SwiftInkRuntime/Facade/.*\\.swift"
+    regex: "setVisitCount"
+    message: "R4: setVisitCount must not appear on the public Story facade. It belongs to SwiftInkRuntimeTestSupport (opt-in test dependency), backed by the internal InkEngine.setVisitCount accessor."
+    severity: error
+
+  # R1 — Dependency direction (Decoder isolation): Decoder/ imports nothing from
+  # Engine/ or Facade/. Enforced as a no-Engine/Facade-module-import guard from
+  # Decoder/ files (single-module today; future-proofs a module split). Matches
+  # nothing today. Source: brief.md R1.
+  r1_decoder_no_upward_import:
+    name: "R1 Decoder must not import Engine/Facade"
+    included: "Sources/SwiftInkRuntime/Decoder/.*\\.swift"
+    regex: "^\\s*import\\s+(Engine|Facade)\\b"
+    message: "R1: Decoder/ must not depend on Engine/ or Facade/. Dependency flows Facade -> Engine -> Decoder."
+    severity: error
+
+  # R3 — JSONSerialization boundary: JSONSerialization may only be called from
+  # Decoder/ files. Any call site under Sources/ outside Decoder/ is a violation.
+  # Holds today: the only call site is Decoder/InkDecoder.swift. Source: brief.md R3.
+  r3_jsonserialization_boundary:
+    name: "R3 JSONSerialization boundary"
+    included: "Sources/SwiftInkRuntime/(Engine|Facade|Compiler)/.*\\.swift"
+    regex: "JSONSerialization"
+    message: "R3: JSONSerialization may only be used in Decoder/. Compiler/ secondary JSON must use JSONEncoder/string building."
+    severity: error
+
+  # R5 — Compiler-layer isolation (no Engine coupling): Compiler/ may construct
+  # Decoder/ node types but may NOT import/reference Engine/ execution state.
+  # Matches nothing today (Compiler/ absent). Source: brief.md R5.
+  r5_compiler_no_engine_import:
+    name: "R5 Compiler must not import Engine"
+    included: "Sources/SwiftInkRuntime/Compiler/.*\\.swift"
+    regex: "^\\s*import\\s+Engine\\b"
+    message: "R5: Compiler/ may not import Engine/ (no execution-state coupling). It may construct Decoder/ node types only."
+    severity: error
+
+  # R5 — Compiler-layer isolation (no JSONSerialization): the secondary JSON
+  # emitter must use JSONEncoder/string building, never JSONSerialization.
+  # Reinforces R3 for the new layer. Matches nothing today. Source: brief.md R5.
+  r5_compiler_no_jsonserialization:
+    name: "R5 Compiler must not call JSONSerialization"
+    included: "Sources/SwiftInkRuntime/Compiler/.*\\.swift"
+    regex: "JSONSerialization"
+    message: "R5: Compiler/ must not call JSONSerialization (R3 binds). Use JSONEncoder/string for the secondary Ink-JSON emit."
+    severity: error
+
+  # R5 — Compiler-layer isolation (reverse import): Decoder/ and Engine/ may NOT
+  # depend on Compiler/. (Facade/ may, only at the single compile entry point —
+  # reviewed by hand, not regex-enforced.) Matches nothing today. Source: brief.md R5.
+  r5_no_compiler_import_from_decoder_engine:
+    name: "R5 Decoder/Engine must not import Compiler"
+    included: "Sources/SwiftInkRuntime/(Decoder|Engine)/.*\\.swift"
+    regex: "^\\s*import\\s+Compiler\\b"
+    message: "R5: Decoder/ and Engine/ may not depend on Compiler/. Dependency direction is Compiler -> Decoder only."
+    severity: error
