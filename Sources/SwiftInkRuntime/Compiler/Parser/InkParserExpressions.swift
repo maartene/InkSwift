@@ -65,7 +65,37 @@ public enum InkExpressionParser {
         guard let token = tokens.next() else {
             throw InkExpressionParseError.unexpectedEndOfInput
         }
+        // An identifier directly followed by `(` is a function call `f(args)`;
+        // its arguments are themselves expressions parsed up to the matching `)`.
+        if isIdentifier(token.text), let next = tokens.peek(), next.text == "(" {
+            return try parseFunctionCall(name: token.text, from: &tokens)
+        }
         return try operand(from: token)
+    }
+
+    /// Parse a function-call operand `f(arg, …)` — the opening `(` is the next
+    /// token. Arguments are comma-separated expressions; a bare `f()` has none.
+    private static func parseFunctionCall(
+        name: String,
+        from tokens: inout ExpressionTokenizer
+    ) throws -> InkExpression {
+        _ = tokens.next() // consume "("
+        var arguments: [InkExpression] = []
+        if tokens.peek()?.text == ")" {
+            _ = tokens.next()
+            return .functionCall(name: name, arguments: arguments)
+        }
+        while true {
+            arguments.append(try parseExpression(minimumPrecedence: comparisonPrecedence, from: &tokens))
+            guard let separator = tokens.next() else {
+                throw InkExpressionParseError.unexpectedEndOfInput
+            }
+            if separator.text == ")" { break }
+            guard separator.text == "," else {
+                throw InkExpressionParseError.unexpectedToken(separator.text)
+            }
+        }
+        return .functionCall(name: name, arguments: arguments)
     }
 
     private static func operand(from token: ExpressionToken) throws -> InkExpression {
@@ -158,6 +188,9 @@ private struct ExpressionTokenizer {
         if let comparison = scanComparisonOperator(from: index) {
             return comparison
         }
+        if isPunctuation(characters[index]) {
+            return (ExpressionToken(text: String(characters[index])), index + 1)
+        }
         if isOperator(characters[index]) {
             return (ExpressionToken(text: String(characters[index])), index + 1)
         }
@@ -217,6 +250,12 @@ private struct ExpressionTokenizer {
 
     private func isOperator(_ character: Character) -> Bool {
         "+-*/%".contains(character)
+    }
+
+    /// Call-syntax punctuation tokens — kept whole so the expression parser can
+    /// recognise `f(`, argument separators, and the closing `)`.
+    private func isPunctuation(_ character: Character) -> Bool {
+        "(),".contains(character)
     }
 
     private func isWordCharacter(_ character: Character) -> Bool {

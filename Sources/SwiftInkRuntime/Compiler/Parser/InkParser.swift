@@ -11,7 +11,7 @@ import Foundation
 /// Turns comment-stripped `.ink` source into the typed AST the codegen consumes.
 public enum InkParser {
 
-    private static let knotMarker = "==="
+    private static let knotMarker = "=="
     private static let divertMarker = "->"
     private static let glueMarker = "<>"
     private static let endTarget = "END"
@@ -19,6 +19,10 @@ public enum InkParser {
     private static let constMarker = "CONST"
     private static let logicMarker = "~"
     private static let tempMarker = "temp"
+    private static let functionMarker = "function"
+    private static let refMarker = "ref"
+    private static let returnMarker = "return"
+    private static let tunnelReturnMarker = "->->"
 
     /// Parse `.ink` source into a flat, ordered stream of positioned statements.
     public static func parse(_ source: String) throws -> [InkStatement] {
@@ -240,12 +244,16 @@ public enum InkParser {
             column: position.column
         )
 
-        if let kind = headerKind(of: trimmed) {
+        if let kind = try headerKind(of: trimmed) {
             statements.append(InkStatement(kind: kind, position: position))
             return
         }
         if let kind = try declarationKind(of: trimmed) {
             statements.append(InkStatement(kind: kind, position: position))
+            return
+        }
+        if trimmed == tunnelReturnMarker {
+            statements.append(InkStatement(kind: .tunnelReturn, position: position))
             return
         }
         if trimmed.hasPrefix(divertMarker) {
@@ -277,13 +285,23 @@ public enum InkParser {
         return nil
     }
 
-    /// Lower a logic line `~ <body>`: `temp x = e` declares a local, otherwise
-    /// `x = e` reassigns an existing variable.
+    /// Lower a logic line `~ <body>`: `return e` returns from a function, `temp x
+    /// = e` declares a local, `f(args)` calls a function for its side effects
+    /// (result discarded), otherwise `x = e` reassigns an existing variable.
     private static func logicKind(of body: String) throws -> InkStatementKind {
         let trimmedBody = body.trimmingCharacters(in: .whitespaces)
+        if let returnBody = keywordBody(trimmedBody, keyword: returnMarker) {
+            return .returnStatement(try InkExpressionParser.parse(returnBody))
+        }
+        if trimmedBody == returnMarker {
+            return .returnStatement(nil)
+        }
         if let tempBody = keywordBody(trimmedBody, keyword: tempMarker) {
             let (name, value) = try splitAssignment(tempBody)
             return .temporaryVariable(name: name, value: value)
+        }
+        if trimmedBody.contains("=") == false {
+            return .functionCallStatement(try InkExpressionParser.parse(trimmedBody))
         }
         let (name, value) = try splitAssignment(trimmedBody)
         return .assignment(name: name, value: value)
@@ -397,9 +415,13 @@ public enum InkParser {
         return (label, outcome)
     }
 
-    private static func headerKind(of trimmed: String) -> InkStatementKind? {
+    private static func headerKind(of trimmed: String) throws -> InkStatementKind? {
+        // A knot header opens with two or more `=` (inklecate treats `==` and
+        // `===` identically); a single leading `=` is a stitch. A function knot
+        // (`== function f() ==` / `=== function f() ===`) is recognised after the
+        // marker is stripped.
         if trimmed.hasPrefix(knotMarker) {
-            return .knot(stripped(trimmed, of: "="))
+            return try knotOrFunctionHeader(stripped(trimmed, of: "="))
         }
         if trimmed.hasPrefix("=") {
             return .stitch(stripped(trimmed, of: "="))
@@ -407,11 +429,61 @@ public enum InkParser {
         return nil
     }
 
+    /// Classify a stripped knot header. A header opening with the `function`
+    /// keyword is a function definition `=== function name(params) ===`; its
+    /// parameter list (with `ref` markers) is parsed here and the body lines are
+    /// grouped by the emitter (like a knot). Any other header is a plain knot.
+    private static func knotOrFunctionHeader(_ header: String) throws -> InkStatementKind {
+        guard let body = keywordBody(header, keyword: functionMarker) else {
+            return .knot(header)
+        }
+        let (name, parameters) = try parseFunctionSignature(body)
+        return .functionDefinition(name: name, parameters: parameters, body: [])
+    }
+
+    /// Parse a function signature `name(p1, ref p2)` into the name and ordered
+    /// parameters. A parameter prefixed `ref ` is a reference parameter. A bare
+    /// `name` (no parentheses) declares a zero-parameter function.
+    private static func parseFunctionSignature(
+        _ signature: String
+    ) throws -> (name: String, parameters: [FunctionParameter]) {
+        guard let open = signature.firstIndex(of: "(") else {
+            return (signature.trimmingCharacters(in: .whitespaces), [])
+        }
+        let name = String(signature[..<open]).trimmingCharacters(in: .whitespaces)
+        guard let close = signature.firstIndex(of: ")") else {
+            throw InkExpressionParseError.unexpectedToken(signature)
+        }
+        let inside = String(signature[signature.index(after: open)..<close])
+        let parameters = inside
+            .split(separator: ",")
+            .map { parseParameter(String($0)) }
+            .filter { $0.name.isEmpty == false }
+        return (name, parameters)
+    }
+
+    /// Parse one parameter declaration into a `FunctionParameter`, recognising a
+    /// leading `ref ` keyword as a reference parameter.
+    private static func parseParameter(_ declaration: String) -> FunctionParameter {
+        let trimmed = declaration.trimmingCharacters(in: .whitespaces)
+        if let name = keywordBody(trimmed, keyword: refMarker) {
+            return FunctionParameter(name: name, isReference: true)
+        }
+        return FunctionParameter(name: trimmed, isReference: false)
+    }
+
     private static func divertKind(of trimmed: String) -> InkStatementKind {
         let target = String(trimmed.dropFirst(divertMarker.count))
             .trimmingCharacters(in: .whitespaces)
         if target == endTarget {
             return .end
+        }
+        // A target ending in `->` is a tunnel divert `-> k ->`: run knot `k` then
+        // return to the call site via the runtime's `->->` convention.
+        if target.hasSuffix(divertMarker) {
+            let tunnelTarget = String(target.dropLast(divertMarker.count))
+                .trimmingCharacters(in: .whitespaces)
+            return .tunnelDivert(tunnelTarget)
         }
         return .divert(target)
     }
