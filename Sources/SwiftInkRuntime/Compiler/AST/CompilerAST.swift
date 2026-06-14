@@ -18,6 +18,15 @@ public struct SourcePosition: Equatable {
     }
 }
 
+/// A segment of a content line: either literal text or an inline-printed
+/// expression `{ <expr> }` whose evaluated value is rendered in place.
+public enum ContentSegment: Equatable {
+    /// Literal text rendered verbatim.
+    case literal(String)
+    /// An inline-printed expression, e.g. `{name}` or `{2 + 3 * 4}`.
+    case expression(InkExpression)
+}
+
 /// The kind of a parsed Ink statement. Each construct the S1 core flow needs is
 /// a distinct case; diverts store their target as a raw unresolved path string.
 public enum InkStatementKind: Equatable {
@@ -32,8 +41,20 @@ public enum InkStatementKind: Equatable {
     case end
     /// A glue marker `<>` joining adjacent output.
     case glue
-    /// A plain text line.
+    /// A plain text line (no interpolation).
     case text(String)
+    /// A content line mixing literal text and inline-printed expressions.
+    case content([ContentSegment])
+    /// A global `VAR name = expr` declaration. Lowered into the `global decl`
+    /// container and run at story start to initialise global state.
+    case globalVariable(name: String, value: InkExpression)
+    /// A `CONST NAME = value` declaration. Compile-time only — inlined into
+    /// expressions at codegen (D6 / DDD-9); never a runtime variable.
+    case constant(name: String, value: InkExpression)
+    /// A `~ temp name = expr` local declaration.
+    case temporaryVariable(name: String, value: InkExpression)
+    /// A `~ name = expr` reassignment of an existing variable.
+    case assignment(name: String, value: InkExpression)
 }
 
 /// A typed arithmetic expression node (DDD-5). Produced by the Pratt
@@ -45,7 +66,10 @@ public indirect enum InkExpression: Equatable {
     case intLiteral(Int)
     /// A floating-point literal operand, e.g. `1.5`.
     case floatLiteral(Double)
-    /// A variable reference operand (placeholder — resolved in 02-02).
+    /// A string literal operand, e.g. `"Ada"`.
+    case stringLiteral(String)
+    /// A variable reference operand (resolved at codegen to `.variableReference`
+    /// unless the name is a CONST, in which case its literal is inlined — D6).
     case variableReference(String)
     /// A binary operation `left OP right`, e.g. `3 * 4`. The operator is held
     /// as its runtime native-function symbol (`+ - * / %`).

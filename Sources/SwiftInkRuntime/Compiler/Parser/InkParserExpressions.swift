@@ -66,6 +66,9 @@ public enum InkExpressionParser {
     }
 
     private static func operand(from token: ExpressionToken) throws -> InkExpression {
+        if token.isStringLiteral {
+            return .stringLiteral(token.text)
+        }
         if let intValue = Int(token.text) {
             return .intLiteral(intValue)
         }
@@ -95,9 +98,17 @@ public enum InkExpressionParser {
     }
 }
 
-/// One lexed expression token (a number, identifier, or operator symbol).
+/// One lexed expression token (a number, identifier, operator symbol, or a
+/// string literal — `isStringLiteral` distinguishes the last from an identifier
+/// so an unquoted bareword like `Ada` is not mistaken for the string `"Ada"`).
 private struct ExpressionToken {
     let text: String
+    let isStringLiteral: Bool
+
+    init(text: String, isStringLiteral: Bool = false) {
+        self.text = text
+        self.isStringLiteral = isStringLiteral
+    }
 }
 
 /// A minimal forward-only tokenizer over an expression string. Splits on
@@ -131,6 +142,9 @@ private struct ExpressionTokenizer {
         guard index < characters.count else {
             return nil
         }
+        if characters[index] == "\"" {
+            return scanStringLiteral(from: index)
+        }
         if isOperator(characters[index]) {
             return (ExpressionToken(text: String(characters[index])), index + 1)
         }
@@ -140,6 +154,20 @@ private struct ExpressionTokenizer {
             index += 1
         }
         return word.isEmpty ? nil : (ExpressionToken(text: word), index)
+    }
+
+    /// Scan a double-quoted string literal beginning at the opening quote at
+    /// `start`. Returns the unquoted contents and the index just past the
+    /// closing quote.
+    private func scanStringLiteral(from start: Int) -> (token: ExpressionToken, endIndex: Int) {
+        var index = start + 1
+        var contents = ""
+        while index < characters.count, characters[index] != "\"" {
+            contents.append(characters[index])
+            index += 1
+        }
+        let endIndex = index < characters.count ? index + 1 : index
+        return (ExpressionToken(text: contents, isStringLiteral: true), endIndex)
     }
 
     private func skippingWhitespace(from start: Int) -> Int {
