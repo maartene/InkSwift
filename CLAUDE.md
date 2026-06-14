@@ -22,6 +22,12 @@ For parametrized tests, move the display name to the function and keep only `arg
 func `step sets isEnded to true for done or end control command`(command: String) { … }
 ```
 
+## Development Paradigm
+
+object-oriented
+
+This project follows an object-oriented / imperative paradigm (value-type structs and enums with stateful, mutating methods — e.g. `InkDecoder`, the planned `Compiler/StringParser` cursor). DELIVER-wave TDD work is dispatched to `@nw-software-crafter` with example-based oracle tests. (Recorded 2026-06-14 during the native-ink-compiler DELIVER wave, paradigm step 1.5.)
+
 ## Mutation Testing Strategy
 
 Mutation testing is **disabled** for this project. This is a durable constraint, not a deferral: no reliable, proven Swift mutation-testing solution exists, and Muter was flaky at best after significant effort.

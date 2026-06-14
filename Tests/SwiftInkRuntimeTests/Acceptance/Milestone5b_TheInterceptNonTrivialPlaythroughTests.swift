@@ -205,7 +205,7 @@ struct TheInterceptOracleFixtureRegenerationTests {
         let testSourceDir = (filePath as NSString).deletingLastPathComponent
         let testTargetDir = (testSourceDir as NSString).deletingLastPathComponent
         let outURL = URL(fileURLWithPath: testTargetDir)
-            .appendingPathComponent("TheIntercept_oracle_walkthrough.json")
+            .appendingPathComponent("Fixtures/TheIntercept_oracle_walkthrough.json")
         try data.write(to: outURL, options: .atomic)
 
         #expect(trimmed.count >= 50,

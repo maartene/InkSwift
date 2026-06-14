@@ -25,8 +25,12 @@ features:
         who: developer with a supported story
         does_what: compiles + plays it in-process, oracle-identical
         ci_data_source: >
-          committed .ink.json fixtures + .ink source corpus, replayed through the
-          InkSwift JS-bridge oracle on macOS (env: with-oracle-macos)
+          .ink source corpus compiled NATIVELY vs the committed inklecate .ink.json
+          oracle, both played through the pure-Swift Story runtime along the same
+          choice script. This comparison imports no InkSwift, so it is hermetic and
+          cross-platform — PRIMARY gate runs on env: clean (macOS + linux). The
+          macOS InkSwift JS-bridge is a SECONDARY ground-truth cross-check
+          (env: with-oracle-macos). [DISTILL UI-1, 2026-06-14]
         collecting_check: execution-equivalence oracle test suite (per-slice + TheIntercept end-to-end)
         pass_threshold: 100% of supported-corpus stories play line-for-line / choice-for-choice identical
         guardrail_semantics: >
@@ -78,8 +82,23 @@ features:
           inklecate remains test-only/offline for fixture generation only.
         baseline: every build invokes inklecate today
 
+    measured_baselines:
+      # Recorded at DELIVER of slices S0–S2 (2026-06-14). Reference point for future deltas.
+      as_of: 2026-06-14
+      scope: slices S0, S1, S2 (of S0–S6)
+      kpi-1: >
+        100% of the in-scope supported corpus (compile-skeleton-hello, compile-linear-flow,
+        compile-variables) compiles natively in-process and plays line-for-line identical to
+        the committed inklecate .ink.json oracle. Full supported corpus (S3–S6 incl. TheIntercept
+        end-to-end) pending future slices.
+      kpi-4: >
+        0 inklecate invocations — production Compiler/ references no Process/inklecate symbol
+        (source guard) and spawns no subprocess during native compile (test-verified).
+      kpi-2: not yet measured (S6 unsupported-rejection corpus — future slice)
+      kpi-3: not yet measured (S5 doc-vs-compiler consistency — future slice)
+
     monitoring_model:
       runtime_telemetry: none           # library, not a service — no dashboards/alerts at runtime
       instrument_kind: ci-test-gate     # every KPI is a CI assertion
       cadence: per CI run (every push / pull_request)
-      environment: with-oracle-macos    # KPI #1/#3 need the macOS InkSwift oracle; #2/#4 are oracle-independent
+      environment: clean                 # PRIMARY: KPI #1 hermetic native-vs-inklecate-fixture + #2/#3/#4 all run cross-platform on clean. with-oracle-macos adds the secondary JS-bridge cross-check for KPI #1 [DISTILL UI-1]

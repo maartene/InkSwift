@@ -1,0 +1,373 @@
+{
+  "roadmap": {
+    "project_id": "native-ink-compiler",
+    "created_at": "2026-06-14T00:00:00Z",
+    "total_steps": 6,
+    "phases": 3,
+    "scope_note": "DELIVER scope is slices S0, S1, S2 ONLY. S3-S6 (choices/gathers, conditionals/functions/tunnels, feature-reference doc, unsupported-feature errors) are explicitly OUT of this roadmap. Acceptance suites for S3-S6 remain RED by design. The 8 in-scope scenarios live in Compiler_S0/S1/S2 suites; each step flips a named subset GREEN by removing the CompileErrorKind.scaffold sentinel for that slice."
+  },
+  "phases": [
+    {
+      "id": "00",
+      "name": "S0 \u2014 Walking Skeleton (compile and play one line)",
+      "steps": [
+        {
+          "name": "No-JSON blueprint path + minimal plain-text compile-and-play",
+          "description": "Wire the read -> parse -> codegen -> runnable-story spine for a single line of plain text, with NO JSON round-trip. EXTEND StoryBlueprint with an internal init(root: ContainerNode) (DDD-2) so the compiler can hand a node tree straight to the runtime. CommentEliminator runs as a near pass-through (no comments in skeleton fixtures). A trivial line parse produces a flat AST; RuntimeObjectEmitter emits a root ContainerNode whose children are .text(line) + .newline per source line, terminated by .controlCommand(\"done\"). InkCompiler.compile(source:) wires the pipeline and stops throwing .scaffold for plain-text input; Story(inkSource:) convenience delegates to it. Empty source compiles to a root that emits no text and ends cleanly. Compiler/ constructs Decoder/ node types only \u2014 it must NOT import Engine/ (R5), and uses no JSONSerialization (R3).",
+          "acceptance_criteria": [
+            "A one-line plain-text source (compile-skeleton-hello fixture, 'Hello, world.') compiles in-process via InkCompiler.compile(source:) and plays through the runtime, emitting exactly the oracle's line with no external inklecate process invoked",
+            "The convenience surface Story(inkSource:) yields a playable Story directly from source string without a JSON intermediate",
+            "An empty source compiles to a Story that ends cleanly (canContinue false, no emitted text), matching the empty-source oracle",
+            "StoryBlueprint exposes an internal init(root: ContainerNode) that the runtime consumes via the existing Story(blueprint:) path",
+            "CompileErrorKind.scaffold is no longer thrown for plain-text or empty source"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_S0_WalkingSkeletonTests.swift",
+          "scenario_name": "a one-line plain-text story compiles in-process and plays, matching the oracle; the convenience compile surface yields a playable story from source; an empty source compiles to a story that ends cleanly, matching the oracle",
+          "quality_gates": [
+            "3 of 4 S0 scenarios GREEN (play, convenience, empty-source)",
+            "All pre-existing runtime suites remain GREEN (no regression \u2014 233 baseline)",
+            "SwiftLint R5 boundary gate passes (Compiler/ does not import Engine/)",
+            "SwiftLint R3 gate passes (no JSONSerialization in Compiler/)",
+            "Compiler_NoInklecateGuardrailTests stays GREEN (no Process/inklecate in Compiler/)"
+          ],
+          "implementation_notes": [
+            "EXTEND Facade/StoryBlueprint.swift: add `internal init(root: ContainerNode)` alongside the existing `public init(json:)` \u2014 this is the no-JSON seam (DDD-2)",
+            "RuntimeObjectEmitter emits root ContainerNode: per non-empty line -> [.text(line), .newline]; append .controlCommand(\"done\") to terminate. Empty source -> root with only .controlCommand(\"done\")",
+            "CommentEliminator is a pass-through for S0 fixtures (strip // and /* */ implemented now; no comments exercised until later slices) \u2014 keep the pass minimal but real",
+            "StringParser may be a trivial line splitter at S0; the full stateful cursor/combinator engine lands in 01-01",
+            "InkCompiler.compile(source:) wires CommentEliminator -> parse -> RuntimeObjectEmitter -> StoryBlueprint(root:); remove the .scaffold throw for the plain-text path",
+            "Story(inkSource:) convenience already scaffolded in Compiler/InkCompiler.swift \u2014 delegate to compile(source:) then Story(blueprint:)",
+            "BOUNDARY: Compiler/ may construct Decoder/ ContainerNode + NodeKind but must NOT import Engine/ (TreeWalker/InkEngine/StoryState) \u2014 R5 enforced",
+            "BOUNDARY: do NOT call JSONSerialization anywhere in Compiler/ \u2014 R3 enforced",
+            "Tests use Swift Testing backtick function names (project mandate); mutation testing is disabled (project-wide)",
+            "TEST PARADIGM (project): paradigm is OBJECT-ORIENTED / example-based (CLAUDE.md). Unit tests are example-based using Swift Testing backtick function names. Property-based / state-machine PBT is explicitly OUT (DISTILL DWD-9); the correctness instrument is the execution-equivalence oracle suite plus targeted example unit tests.",
+            "STAGE CONTEXT (cascade): NEW code = Stage 0 (paradigm-from-day-zero, no debt accumulates).",
+            "EXEMPT FROM PARADIGM (acceptance level): the three S0 acceptance scenarios are execution-equivalence golden-oracle diffs (line-list compared to a committed inklecate .ink.json played through the same runtime) \u2014 single-example by nature. Compensate with property-based tests at unit level on the RuntimeObjectEmitter line->node mapping (universe: child-node sequence vs source-line list)."
+          ],
+          "dependencies": [],
+          "estimated_hours": 1.5,
+          "deliverables": [
+            "Sources/SwiftInkRuntime/Facade/StoryBlueprint.swift (EXTEND: internal init(root:))",
+            "Sources/SwiftInkRuntime/Compiler/InkCompiler.swift (wire pipeline; drop .scaffold for plain-text)",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/RuntimeObjectEmitter.swift (NEW: AST -> ContainerNode/NodeKind)"
+          ],
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Facade/StoryBlueprint.swift",
+            "Sources/SwiftInkRuntime/Compiler/InkCompiler.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/RuntimeObjectEmitter.swift"
+          ],
+          "id": "00-01",
+          "criteria": [
+            "A one-line plain-text source (compile-skeleton-hello fixture, 'Hello, world.') compiles in-process via InkCompiler.compile(source:) and plays through the runtime, emitting exactly the oracle's line with no external inklecate process invoked",
+            "The convenience surface Story(inkSource:) yields a playable Story directly from source string without a JSON intermediate",
+            "An empty source compiles to a Story that ends cleanly (canContinue false, no emitted text), matching the empty-source oracle",
+            "StoryBlueprint exposes an internal init(root: ContainerNode) that the runtime consumes via the existing Story(blueprint:) path",
+            "CompileErrorKind.scaffold is no longer thrown for plain-text or empty source"
+          ]
+        },
+        {
+          "name": "Secondary Ink-JSON sink (emitJSON) without JSONSerialization",
+          "description": "Add the D4 secondary output sink: InkCompiler.emitJSON for a supported source produces Ink-JSON text. The JSON emitter walks the same ContainerNode tree produced for the compile path and serialises it to Ink-JSON. CONSTRAINT (R3/R5): it must NOT use JSONSerialization \u2014 use JSONEncoder and/or deterministic string building. The emitted JSON must contain the Ink version header key (\"inkVersion\") and the literal text payload (\"Hello, world.\") so the round-trippable artifact is recognisable as Ink-JSON.",
+          "acceptance_criteria": [
+            "InkCompiler.emitJSON for the compile-skeleton-hello source returns a string that contains \"inkVersion\"",
+            "The emitted JSON string contains the source text payload \"Hello, world.\"",
+            "emitJSON produces its output without invoking JSONSerialization (R3) and without importing Engine/ (R5)",
+            "CompileErrorKind.scaffold is no longer thrown by emitJSON for supported source"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_S0_WalkingSkeletonTests.swift",
+          "scenario_name": "the secondary JSON sink emits Ink-JSON for a supported source",
+          "quality_gates": [
+            "4 of 4 S0 scenarios GREEN (S0 suite fully GREEN)",
+            "All pre-existing runtime suites remain GREEN (no regression)",
+            "SwiftLint R3 gate passes (JSONEmitter uses JSONEncoder/string building, never JSONSerialization)",
+            "SwiftLint R5 boundary gate passes (no Engine/ import)",
+            "Compiler_NoInklecateGuardrailTests stays GREEN"
+          ],
+          "implementation_notes": [
+            "NEW Compiler/Codegen/JSONEmitter.swift: consume the ContainerNode tree from RuntimeObjectEmitter (00-01) and serialise to Ink-JSON",
+            "MUST emit the top-level \"inkVersion\" key and serialise text nodes as Ink-JSON string entries (the literal 'Hello, world.' must appear)",
+            "R3 CONSTRAINT: do NOT use JSONSerialization \u2014 use Foundation.JSONEncoder with Encodable model types, or deterministic manual string building. SwiftLint R3 custom rule is path-scoped to Compiler/ and will fail the build otherwise",
+            "InkCompiler.emitJSON delegates to JSONEmitter; remove the .scaffold throw on the emitJSON path",
+            "This sink is secondary (D4): the primary compile path (00-01) does NOT depend on it \u2014 emitJSON is a separate entry point, not part of compile(source:)",
+            "BOUNDARY: JSONEmitter constructs/reads Decoder/ node types only; must NOT import Engine/ (R5)",
+            "Tests use Swift Testing backtick function names; mutation testing disabled",
+            "TEST PARADIGM (project): paradigm is OBJECT-ORIENTED / example-based (CLAUDE.md). Unit tests are example-based using Swift Testing backtick function names. Property-based / state-machine PBT is explicitly OUT (DISTILL DWD-9); the correctness instrument is the execution-equivalence oracle suite plus targeted example unit tests.",
+            "STAGE CONTEXT (cascade): NEW code = Stage 0 (paradigm-from-day-zero).",
+            "EXEMPT FROM PARADIGM (acceptance level): the emitJSON scenario asserts presence of fixed marker substrings (\"inkVersion\", \"Hello, world.\") in a serialised string \u2014 an exact-substring golden check, single-example by nature. Compensate with a property-based unit test on the JSONEmitter node->JSON mapping (universe: emitted top-level keys vs node-tree shape; invariant: text payloads round-trip into the string output)."
+          ],
+          "dependencies": [
+            "00-01"
+          ],
+          "estimated_hours": 1.0,
+          "deliverables": [
+            "Sources/SwiftInkRuntime/Compiler/Codegen/JSONEmitter.swift (NEW: ContainerNode -> Ink-JSON via JSONEncoder/string building)",
+            "Sources/SwiftInkRuntime/Compiler/InkCompiler.swift (wire emitJSON; drop .scaffold for emitJSON)"
+          ],
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Compiler/Codegen/JSONEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/InkCompiler.swift"
+          ],
+          "id": "00-02",
+          "criteria": [
+            "InkCompiler.emitJSON for the compile-skeleton-hello source returns a string that contains \"inkVersion\"",
+            "The emitted JSON string contains the source text payload \"Hello, world.\"",
+            "emitJSON produces its output without invoking JSONSerialization (R3) and without importing Engine/ (R5)",
+            "CompileErrorKind.scaffold is no longer thrown by emitJSON for supported source"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "01",
+      "name": "S1 \u2014 Core Flow (knots, stitches, diverts, glue)",
+      "steps": [
+        {
+          "name": "Parser core: stateful StringParser + comment elimination + line/statement scanning",
+          "description": "Build the real parser substrate the S1/S2 statement rules depend on. CommentEliminator strips // line comments and /* */ block comments before parsing. StringParser is a stateful cursor that tracks line/column and provides parser combinators. InkParser scans the source into a typed AST (Compiler/AST/) carrying source positions, recognising knot headers (=== name ===), stitch headers (= name), divert statements (-> target, including qualified target.stitch and relative .^.stitch as unresolved path strings), glue tokens (<>), and the -> END terminator, plus plain text lines. At this step the AST is produced and positions are attached; divert path RESOLUTION and codegen happen in 01-02. No Engine/ import; no JSONSerialization.",
+          "acceptance_criteria": [
+            "CommentEliminator removes // line comments and /* */ block comments while preserving line numbering for downstream positions",
+            "StringParser tracks line and column as it consumes the source and exposes combinators usable by the statement rules",
+            "InkParser produces a typed AST node for each of: knot header, stitch header, divert (absolute, qualified, relative .^), glue, -> END, and plain text line \u2014 each carrying its source position",
+            "Relative (.^.stitch) and qualified (knot.stitch) divert targets are captured as unresolved path strings on the AST for resolution in the next step",
+            "Parsing the compile-linear-flow fixture yields an AST that round-trips its knot/stitch/divert/glue structure with no .scaffold thrown during parse"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_S1_CoreFlowTests.swift",
+          "scenario_name": "(enabling step \u2014 no S1 acceptance scenario flips GREEN until 01-02 codegen lands; validated via the AST/parser unit suite this step introduces)",
+          "quality_gates": [
+            "Parser/AST unit tests GREEN for knot/stitch/divert/glue/END/text recognition with positions",
+            "S1 acceptance suite remains RED for the right reason (codegen not yet wired \u2014 01-02 flips it)",
+            "All pre-existing runtime suites remain GREEN (no regression)",
+            "SwiftLint R5 (no Engine/ import) and R3 (no JSONSerialization) gates pass in Compiler/"
+          ],
+          "implementation_notes": [
+            "NEW Compiler/Lexer/CommentEliminator.swift: strip // to end-of-line and /* */ (possibly multi-line); preserve newline count so AST positions stay accurate",
+            "NEW Compiler/Parser/StringParser.swift: stateful cursor with line/col tracking + combinator primitives (peek, advance, match, optional, repeat)",
+            "NEW Compiler/Parser/InkParser.swift (and InkParser*.swift split files as needed): statement rules for knot header (=== name ===), stitch header (= name), divert (-> target), glue (<>), -> END, plain text",
+            "NEW Compiler/AST/*.swift: typed parsed-AST node kinds with source positions and unresolved-path fields for diverts (store target as raw string: absolute 'intro', qualified 'investigation.arrival', relative '.^.arrival')",
+            "Path RESOLUTION (mapping unresolved strings to namedContent paths) is deliberately deferred to 01-02 codegen \u2014 this step only parses and captures",
+            "BOUNDARY: Compiler/ must NOT import Engine/ (R5); must NOT use JSONSerialization (R3)",
+            "files_to_modify lists 3 NEW production files (StringParser, InkParser, AST) \u2014 CommentEliminator counted in the deliverables/scope; ratio stays <= 2.5",
+            "Tests use Swift Testing backtick function names; mutation testing disabled",
+            "TEST PARADIGM (project): paradigm is OBJECT-ORIENTED / example-based (CLAUDE.md). Unit tests are example-based using Swift Testing backtick function names. Property-based / state-machine PBT is explicitly OUT (DISTILL DWD-9); the correctness instrument is the execution-equivalence oracle suite plus targeted example unit tests.",
+            "STAGE CONTEXT (cascade): NEW code = Stage 0 (paradigm-from-day-zero, no debt accumulates)."
+          ],
+          "dependencies": [
+            "00-01"
+          ],
+          "estimated_hours": 2.0,
+          "deliverables": [
+            "Sources/SwiftInkRuntime/Compiler/Lexer/CommentEliminator.swift (NEW)",
+            "Sources/SwiftInkRuntime/Compiler/Parser/StringParser.swift (NEW)",
+            "Sources/SwiftInkRuntime/Compiler/Parser/InkParser.swift (NEW)",
+            "Sources/SwiftInkRuntime/Compiler/AST/CompilerAST.swift (NEW: typed AST nodes with positions + unresolved divert paths)"
+          ],
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Compiler/Parser/StringParser.swift",
+            "Sources/SwiftInkRuntime/Compiler/Parser/InkParser.swift",
+            "Sources/SwiftInkRuntime/Compiler/AST/CompilerAST.swift"
+          ],
+          "id": "01-01",
+          "criteria": [
+            "CommentEliminator removes // line comments and /* */ block comments while preserving line numbering for downstream positions",
+            "StringParser tracks line and column as it consumes the source and exposes combinators usable by the statement rules",
+            "InkParser produces a typed AST node for each of: knot header, stitch header, divert (absolute, qualified, relative .^), glue, -> END, and plain text line \u2014 each carrying its source position",
+            "Relative (.^.stitch) and qualified (knot.stitch) divert targets are captured as unresolved path strings on the AST for resolution in the next step",
+            "Parsing the compile-linear-flow fixture yields an AST that round-trips its knot/stitch/divert/glue structure with no .scaffold thrown during parse"
+          ]
+        },
+        {
+          "name": "Core-flow codegen: named content, divert path resolution, glue",
+          "description": "Extend RuntimeObjectEmitter to lower the S1 AST into a ContainerNode tree that PLAYS identically to the oracle. Knots and stitches become entries in namedContent (stitches nested under their parent knot's container). Diverts emit .divert(target,...) with targets resolved from the unresolved path strings: absolute (-> intro), qualified (-> investigation.arrival), and relative (.^.arrival) all map to the correct namedContent path. Glue (<>) joins adjacent lines so output matches the oracle exactly. -> END terminates. This flips the two S1 scenarios GREEN. Codegen has full freedom over tree shape \u2014 only PLAY-equivalence to the committed inklecate oracle is required, not structural-JSON equivalence.",
+          "acceptance_criteria": [
+            "The multi-knot linear story (compile-linear-flow fixture: knots, a stitch, absolute/qualified/relative diverts, glue, -> END) compiles and plays, with the emitted line list identical to the inklecate oracle played through the same runtime",
+            "Glue (<>) joins lines exactly as the oracle produces them (no spurious newline between glued segments)",
+            "Absolute (-> intro), qualified (-> investigation.arrival), and relative (-> .^.arrival) diverts all resolve to the correct namedContent target and route execution as the oracle does",
+            "Knots and stitches are emitted as namedContent entries reachable by their resolved paths",
+            "CompileErrorKind.scaffold is no longer thrown for S1 core-flow source"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_S1_CoreFlowTests.swift",
+          "scenario_name": "a multi-knot linear story compiles and plays, matching the oracle; glue joins lines exactly as the oracle produces them",
+          "quality_gates": [
+            "2 of 2 S1 scenarios GREEN (S1 suite fully GREEN)",
+            "All S0 scenarios remain GREEN (no regression)",
+            "All pre-existing runtime suites remain GREEN",
+            "SwiftLint R5 and R3 gates pass in Compiler/",
+            "Compiler_NoInklecateGuardrailTests stays GREEN"
+          ],
+          "implementation_notes": [
+            "EXTEND Compiler/Codegen/RuntimeObjectEmitter.swift: lower knot/stitch AST nodes into ContainerNode.namedContent (stitch container nested in its knot container, with the .name set)",
+            "Divert resolution: map unresolved path strings to namedContent paths \u2014 absolute -> top-level named container; qualified knot.stitch -> nested; relative .^.stitch -> sibling-relative resolution. Emit .divert(target:, isConditional:false, isVariable:false)",
+            "Glue: emit so the runtime joins segments without an intervening newline \u2014 match the oracle's exact line list (execution-equivalence, NOT structural-JSON equivalence)",
+            "-> END lowers to the runtime's end control (.controlCommand(\"end\") or the divert-to-END convention the runtime already recognises) \u2014 confirm against how the Decoder/runtime represents END",
+            "Codegen is free to emit ANY ContainerNode tree that PLAYS identically \u2014 do not chase byte-for-byte JSON parity with inklecate",
+            "Compiler/Error/CompileError.swift: remove the .scaffold usage on the S1 path (the case stays for S3-S6 which are out of scope here)",
+            "BOUNDARY: no Engine/ import (R5); no JSONSerialization (R3)",
+            "Tests use Swift Testing backtick function names; mutation testing disabled",
+            "TEST PARADIGM (project): paradigm is OBJECT-ORIENTED / example-based (CLAUDE.md). Unit tests are example-based using Swift Testing backtick function names. Property-based / state-machine PBT is explicitly OUT (DISTILL DWD-9); the correctness instrument is the execution-equivalence oracle suite plus targeted example unit tests.",
+            "STAGE CONTEXT (cascade): NEW/EXTEND on Stage-0 emitter (paradigm-from-day-zero).",
+            "EXEMPT FROM PARADIGM (acceptance level): the two S1 scenarios are execution-equivalence golden-oracle line-list diffs \u2014 single-example by nature. Compensate with property-based unit tests on the divert path resolver (universe: unresolved-path-string -> namedContent-key membership) and the glue joiner (invariant: glued segments produce no intervening newline)."
+          ],
+          "dependencies": [
+            "01-01"
+          ],
+          "estimated_hours": 2.0,
+          "deliverables": [
+            "Sources/SwiftInkRuntime/Compiler/Codegen/RuntimeObjectEmitter.swift (EXTEND: namedContent, divert resolution, glue)",
+            "Sources/SwiftInkRuntime/Compiler/Error/CompileError.swift (drop .scaffold on the S1 path)"
+          ],
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Compiler/Codegen/RuntimeObjectEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Error/CompileError.swift"
+          ],
+          "id": "01-02",
+          "criteria": [
+            "The multi-knot linear story (compile-linear-flow fixture: knots, a stitch, absolute/qualified/relative diverts, glue, -> END) compiles and plays, with the emitted line list identical to the inklecate oracle played through the same runtime",
+            "Glue (<>) joins lines exactly as the oracle produces them (no spurious newline between glued segments)",
+            "Absolute (-> intro), qualified (-> investigation.arrival), and relative (-> .^.arrival) diverts all resolve to the correct namedContent target and route execution as the oracle does",
+            "Knots and stitches are emitted as namedContent entries reachable by their resolved paths",
+            "CompileErrorKind.scaffold is no longer thrown for S1 core-flow source"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "02",
+      "name": "S2 \u2014 Variables & Expressions (VAR, CONST, temp, operators)",
+      "steps": [
+        {
+          "name": "Pratt expression sub-parser + arithmetic evaluation codegen",
+          "description": "Add a Pratt (precedence-climbing) expression sub-parser to InkParser for arithmetic and operator expressions, producing typed expression AST nodes. Extend RuntimeObjectEmitter to lower expressions into the runtime's evaluation form: .controlCommand(\"ev\") / .controlCommand(\"/ev\") evaluation brackets wrapping .intValue/.floatValue operands and .nativeFunction(\"+\"|\"*\"|...) operations, with .controlCommand(\"out\") to emit the computed value. Correct operator precedence (e.g. 2 + 3 * 4 == 14) must render identically to the oracle. This is the expression substrate the declaration/interpolation step (02-02) builds on.",
+          "acceptance_criteria": [
+            "The Pratt sub-parser parses arithmetic expressions with correct precedence (multiplication binds tighter than addition) into a typed expression AST",
+            "RuntimeObjectEmitter lowers an inline arithmetic expression {2 + 3 * 4} into ev/native-function/out runtime nodes that evaluate to 14 when played",
+            "UNIT INVARIANT: a played inline integer arithmetic expression {2 + 3 * 4} yields 14 (precedence correct) \u2014 full S2 scenario GREEN is deferred to 02-02",
+            "Integer and float literal operands lower to .intValue/.floatValue and operators to .nativeFunction with the correct symbol"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_S2_VariablesTests.swift",
+          "scenario_name": "(enabling step \u2014 no S2 acceptance scenario flips GREEN until 02-02 codegen lands; validated via the Pratt expression-parser unit suite this step introduces)",
+          "quality_gates": [
+            "Pratt expression-parser unit tests GREEN (precedence, associativity, literal/operator lowering)",
+            "Arithmetic evaluation plays to the correct value through the runtime",
+            "All S0 and S1 scenarios remain GREEN (no regression)",
+            "All pre-existing runtime suites remain GREEN",
+            "SwiftLint R5 and R3 gates pass in Compiler/"
+          ],
+          "implementation_notes": [
+            "EXTEND Compiler/Parser/InkParser.swift (or a co-located InkParserExpressions.swift): add a Pratt precedence-climbing expression sub-parser; bind multiplicative tighter than additive",
+            "EXTEND Compiler/AST/CompilerAST.swift: typed expression nodes (binary op, literal int/float, variable reference placeholder for 02-02)",
+            "EXTEND Compiler/Codegen/RuntimeObjectEmitter.swift: lower expression AST to .controlCommand(\"ev\") ... operands/.nativeFunction(op) ... .controlCommand(\"/ev\") then .controlCommand(\"out\") for inline-printed expressions",
+            "Literals: integer -> .intValue, float -> .floatValue; operators '+','*', etc. -> .nativeFunction(symbol)",
+            "Confirm the runtime's evaluation-stack ordering (postfix/RPN-style) the Decoder/runtime expects, and emit operands/operators in that order so the play result matches the oracle",
+            "BOUNDARY: no Engine/ import (R5); no JSONSerialization (R3)",
+            "Tests use Swift Testing backtick function names; mutation testing disabled",
+            "TEST PARADIGM (project): paradigm is OBJECT-ORIENTED / example-based (CLAUDE.md). Unit tests are example-based using Swift Testing backtick function names. Property-based / state-machine PBT is explicitly OUT (DISTILL DWD-9); the correctness instrument is the execution-equivalence oracle suite plus targeted example unit tests.",
+            "STAGE CONTEXT (cascade): NEW/EXTEND on Stage-0 surfaces (paradigm-from-day-zero)."
+          ],
+          "dependencies": [
+            "01-02"
+          ],
+          "estimated_hours": 2.0,
+          "deliverables": [
+            "Sources/SwiftInkRuntime/Compiler/Parser/InkParserExpressions.swift (NEW: Pratt expression sub-parser)",
+            "Sources/SwiftInkRuntime/Compiler/AST/CompilerAST.swift (EXTEND: expression AST nodes)",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/RuntimeObjectEmitter.swift (EXTEND: ev/native-function/out lowering)"
+          ],
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Compiler/Parser/InkParserExpressions.swift",
+            "Sources/SwiftInkRuntime/Compiler/AST/CompilerAST.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/RuntimeObjectEmitter.swift"
+          ],
+          "id": "02-01",
+          "criteria": [
+            "The Pratt sub-parser parses arithmetic expressions with correct precedence (multiplication binds tighter than addition) into a typed expression AST",
+            "RuntimeObjectEmitter lowers an inline arithmetic expression {2 + 3 * 4} into ev/native-function/out runtime nodes that evaluate to 14 when played",
+            "UNIT INVARIANT: a played inline integer arithmetic expression {2 + 3 * 4} yields 14 (precedence correct) \u2014 full S2 scenario GREEN is deferred to 02-02",
+            "Integer and float literal operands lower to .intValue/.floatValue and operators to .nativeFunction with the correct symbol"
+          ]
+        },
+        {
+          "name": "VAR/CONST/temp declarations, CONST inlining, variable read/assignment, string interpolation",
+          "description": "Complete S2: parse and lower VAR globals (VAR name = \"Ada\", VAR score = 3), CONST (CONST BONUS = 10) with compile-time inlining, and temp declarations (~ temp total = score + BONUS). Emit .variableAssignment(name,isGlobal) for declarations/assignments and .variableReference(name) for reads. CONST references are inlined to their literal value at codegen (no runtime variable). String interpolation {name}, {score}, {total} lowers to ev/variable-reference/out (with str/.str brackets for string output). Combined with 02-01's arithmetic, this flips both S2 scenarios GREEN, with all values rendering identically to the oracle (Total: 13, Math: 14).",
+          "acceptance_criteria": [
+            "The state-driven compile-variables fixture (VAR name/score, CONST BONUS, ~ temp total = score + BONUS, interpolations, arithmetic, -> END) compiles and plays with the emitted line list identical to the inklecate oracle",
+            "CONST BONUS is inlined to its literal value at codegen (BONUS does not exist as a runtime variable) and arithmetic renders values identical to the oracle (total = score + 10 = 13; 2 + 3 * 4 = 14)",
+            "Global VAR declarations lower to .variableAssignment(name, isGlobal:true) and temp declarations to .variableAssignment(name, isGlobal:false)",
+            "Variable reads ({name}, {score}, {total}) lower to .variableReference(name) inside ev/out (string interpolation) and render the stored value, with strings wrapped in str/.str output brackets",
+            "CompileErrorKind.scaffold is no longer thrown for S2 variables-and-expressions source"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_S2_VariablesTests.swift",
+          "scenario_name": "a state-driven story compiles and plays, matching the oracle; CONST inlining and arithmetic render values identical to the oracle",
+          "quality_gates": [
+            "2 of 2 S2 scenarios GREEN (S2 suite fully GREEN)",
+            "All S0 and S1 scenarios remain GREEN (no regression)",
+            "All pre-existing runtime suites remain GREEN",
+            "SwiftLint R5 and R3 gates pass in Compiler/",
+            "Compiler_NoInklecateGuardrailTests stays GREEN"
+          ],
+          "implementation_notes": [
+            "EXTEND Compiler/Parser/InkParser.swift: statement rules for VAR (global decl), CONST (const decl), and ~ temp (temp decl) and ~ assignments; reuse the 02-01 expression sub-parser for the right-hand sides",
+            "EXTEND Compiler/Codegen/RuntimeObjectEmitter.swift: VAR -> .variableAssignment(name, isGlobal:true); ~ temp -> .variableAssignment(name, isGlobal:false); CONST -> inline literal at every reference (do NOT emit a runtime variable for CONST)",
+            "Variable read / interpolation {x}: emit .controlCommand(\"ev\"), .variableReference(name), .controlCommand(\"out\"), .controlCommand(\"/ev\"); string values use .controlCommand(\"str\")/.controlCommand(\"/str\") brackets per the runtime's string-output convention",
+            "Global VAR initial values are declared so the runtime initialises variablesState \u2014 confirm the Decoder/runtime's global-decl container convention and emit accordingly",
+            "Compiler/Error/CompileError.swift: remove .scaffold usage on the S2 path (case remains for out-of-scope S3-S6)",
+            "Verify against the oracle: total = score(3) + BONUS(10) = 13; {2 + 3 * 4} = 14 \u2014 execution-equivalence, not structural-JSON equivalence",
+            "BOUNDARY: no Engine/ import (R5); no JSONSerialization (R3)",
+            "Tests use Swift Testing backtick function names; mutation testing disabled",
+            "TEST PARADIGM (project): paradigm is OBJECT-ORIENTED / example-based (CLAUDE.md). Unit tests are example-based using Swift Testing backtick function names. Property-based / state-machine PBT is explicitly OUT (DISTILL DWD-9); the correctness instrument is the execution-equivalence oracle suite plus targeted example unit tests.",
+            "STAGE CONTEXT (cascade): EXTEND on Stage-0 surfaces (paradigm-from-day-zero).",
+            "EXEMPT FROM PARADIGM (acceptance level): the two S2 scenarios are execution-equivalence golden-oracle line-list diffs (oracle renders Total: 13 / Math: 14) \u2014 single-example by nature. Compensate with the property-based unit tests above on the declaration/interpolation/CONST-inlining lowering."
+          ],
+          "dependencies": [
+            "02-01"
+          ],
+          "estimated_hours": 2.5,
+          "deliverables": [
+            "Sources/SwiftInkRuntime/Compiler/Parser/InkParser.swift (EXTEND: VAR/CONST/temp/assignment rules)",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/RuntimeObjectEmitter.swift (EXTEND: var assignment/reference, CONST inlining, interpolation)",
+            "Sources/SwiftInkRuntime/Compiler/Error/CompileError.swift (drop .scaffold on the S2 path)"
+          ],
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Compiler/Parser/InkParser.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/RuntimeObjectEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Error/CompileError.swift"
+          ],
+          "id": "02-02",
+          "criteria": [
+            "The state-driven compile-variables fixture (VAR name/score, CONST BONUS, ~ temp total = score + BONUS, interpolations, arithmetic, -> END) compiles and plays with the emitted line list identical to the inklecate oracle",
+            "CONST BONUS is inlined to its literal value at codegen (BONUS does not exist as a runtime variable) and arithmetic renders values identical to the oracle (total = score + 10 = 13; 2 + 3 * 4 = 14)",
+            "Global VAR declarations lower to .variableAssignment(name, isGlobal:true) and temp declarations to .variableAssignment(name, isGlobal:false)",
+            "Variable reads ({name}, {score}, {total}) lower to .variableReference(name) inside ev/out (string interpolation) and render the stored value, with strings wrapped in str/.str output brackets",
+            "CompileErrorKind.scaffold is no longer thrown for S2 variables-and-expressions source"
+          ]
+        }
+      ]
+    }
+  ],
+  "implementation_scope": {
+    "source_directories": [
+      "Sources/SwiftInkRuntime/Compiler/",
+      "Sources/SwiftInkRuntime/Facade/"
+    ],
+    "test_directories": [
+      "Tests/SwiftInkRuntimeTests/Acceptance/"
+    ],
+    "excluded_patterns": [
+      "*.ink",
+      "*.ink.json"
+    ],
+    "boundary_rules": [
+      "Compiler/ may construct Decoder/ node types but may NOT import/use Engine/ (TreeWalker/InkEngine/StoryState) \u2014 SwiftLint R5 enforced, path-scoped to Compiler/",
+      "Compiler/ must NOT call JSONSerialization \u2014 JSONEmitter uses JSONEncoder/string building \u2014 SwiftLint R3 enforced",
+      "No Process/inklecate invocation in production Compiler/ \u2014 Compiler_NoInklecateGuardrailTests (KPI #4)",
+      "All tests use Swift Testing backtick function names (project mandate); mutation testing disabled project-wide"
+    ],
+    "out_of_scope": "Slices S3 (choices/gathers), S4 (ceiling/TheIntercept e2e), S5 (feature-reference consistency), S6 (unsupported-feature rejection). Their acceptance suites (Compiler_S3/S4/S5/S6) remain RED by design and are not addressed by this roadmap."
+  },
+  "validation": {
+    "status": "approved",
+    "reviewer": "nw-acceptance-designer-reviewer",
+    "approved_at": null,
+    "review_date": "2026-06-14",
+    "notes": "REJECTED once (02-01 enabling-step scenario ambiguity); fixed by reframing 02-01 as enabling + moving arithmetic to unit invariant. All other mandates sound (scenario coverage, walking-skeleton-first, sizing, dependency order, files ratio justified for compiler work). Integrity --roadmap-only OK."
+  }
+}

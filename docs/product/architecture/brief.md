@@ -962,6 +962,14 @@ positions + unresolved symbolic paths + weave structure), `WeaveResolver`
 `Compiler/`. Zero unjustified CREATE NEW — every runtime integration point is REUSE
 or minimal EXTEND.
 
+> **Shipped (Component Inventory update — DELIVER S0–S2, 2026-06-14):** `CommentEliminator`
+> (`Compiler/Lexer/`), `StringParser` + `InkParser` + `InkParserExpressions` (Pratt) (`Compiler/Parser/`),
+> `CompilerAST` (`Compiler/AST/`), `RuntimeObjectEmitter` + `JSONEmitter` (`Compiler/Codegen/`),
+> `CompileError` (`Compiler/Error/`), `InkCompiler` entry, and the `StoryBlueprint(root:)` EXTEND —
+> all shipped and oracle-green for slices S0/S1/S2. **Deferred to future slices:** `WeaveResolver`
+> (S3, spike-gated), `SourceReader` IO adapter (`compile(fileURL:)` still scaffolded), and the
+> unsupported-construct reject-list (S6). `swift-tools-version` raise (C-7) not yet applied.
+
 #### Decisions (recommended; ADR-backed)
 
 | # | Decision | ADR |
