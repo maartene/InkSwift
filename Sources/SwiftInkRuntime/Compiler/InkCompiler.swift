@@ -40,8 +40,13 @@ public enum InkCompiler {
 
     /// Secondary sink (D4): emit the Ink-JSON representation for Level-2
     /// structural-oracle comparison, caching, and interop. Lower priority.
+    /// Builds the runtime tree via the primary codegen path, then serialises it
+    /// to Ink-JSON text via deterministic string building (R3 boundary).
     public static func emitJSON(source: String) throws -> String {
-        throw notImplemented
+        let sanitized = CommentEliminator.strip(source)
+        let lines = StringParser.parseLines(sanitized)
+        let root = RuntimeObjectEmitter.emitRoot(lines: lines)
+        return JSONEmitter.emit(root: root)
     }
 }
 
