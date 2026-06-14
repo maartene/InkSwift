@@ -28,15 +28,18 @@ public enum InkExpressionParseError: Error, Equatable {
 /// precedence climbing.
 public enum InkExpressionParser {
 
-    /// Binding power of the additive group — the lowest precedence handled here.
-    private static let additivePrecedence = 1
+    /// Binding power of the comparison group (`> < >= <= == !=`) — the lowest
+    /// precedence handled here (binds looser than arithmetic).
+    private static let comparisonPrecedence = 1
+    /// Binding power of the additive group.
+    private static let additivePrecedence = 2
     /// Binding power of the multiplicative group — binds tighter than additive.
-    private static let multiplicativePrecedence = 2
+    private static let multiplicativePrecedence = 3
 
-    /// Parse a single arithmetic expression from `source`.
+    /// Parse a single arithmetic/comparison expression from `source`.
     public static func parse(_ source: String) throws -> InkExpression {
         var tokens = ExpressionTokenizer(source)
-        let expression = try parseExpression(minimumPrecedence: additivePrecedence, from: &tokens)
+        let expression = try parseExpression(minimumPrecedence: comparisonPrecedence, from: &tokens)
         if let leftover = tokens.peek() {
             throw InkExpressionParseError.unexpectedToken(leftover.text)
         }
@@ -69,6 +72,12 @@ public enum InkExpressionParser {
         if token.isStringLiteral {
             return .stringLiteral(token.text)
         }
+        if token.text == "true" {
+            return .boolLiteral(true)
+        }
+        if token.text == "false" {
+            return .boolLiteral(false)
+        }
         if let intValue = Int(token.text) {
             return .intLiteral(intValue)
         }
@@ -84,6 +93,7 @@ public enum InkExpressionParser {
     /// Left binding power for an operator token; nil for non-operators.
     private static func bindingPower(of token: ExpressionToken?) -> Int? {
         switch token?.text {
+        case ">", "<", ">=", "<=", "==", "!=": return comparisonPrecedence
         case "+", "-": return additivePrecedence
         case "*", "/", "%": return multiplicativePrecedence
         default: return nil
@@ -145,6 +155,9 @@ private struct ExpressionTokenizer {
         if characters[index] == "\"" {
             return scanStringLiteral(from: index)
         }
+        if let comparison = scanComparisonOperator(from: index) {
+            return comparison
+        }
         if isOperator(characters[index]) {
             return (ExpressionToken(text: String(characters[index])), index + 1)
         }
@@ -177,6 +190,21 @@ private struct ExpressionTokenizer {
         }
         let endIndex = index < characters.count ? index + 1 : index
         return (ExpressionToken(text: contents, isStringLiteral: true), endIndex)
+    }
+
+    /// Scan a comparison operator (`>= <= == != > <`) beginning at `index`.
+    /// Two-character forms are recognised before their single-character prefixes
+    /// so `>=` is one token rather than `>` followed by `=`. Returns `nil` when
+    /// the character at `index` is not a comparison operator.
+    private func scanComparisonOperator(from index: Int) -> (token: ExpressionToken, endIndex: Int)? {
+        let character = characters[index]
+        guard "><=!".contains(character) else { return nil }
+        if index + 1 < characters.count, characters[index + 1] == "=" {
+            let symbol = String(character) + "="
+            return (ExpressionToken(text: symbol), index + 2)
+        }
+        guard character == ">" || character == "<" else { return nil }
+        return (ExpressionToken(text: String(character)), index + 1)
     }
 
     private func skippingWhitespace(from start: Int) -> Int {

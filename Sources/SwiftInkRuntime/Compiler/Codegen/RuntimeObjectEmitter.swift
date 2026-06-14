@@ -56,9 +56,15 @@ enum RuntimeObjectEmitter {
         named: inout [String: ContainerNode]
     ) throws -> [NodeKind] {
         guard WeaveEmitter.containsWeave(rootBody) else {
-            return lowerBody(rootBody, constants: constants) + [.controlCommand("done")]
+            return lowerBody(rootBody, constants: constants, keyPrefix: [], named: &named)
+                + [.controlCommand("done")]
         }
-        let weave = try WeaveEmitter.lower(rootBody) { lowerBody($0, constants: constants) }
+        // Weave choice/gather bodies in the supported set do not themselves open
+        // block conditionals (S3 scope), so they lower with a private collector.
+        let weave = try WeaveEmitter.lower(rootBody) { statements in
+            var weaveNamed: [String: ContainerNode] = [:]
+            return lowerBody(statements, constants: constants, keyPrefix: [], named: &weaveNamed)
+        }
         for (key, container) in weave.named {
             named[key] = container
         }
@@ -136,6 +142,8 @@ enum RuntimeObjectEmitter {
         switch expression {
         case .intLiteral(let value):
             return [.intValue(value)]
+        case .boolLiteral(let value):
+            return [.boolValue(value)]
         case .floatLiteral(let value):
             return [.floatValue(value)]
         case .stringLiteral(let value):
@@ -244,35 +252,122 @@ enum RuntimeObjectEmitter {
     private static func emitKnot(_ knot: KnotGroup, constants: [String: InkExpression]) -> ContainerNode {
         var named: [String: ContainerNode] = [:]
         for stitch in knot.stitches {
+            var stitchNamed: [String: ContainerNode] = [:]
+            let children = lowerBody(
+                stitch.body, constants: constants,
+                keyPrefix: [knot.name, stitch.name], named: &stitchNamed
+            )
             named[stitch.name] = ContainerNode(
-                children: lowerBody(stitch.body, constants: constants),
-                namedContent: [:],
-                flags: 0,
-                name: stitch.name
+                children: children, namedContent: stitchNamed, flags: 0, name: stitch.name
             )
         }
-        return ContainerNode(
-            children: lowerBody(knot.body, constants: constants),
-            namedContent: named,
-            flags: 0,
-            name: knot.name
+        var knotNamed = named
+        let children = lowerBody(
+            knot.body, constants: constants, keyPrefix: [knot.name], named: &knotNamed
         )
+        return ContainerNode(children: children, namedContent: knotNamed, flags: 0, name: knot.name)
     }
 
     /// Lower an ordered statement body into runtime nodes. A text line directly
     /// followed by glue keeps its trailing space so the runtime joins segments
-    /// exactly as the oracle does (the parser trims the space off the text).
+    /// exactly as the oracle does (the parser trims the space off the text). When
+    /// a block/switch conditional is reached, its branch and continuation
+    /// containers are registered under `keyPrefix` in `named` and the remaining
+    /// statements fold into the continuation (the conditional always diverts).
     private static func lowerBody(
         _ statements: [InkStatement],
-        constants: [String: InkExpression]
+        constants: [String: InkExpression],
+        keyPrefix: [String],
+        named: inout [String: ContainerNode]
     ) -> [NodeKind] {
         var children: [NodeKind] = []
         for (offset, statement) in statements.enumerated() {
+            let rest = Array(statements[(offset + 1)...])
+            if case .conditionalBlock(let subject, let isSwitch, let branches) = statement.kind {
+                children.append(contentsOf: ConditionalEmitter.lower(
+                    subject: subject, isSwitch: isSwitch, branches: branches,
+                    continuation: rest, keyPrefix: keyPrefix, named: &named,
+                    lowerBranch: branchLowerer(constants: constants),
+                    lowerExpression: { lowerExpression($0, constants: constants) }
+                ))
+                return children
+            }
+            if case .content(let segments) = statement.kind,
+               let inlineIndex = segments.firstIndex(where: isConditionalSegment) {
+                children.append(contentsOf: lowerInlineConditionalLine(
+                    segments, conditionalIndex: inlineIndex, restOfBody: rest,
+                    constants: constants, keyPrefix: keyPrefix, named: &named
+                ))
+                return children
+            }
             let nextIsGlue = isGlue(statements, at: offset + 1)
-            children.append(contentsOf: lower(statement, gluedToNext: nextIsGlue, constants: constants))
+            children.append(contentsOf: lower(
+                statement, gluedToNext: nextIsGlue, constants: constants
+            ))
         }
         return children
     }
+
+    /// A reusable branch-lowering closure for the conditional emitter: lowers an
+    /// arm body under its own qualified key-prefix into a private named collector.
+    private static func branchLowerer(
+        constants: [String: InkExpression]
+    ) -> (_ body: [InkStatement], _ prefix: [String], _ named: inout [String: ContainerNode]) -> [NodeKind] {
+        return { body, prefix, collected in
+            lowerBody(body, constants: constants, keyPrefix: prefix, named: &collected)
+        }
+    }
+
+    private static func isConditionalSegment(_ segment: ContentSegment) -> Bool {
+        if case .conditional = segment { return true }
+        return false
+    }
+
+    /// Lower a content line carrying an inline conditional `{ c: a|b }`. Segments
+    /// before it render first; the conditional selects branch text via the
+    /// runtime conditional-divert pathway; the branches rejoin a continuation
+    /// container holding the line's trailing segments (newline + any tag) and the
+    /// rest of the enclosing body.
+    private static func lowerInlineConditionalLine(
+        _ segments: [ContentSegment],
+        conditionalIndex: Int,
+        restOfBody: [InkStatement],
+        constants: [String: InkExpression],
+        keyPrefix: [String],
+        named: inout [String: ContainerNode]
+    ) -> [NodeKind] {
+        guard case .conditional(let condition, let ifTrue, let ifFalse) = segments[conditionalIndex] else {
+            return []
+        }
+        let prefixSegments = Array(segments[..<conditionalIndex])
+        let suffixSegments = Array(segments[(conditionalIndex + 1)...])
+        var children = lowerContentSegments(prefixSegments, constants: constants)
+
+        let continuation = inlineContinuationStatements(suffixSegments, restOfBody: restOfBody)
+
+        children.append(contentsOf: ConditionalEmitter.lowerInline(
+            condition: condition, trueText: ifTrue, falseText: ifFalse,
+            continuation: continuation, keyPrefix: keyPrefix, named: &named,
+            lowerBranch: branchLowerer(constants: constants),
+            lowerExpression: { lowerExpression($0, constants: constants) }
+        ))
+        return children
+    }
+
+    /// Build the continuation statements for an inline conditional: the line's
+    /// trailing segments become a content statement (so the line's newline and any
+    /// tag are emitted after the chosen branch), followed by the rest of the body.
+    private static func inlineContinuationStatements(
+        _ suffixSegments: [ContentSegment],
+        restOfBody: [InkStatement]
+    ) -> [InkStatement] {
+        var continuation: [InkStatement] = []
+        continuation.append(InkStatement(kind: .content(suffixSegments), position: zeroPosition))
+        continuation.append(contentsOf: restOfBody)
+        return continuation
+    }
+
+    private static let zeroPosition = SourcePosition(line: 0, column: 0)
 
     private static func lower(
         _ statement: InkStatement,
@@ -306,12 +401,29 @@ enum RuntimeObjectEmitter {
             // Weave lines are resolved by the WeaveEmitter before reaching the
             // flat statement lowerer; they never lower individually here.
             return []
+        case .conditionalBlock:
+            // Block/switch conditionals are resolved by lowerBody (which threads
+            // the named-content collector + key-prefix); they never lower here.
+            return []
         }
     }
 
     /// Lower a content line: literal segments emit text, expression segments emit
-    /// an `ev`/`out`/`/ev` print group. A trailing newline ends the rendered line.
+    /// an `ev`/`out`/`/ev` print group, tag segments emit a tag node. A trailing
+    /// newline ends the rendered line. (Inline conditionals are routed through
+    /// `lowerInlineConditionalLine` before reaching here.)
     private static func lowerContent(
+        _ segments: [ContentSegment],
+        constants: [String: InkExpression]
+    ) -> [NodeKind] {
+        var nodes = lowerContentSegments(segments, constants: constants)
+        nodes.append(.newline)
+        return nodes
+    }
+
+    /// Lower content segments WITHOUT the trailing newline: literal/expression/tag
+    /// segments only. Shared by `lowerContent` and the inline-conditional path.
+    private static func lowerContentSegments(
         _ segments: [ContentSegment],
         constants: [String: InkExpression]
     ) -> [NodeKind] {
@@ -322,9 +434,13 @@ enum RuntimeObjectEmitter {
                 nodes.append(.text(text))
             case .expression(let expression):
                 nodes.append(contentsOf: lowerInlineExpression(expression, constants: constants))
+            case .tag(let tag):
+                nodes.append(contentsOf: [.tagOpen, .text(tag), .tagClose])
+            case .conditional:
+                // Inline conditionals are handled by lowerInlineConditionalLine.
+                break
             }
         }
-        nodes.append(.newline)
         return nodes
     }
 

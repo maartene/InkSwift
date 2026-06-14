@@ -18,13 +18,20 @@ public struct SourcePosition: Equatable {
     }
 }
 
-/// A segment of a content line: either literal text or an inline-printed
-/// expression `{ <expr> }` whose evaluated value is rendered in place.
+/// A segment of a content line: literal text, an inline-printed expression
+/// `{ <expr> }`, an inline conditional `{ cond: a|b }`, or a tag `#tag`.
 public enum ContentSegment: Equatable {
     /// Literal text rendered verbatim.
     case literal(String)
     /// An inline-printed expression, e.g. `{name}` or `{2 + 3 * 4}`.
     case expression(InkExpression)
+    /// An inline conditional `{ cond: <true-text>|<false-text> }`. The branch
+    /// texts are raw content rendered when the condition is truthy/falsy. A
+    /// missing `|` (i.e. `{ cond: text }`) yields an empty false branch.
+    case conditional(condition: InkExpression, ifTrue: String, ifFalse: String)
+    /// A tag `#tag` attached to the line. The runtime surfaces it as a tag, not
+    /// as output text.
+    case tag(String)
 }
 
 /// The kind of a parsed Ink statement. Each construct the S1 core flow needs is
@@ -66,6 +73,30 @@ public enum InkStatementKind: Equatable {
     /// `level` is the gather depth (number of leading `-` markers). `label`
     /// is the optional `(name)` gather label. `outcome` is the gather's text.
     case gather(level: Int, label: String?, outcome: String)
+    /// A multi-line block / switch conditional:
+    ///   block:  `{ cond: ... - else: ... }`
+    ///   switch: `{ value: - 1: ... - 2: ... - else: ... }`
+    /// `subject` is the leading expression — for a block it is the boolean
+    /// condition itself; for a switch it is the value compared against each
+    /// case label with `==`. `branches` are the ordered arms; an arm whose
+    /// `match` is `nil` is the `else` (default) arm. `isSwitch` records whether
+    /// the subject is compared against each branch's `match` (switch) or whether
+    /// the subject IS the guard and branches carry their own guards (block).
+    case conditionalBlock(subject: InkExpression, isSwitch: Bool, branches: [ConditionalBranch])
+}
+
+/// One arm of a block/switch conditional. `match` is the case guard: for a
+/// switch it is the value the subject is compared against (`- 1: ...`); for a
+/// block-with-guards it is the arm's own boolean condition; `nil` marks the
+/// `else` arm. `body` is the arm's content, parsed as ordinary statements.
+public struct ConditionalBranch: Equatable {
+    public let match: InkExpression?
+    public let body: [InkStatement]
+
+    public init(match: InkExpression?, body: [InkStatement]) {
+        self.match = match
+        self.body = body
+    }
 }
 
 /// A typed arithmetic expression node (DDD-5). Produced by the Pratt
@@ -73,6 +104,9 @@ public enum InkStatementKind: Equatable {
 public indirect enum InkExpression: Equatable {
     /// An integer literal operand, e.g. `4`.
     case intLiteral(Int)
+    /// A boolean literal operand, `true` / `false`. Used for the implicit
+    /// true-guard of a `{ cond: ... }` block with no explicit arms.
+    case boolLiteral(Bool)
     /// A floating-point literal operand, e.g. `1.5`.
     case floatLiteral(Double)
     /// A string literal operand, e.g. `"Ada"`.
