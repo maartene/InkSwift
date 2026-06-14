@@ -38,6 +38,11 @@ journeys:
     feature: "native-ink-compiler"
     created: "2026-06-14"
     description: "Developer compiles a .ink source in-process (no external inklecate) into a story the SwiftInkRuntime Story plays directly; unsupported features fail loud with a located error; output matches the inklecate oracle."
+    extensions:
+      - feature: "compiler-variable-text"
+        added: "2026-06-14"
+        path: "Author uses a deterministic variable-text form — sequence {a|b|c}, cycle {&a|b}, or once-only {!a|b} / {|x|} — and it now compiles in-process (previously rejected) into a runnable story that plays the form oracle-identically (advance + clamp / wrap / stop-at-last). Closes the compiler/runtime parity gap with zero runtime changes; re-enables the descoped TheIntercept.ink native-compile e2e test. Shuffle {~a|b} still fails loud with a located error."
+        shared_artifact: "visit-count-switch blueprint shape — the lowered target all three forms compile into; single source: the compiler's lowering/codegen pass (the runtime only consumes it)."
 
 mental_model:
   - "GWT test structure: Given (set state) / When (execute) / Then (assert)"

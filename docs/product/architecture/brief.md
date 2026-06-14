@@ -650,6 +650,7 @@ The component responsibility annotations are updated:
 | [ADR-003](./adr-003-state-serialization.md) | State Serialization: Codable Format, No inkjs Compatibility | Accepted |
 | [ADR-004](./adr-004-callreturn-mechanism.md) | Call/Return Mechanism: Return Address Stack in StoryState | Accepted |
 | [ADR-005](./adr-005-moveto-knot-jump-strategy.md) | moveToKnot Jump Strategy: Reset and Stack Installation | Accepted |
+| [ADR-010](./adr-010-variable-text-lowering.md) | Variable-Text Lowering (sequence / cycle / once-only) | Accepted |
 
 ---
 
@@ -1118,6 +1119,7 @@ violation blocks the build. Supplementary to Swift access control (R2).
 | [ADR-007](./adr-007-parser-strategy.md) | Parser Strategy: Hand-Rolled Combinator Port | Accepted |
 | [ADR-008](./adr-008-weave-resolution-spike-gate.md) | Weave-Resolution Spike Gate | Accepted |
 | [ADR-009](./adr-009-error-model.md) | Error Model: Single-Error-Then-Stop, Located | Accepted |
+| [ADR-010](./adr-010-variable-text-lowering.md) | Variable-Text Lowering (sequence / cycle / once-only) | Accepted |
 
 #### C4 Level 1 — System Context (compiler delta)
 
@@ -1166,3 +1168,173 @@ C4Container
   Rel(siretests, inkswift, "Compares output against as oracle")
   Rel(inklecate, siretests, "Provides reference .ink.json fixtures to, offline")
 ```
+
+---
+
+### compiler-variable-text (Feature Addition)
+
+This subsection records the concrete architectural decisions for the
+`compiler-variable-text` feature: a **variable-text lowering pass** added to the
+already-delivered native compiler (ADR-006/007/008/009) that compiles Ink's three
+**deterministic** variable-text forms — sequence `{a|b|c}` (matrix row 25), cycle
+`{&a|b}` (26), once-only `{!a|b}` / bare `{|x|}` (27) — moving them MUST-REJECT →
+MUST-COMPILE. Shuffle `{~a|b}` (row 28) stays rejected (needs `RANDOM`). This closes the
+documented compiler↔runtime parity gap and re-enables the descoped `TheIntercept.ink`
+native-compile e2e test, with **zero runtime/engine changes** (KPI #4, D8).
+
+One new source file is introduced (`Compiler/Codegen/VariableTextEmitter.swift`) plus one
+new `ContentSegment` AST case and a parser rule. All other changes are EXTEND/REUSE.
+See ADR-010.
+
+#### Lowering decisions (ground truth — verified against inklecate)
+
+All three forms lower to an anonymous dispatch container flagged `#f:5`
+(`Visits | CountStartOnly` → `visit` reports the 0-based own-entry read count: 0 on first
+play). The dispatch computes the stage index and conditionally diverts to one named stage
+container per stage; each stage `pop`s the duplicated index, emits its text (if any), then
+diverts to a shared `-end` continuation. The forms differ **only** in three parameters:
+
+| Form | OP | BOUND | append empty stage? | stages emitted |
+|---|---|---|---|---|
+| sequence `{a\|b\|c}` (S stages) | `MIN` | `S − 1` (last index) → **clamp** | no | S |
+| cycle `{&a\|b}` (S stages) | `%` | `S` (stage count) → **wrap** via modulo | no | S |
+| once-only `{!a\|b}` (S source stages) | `MIN` | `S` (new last index) → **blank** | **yes (1)** | S + 1 |
+| bare `{\|x\|}` — a plain **sequence**; `\|`-split → `["", "x", ""]` | `MIN` | `S − 1` | no | S (= 3) |
+
+So **once = sequence + one appended empty final stage**, and **bare `{|x|}` is not
+special**. An empty stage holds `pop` + divert and **no `^text`** node. One parametrized
+routine over `(op, bound, appendEmptyStage)` serves all three (ADR-010, Decision VT-2).
+
+**Engine ops already implemented (evidence the lowering needs no runtime change):**
+`visit` (`Engine/TreeWalker.swift:180`, 0-based own read count — matches inklecate), `du`
+(`:144`), `MIN`/`MAX` (`:287`), `%` (`:274`), `nop` (`:166`), plus `pop`/`ev`/`/ev`
+(control commands `Decoder/InkDecoder.swift:8`), `==`, conditional diverts (`"c":true`),
+the `#f` visit-count flag, and named containers — all proven by `ConditionalEmitter`.
+
+#### Gate change — `UnsupportedConstructDetector`
+
+`UnsupportedConstructDetector.variableTextConstruct(of:)` is narrowed to reject **only**
+shuffle (the `~` marker): sequence (no marker), cycle (`&`), and once (`!`) now return
+`nil` and pass through to the parser. The inline-conditional discriminator (a top-level
+`:` routes `{cond: a|b}` to `ConditionalEmitter`) is **preserved unchanged**, so supported
+conditionals are never mis-routed. Shuffle still throws a located, construct-named
+`.unsupportedConstruct` error — regression-guarded in every slice.
+
+#### Reuse Analysis
+
+**CREATE NEW = 3** (the new emitter, the AST case + mode enum, the parse rule).
+**EXTEND = 3.** **REUSE AS-IS = 7.** Every runtime integration point is REUSE/EXTEND.
+
+**Contract shape (principle 12)**: `VariableTextEmitter` is a **pure-function
+(return-only)** component — type `(...) -> [NodeKind]`, registering stage/end containers
+via an `inout named` collector (aggregate-bounded, the identical universe
+`ConditionalEmitter` honours), with **no I/O and no global side effect** (a silent-write
+god-object bug is structurally non-representable). `lowerBody`/`branchLowerer` are
+**bounded-change** (declared mutation set: local `children` + `inout named`). The
+detector and parse rule are **pure-function**; `ContentSegment`/`NodeKind`/`ContainerNode`
+are **immutable value types**. The assertion mechanism for every behavioural component is
+the **oracle Level-1 execution-equivalence** suite.
+
+| Component | File | Overlap | Decision | Justification (contract shape) |
+|---|---|---|---|---|
+| `VariableTextEmitter` | `Compiler/Codegen/VariableTextEmitter.swift` | No prior variable-text lowering exists | **CREATE NEW** | New concern (visit-index dispatch, distinct from boolean-guard conditionals). Stateless `enum`; **pure-function (return-only)** contract returning `[NodeKind]` + registering containers into an `inout named` collector (aggregate-bounded, same universe as `ConditionalEmitter`); no I/O. |
+| `ContentSegment` + `VariableTextMode` | `Compiler/AST/CompilerAST.swift` | +1 enum case, +1 small enum | **CREATE NEW** (case) | A `.variableText(mode:stages:)` case parallel to `.conditional`; no existing case fits. Compiler exhaustiveness forces all `switch` sites to handle it. |
+| variable-text parse rule | `Compiler/Parser/InkParser*.swift` | +1 content-segment rule | **CREATE NEW** (rule) | New syntax recognition (top-level `\|`, no top-level `:`, leading marker → mode; `\|`-split into stages). The host file is EXTENDed. |
+| `RuntimeObjectEmitter` | `Compiler/Codegen/RuntimeObjectEmitter.swift` | `lowerBody` `.conditional` dispatch | **EXTEND** | One additive `.variableText` branch parallel to the proven `.conditional` branch; reuses `branchLowerer`, `inlineContinuationStatements`, and the `-end` rejoin contract. |
+| `UnsupportedConstructDetector` | `Compiler/Parser/UnsupportedConstructDetector.swift` | `variableTextConstruct(of:)` reject scan | **EXTEND** (gate) | Narrow reject set to shuffle only; keep the `~` path and the conditional `:` discriminator; shuffle regression guard. |
+| `ConditionalEmitter` | `Compiler/Codegen/ConditionalEmitter.swift` | Boundary pattern (named containers + `-end` rejoin) | **REUSE AS-IS** (template) | Not modified; the new emitter mirrors its `BranchLowerer`/`ExpressionLowerer` typealiases and `nextOrdinal`/`key`/`path` style — copied pattern, not shared code. |
+| `ContainerNode` | `Decoder/ContainerNode.swift` | Codegen output; `flags` carries `#f:5` | **REUSE AS-IS** | Stage/dispatch containers are `ContainerNode`s; `flags: 5` sets the visit-count flag. |
+| `NodeKind` | `Decoder/NodeKind.swift` | `.controlCommand`, `.nativeFunction`, `.divert(…,isConditional:)`, `.text` | **REUSE AS-IS** | All emitted instructions are existing cases — **no new `NodeKind` case** (unlike Tier-3). |
+| `branchLowerer` / `lowerBody` recursion | `Compiler/Codegen/RuntimeObjectEmitter.swift` | Lowering a stage / continuation body | **REUSE AS-IS** | Stages and the `-end` continuation lower via the same `branchLowerer` closure the conditional path uses. |
+| `visit`/`du`/`MIN`/`%`/`nop`/`pop` ops | `Engine/TreeWalker.swift` (180/144/287/274/166/149) | Runtime execution of the dispatch | **REUSE AS-IS** | All implemented and oracle-proven — evidence for zero runtime change. |
+| `==` + conditional divert | `Engine/InkEngine.swift` / `Decoder/InkDecoder.swift` | Stage selection | **REUSE AS-IS** | Same pathway `ConditionalEmitter` lowers onto. |
+| Oracle harness + corpus | `Tests/SwiftInkRuntimeTests/Acceptance/` + fixtures | Correctness gate | **REUSE / EXTEND** | Hermetic Level-1 execution-equivalence; add per-form + boundary + shuffle-reject fixtures (DISTILL/DELIVER). |
+| `TheIntercept.ink` + committed oracle | `Tests/SwiftInkRuntimeTests/` | US-04 e2e | **REUSE** | Re-enable the descoped native-compile e2e once line 86 compiles. |
+
+#### Component responsibility annotations (updated)
+
+- **VariableTextEmitter (NEW, `Compiler/Codegen/`)**: stateless `enum`; one parametrized
+  routine lowering sequence/cycle/once to the `visit`/`du`/`==`/conditional-divert
+  dispatch with named `seq{N}-s{I}` stage containers + `seq{N}-end` rejoin; stamps `#f:5`.
+- **RuntimeObjectEmitter**: `lowerBody` gains a `.variableText` dispatch branch (parallel
+  to `.conditional`), invoking `VariableTextEmitter` and threading line-suffix + rest-of-body
+  as the continuation.
+- **CompilerAST**: `ContentSegment` gains `.variableText(mode:stages:)`; new
+  `VariableTextMode { sequence, cycle, once }`.
+- **InkParser**: gains the variable-text content-segment rule (marker + top-level `|`-split).
+- **UnsupportedConstructDetector**: rejects shuffle only; sequence/cycle/once pass through.
+- **Engine / Decoder / Facade / NodeKind / ContainerNode**: **unchanged** (REUSE AS-IS).
+
+#### Module Folder Layout (addition)
+
+```
+Sources/
+  SwiftInkRuntime/
+    Compiler/
+      Codegen/
+        VariableTextEmitter.swift   ← NEW (ADR-010): parametrized sequence/cycle/once
+                                       lowering; #f:5 visit-switch; seq{N}-s{I}/seq{N}-end
+      AST/
+        CompilerAST.swift           ← EXTEND: ContentSegment.variableText + VariableTextMode
+      Parser/
+        InkParser*.swift            ← EXTEND: variable-text content-segment parse rule
+        UnsupportedConstructDetector.swift ← EXTEND: reject shuffle only (gate change)
+```
+
+No `Package.swift` change; no new dependency; no new driving/driven port; no new
+`NodeKind` case.
+
+#### C4 Component Diagram — Compiler subsystem (with VariableTextEmitter)
+
+Extends the native-ink-compiler L3 diagram with the new emitter and its `lowerBody`
+invocation, parallel to `ConditionalEmitter`/`WeaveEmitter`.
+
+```mermaid
+C4Component
+  title Component Diagram — Compiler subsystem with VariableTextEmitter (inside SwiftInkRuntime)
+
+  Container_Boundary(comp, "SwiftInkRuntime :: Compiler/ layer") {
+    Component(entry, "InkCompiler", "Compiler/", "Driving port. compile(source:) -> StoryBlueprint, or throws CompileError.")
+    Component(parser, "InkParser + StringParser", "Compiler/Parser/", "Recursive-descent + Pratt. NEW: variable-text content-segment rule (marker + top-level |-split).")
+    Component(detector, "UnsupportedConstructDetector", "Compiler/Parser/", "Reject-list. GATE CHANGE: rejects ONLY shuffle (~); sequence/cycle/once pass through. Conditional : discriminator preserved.")
+    Component(ast, "CompilerAST", "Compiler/AST/", "Typed Ink AST. NEW: ContentSegment.variableText(mode:stages:) + VariableTextMode.")
+    Component(codegen, "RuntimeObjectEmitter", "Compiler/Codegen/", "AST -> ContainerNode/NodeKind. EXTEND: lowerBody dispatches .variableText to VariableTextEmitter.")
+    Component(condemit, "ConditionalEmitter", "Compiler/Codegen/", "Boundary template: named branch containers + -end rejoin. REUSED pattern.")
+    Component(vartext, "VariableTextEmitter", "Compiler/Codegen/", "NEW (ADR-010). One parametrized routine (op, bound, appendEmptyStage). visit/du/==/conditional-divert dispatch; seq{N}-s{I} stages + seq{N}-end; #f:5.")
+    Component(err, "CompileError + reporter", "Compiler/Error/", "Single located, construct-named error.")
+  }
+
+  Container_Boundary(rt, "SwiftInkRuntime :: existing layers (UNCHANGED)") {
+    Component(nodes, "ContainerNode / NodeKind", "Decoder/", "Internal node tree — REUSED as codegen output. No new NodeKind case. R2: stays internal.")
+    Component(walker, "TreeWalker", "Engine/", "Executes visit/du/MIN/%/nop/pop/==/conditional-divert — already implemented. Zero change.")
+    Component(blueprint, "StoryBlueprint", "Facade/", "internal init(root:) — no-JSON path. Unchanged.")
+  }
+
+  Rel(parser, detector, "Screens lines via (shuffle-only reject)")
+  Rel(parser, ast, "Builds .variableText segments in")
+  Rel(ast, codegen, "Lowered by")
+  Rel(codegen, vartext, "Dispatches .variableText to")
+  Rel(codegen, condemit, "Dispatches conditionals to")
+  Rel(vartext, condemit, "Mirrors named-container + -end rejoin pattern of")
+  Rel(vartext, nodes, "Emits tree of (no new NodeKind case)")
+  Rel(nodes, walker, "Executed at runtime by (unchanged)")
+  Rel(codegen, blueprint, "Wraps root into")
+  Rel(parser, err, "Reports located errors via")
+```
+
+#### External Integrations
+
+None. No network, no third-party service, no runtime external API. inklecate remains a
+test-only oracle. Contract testing is not applicable.
+
+#### Architectural Enforcement
+
+Existing SwiftLint `custom_rules` R1/R3/R5 gates + Swift access control (R2) cover this
+feature with no change. `VariableTextEmitter` lives in `Compiler/Codegen/`, constructs
+`Decoder/` node types, imports no `Engine/` type, and calls no `JSONSerialization` (R5).
+
+#### ADR
+
+| ADR | Title | Status |
+|-----|-------|--------|
+| [ADR-010](./adr-010-variable-text-lowering.md) | Variable-Text Lowering (sequence / cycle / once-only) | Accepted |
