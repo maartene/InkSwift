@@ -886,6 +886,249 @@ Updated component responsibility annotations (L3 — Story facade):
 
 The existing enforcement rules (R1, R2, R3, SwiftLint) cover this feature without change. An additional SwiftLint rule is recommended:
 
-**R4 — setVisitCount must not appear in Sources/SwiftInkRuntime/**: A `custom_rules` regex in `.swiftlint.yml` that matches `setVisitCount` in any file under `Sources/SwiftInkRuntime/` and raises an error. This guards against accidental back-migration of the test-only method into the production module.
+**R4 — `setVisitCount` must not appear in the public `Story` facade (`Sources/SwiftInkRuntime/Facade/`)**: A `custom_rules` regex in `.swiftlint.yml` that matches `setVisitCount` under `Sources/SwiftInkRuntime/Facade/` and raises an error. The *internal* `InkEngine.setVisitCount` accessor in `Engine/` is intentional (ST-04 Option C — the test-support extension calls it via `@testable import`); only the *public* `Story.setVisitCount` extension is constrained, and it lives solely in the `SwiftInkRuntimeTestSupport` target. This guards against `setVisitCount` being surfaced on the production public API (the `Story` facade) instead of via the opt-in test-support target.
+
+> **Correction (native-ink-compiler DEVOPS wave, 2026-06-14)**: R4 was originally
+> scoped to "any file under `Sources/SwiftInkRuntime/`", which incorrectly banned the
+> intended internal `InkEngine.setVisitCount` accessor (`Engine/InkEngine.swift`). The
+> shipped code is correct per ST-04 Option C; the rule text was too broad and is
+> re-scoped here to the public `Facade/` surface, which is what the rule was always
+> meant to protect.
 
 The module-system boundary (Option C: separate target) is the primary enforcement. R4 is supplementary.
+
+---
+
+### native-ink-compiler (Feature Addition)
+
+This subsection records the concrete architectural decisions for the
+`native-ink-compiler` feature: a native, in-process Swift compiler that converts
+`.ink` source into a runnable story the existing `SwiftInkRuntime` plays —
+eliminating the external `inklecate` (C#) binary from the build. Scope is
+deliberately bounded to the runtime's supported set (Feature Coverage Matrix rows
+1-35); unsupported constructs (rows 25-28, 36-39) are rejected with a clear,
+located error, never compiled silently.
+
+**Decision style note**: ADRs 006-009 are **PROPOSED** pending project-owner
+confirmation of four forks. The decisions below reflect the **recommended** options.
+
+#### Module Placement and the Output-Contract Fork (ADR-006)
+
+The compiler is co-located as a new **`Compiler/` layer inside the
+`SwiftInkRuntime` module** (ADR-006 Option A). Because it is inside the module, its
+codegen constructs the internal `ContainerNode`/`NodeKind` tree **directly** — the
+same tree the runtime already consumes from `InkDecoder` — and a new **internal**
+`StoryBlueprint(root: ContainerNode)` initializer delivers the no-JSON-round-trip
+primary path (D3). The public `StoryBlueprint(json:)` is untouched. **R2 is
+preserved**: `NodeKind`/`ContainerNode` stay internal; nothing is exported.
+Secondary Ink-JSON emission (D4) is an optional codegen sink that doubles as the
+Level-2 structural-oracle artifact. The frozen `InkSwift` module is untouched (D8).
+
+Two alternatives were rejected: a separate compiler module reaching node types via
+`@_spi`/`package` (pierces R2's encapsulation, relies on an underscored feature),
+and a JSON-only path via `StoryBlueprint(json:)` (simplest, preserves all
+boundaries, but relegates D3 to "logically in-process" and inverts D3/D4 — retained
+as the documented fallback if the owner prefers boundary minimalism). See ADR-006.
+
+#### New Boundary Rule R5
+
+| Rule | Enforcement |
+|------|------------|
+| **R5 — Compiler layer isolation**: `Compiler/` may import the node types in `Decoder/` (it constructs `ContainerNode`/`NodeKind`). `Compiler/` may NOT import `Engine/` (no execution-state coupling) and may NOT call `JSONSerialization` (R3 still binds; the secondary JSON emitter writes strings via `JSONEncoder`/string building, not `JSONSerialization` parsing). `Decoder/`, `Engine/`, and `Facade/` may NOT import `Compiler/`, except the single facade compile entry point. | SwiftLint `custom_rules` path-scoped import/call-site regexes (per R1/R3 precedent); Swift access control. |
+
+R1, R2, R3, R4 are unchanged. R5 is the language-appropriate enforcement mandated for
+this style choice.
+
+#### Reuse Analysis
+
+| Existing Component | File | Overlap | Decision | Justification |
+|---|---|---|---|---|
+| `ContainerNode` | `Decoder/ContainerNode.swift` | Codegen target IS this tree | REUSE AS-IS | Codegen constructs it directly; runtime consumes compiler output via the identical type it consumes from `InkDecoder`. |
+| `NodeKind` | `Decoder/NodeKind.swift` | Every emitted runtime instruction | REUSE AS-IS | Supported set (rows 1-35) maps onto existing cases; R2 preserved by co-location. |
+| `StoryBlueprint` | `Facade/StoryBlueprint.swift` | Construction contract | EXTEND | +1 internal `init(root:)` for the no-JSON D3 path; public `init(json:)` untouched. |
+| `Story` | `Facade/Story.swift` | Public construction + facade | EXTEND | + public compile entry; follows the `init(json:)`/delegation pattern. |
+| `InkDecoder` | `Decoder/InkDecoder.swift` | "Structured data → node tree" stage | REUSE AS-IS | Decoder is JSON→tree; codegen is AST→tree producing the same `ContainerNode`. Converge on one consumer. Becomes primary consumer unchanged if owner overrides to ADR-006 Option C. |
+| `InkDecoder.probe()` | `Decoder/InkDecoder.swift` | Earned-Trust startup probe | EXTEND (pattern) | Compiler source/INCLUDE adapter gets its own `probe()` (principle 13). |
+| Oracle test harness | `Tests/SwiftInkRuntimeTests/Acceptance/Milestone5b_*.swift` et al. | inklecate/JS-bridge oracle; committed fixtures; macOS-gated `InkSwift` import; REGEN gate | REUSE / EXTEND | Existing pattern is the compiler oracle harness; add `.ink` corpus + execution-equivalence comparator only. |
+| `.ink`/`.ink.json` fixtures, `TheIntercept.ink` | `Tests/SwiftInkRuntimeTests/` | Test corpus | REUSE / EXTEND | The Intercept = comprehensive supported-ceiling oracle; add per-slice + reject fixtures. |
+| `ChoiceFlags` | `Decoder/NodeKind.swift` | Choice-flag bitfield (row 10, D6) | REUSE AS-IS | Codegen emits the same flag semantics the runtime reads. |
+
+**CREATE NEW** (genuinely new responsibilities — no compilation stage exists today;
+extending is impossible): `CommentEliminator`, combinator core + `InkParser`, parsed
+AST node types (distinct from the *runtime* `ContainerNode` — carries source
+positions + unresolved symbolic paths + weave structure), `WeaveResolver`
+(spike-gated), `RuntimeObjectEmitter` (codegen), `CompileError` + reporter, optional
+`JSONEmitter`, `SourceReader` IO adapter, `InkCompiler` entry. All confined to
+`Compiler/`. Zero unjustified CREATE NEW — every runtime integration point is REUSE
+or minimal EXTEND.
+
+#### Decisions (recommended; ADR-backed)
+
+| # | Decision | ADR |
+|---|---|---|
+| C-1 | Co-locate `Compiler/` in `SwiftInkRuntime`; internal `StoryBlueprint(root:)`; D3 no-JSON path. | ADR-006 |
+| C-2 | Hand-rolled recursive-descent/combinator parser (no new dependency); Pratt expressions. | ADR-007 |
+| C-3 | Weave-resolution spike gates the S3 slice plan (oracle line/choice identity on flat/nested/labeled/sealed corpus). | ADR-008 |
+| C-4 | Single-error-then-stop, located, construct-named errors; reject-list independent of codegen, lands with S1. | ADR-009 |
+| C-5 | D6 compile-time obligations (CONST inlining; choice-flag/invisible-default encoding) live in codegen; validated by S2/S3 oracle. | D6/ADR-008 |
+| C-6 | Secondary Ink-JSON emit (D4) is an optional codegen sink (`JSONEncoder`/string, not `JSONSerialization`); doubles as Level-2 oracle artifact. | ADR-006 |
+| C-7 | Swift tools 5.6 → 5.8+ when the compiler target lands (reconcile Package.swift with brief). | — |
+
+#### Module Folder Layout (additions)
+
+```
+Sources/
+  SwiftInkRuntime/
+    Compiler/                    ← NEW layer (ADR-006 Option A); R5-governed
+      Lexer/CommentEliminator.swift
+      Parser/StringParser.swift  ← combinator core (no JSONSerialization — R5)
+      Parser/InkParser*.swift    ← statement rules + Pratt expressions
+      AST/                       ← parsed Ink AST (positions, unresolved paths, weave)
+      Codegen/WeaveResolver.swift       ← spike-gated (ADR-008)
+      Codegen/RuntimeObjectEmitter.swift ← AST → ContainerNode/NodeKind; D6 obligations
+      Codegen/JSONEmitter.swift  ← optional secondary JSON sink (D4)
+      Error/CompileError.swift   ← located, construct-named (ADR-009)
+      IO/SourceReader.swift      ← source/INCLUDE read + probe() (Earned Trust)
+      InkCompiler.swift          ← driving port: compile(source:) -> StoryBlueprint
+    Facade/
+      StoryBlueprint.swift       ← EXTEND: + internal init(root:)
+      Story.swift                ← EXTEND: + public compile entry
+```
+
+When the `Compiler/` target lands, `Package.swift` `swift-tools-version` is raised
+from **5.6 to 5.8** to reconcile the manifest with this brief's stated 5.8+ baseline
+(DDD-11 / C-7). No new product dependency is added.
+
+#### C4 Component Diagram — Compiler subsystem
+
+The compiler is complex enough (8+ internal components) to warrant a Level-3 diagram.
+
+```mermaid
+C4Component
+  title Component Diagram — Compiler subsystem (inside SwiftInkRuntime)
+
+  Container_Boundary(comp, "SwiftInkRuntime :: Compiler/ layer") {
+    Component(entry, "InkCompiler", "Compiler/", "Driving port. compile(source:) -> StoryBlueprint, or throws CompileError. emitJSON(source:) secondary.")
+    Component(io, "SourceReader", "Compiler/IO/", "Driven adapter: reads .ink source + INCLUDE files. probe() verifies readable root (Earned Trust).")
+    Component(comment, "CommentEliminator", "Compiler/Lexer/", "Strips // and /* */ comments, string-aware.")
+    Component(parser, "InkParser + StringParser core", "Compiler/Parser/", "Hand-rolled recursive-descent/combinator + Pratt expressions. Tracks line/col.")
+    Component(ast, "Parsed AST", "Compiler/AST/", "Typed Ink AST: source positions, unresolved symbolic paths, weave structure.")
+    Component(weave, "WeaveResolver", "Compiler/Codegen/", "Indentation->hierarchy; loose-end propagation; gather stitching; sealed/open. Spike-gated.")
+    Component(codegen, "RuntimeObjectEmitter", "Compiler/Codegen/", "AST -> ContainerNode/NodeKind. CONST inlining + choice-flag/invisible-default encoding (D6). Reference resolution + flattening.")
+    Component(jsonemit, "JSONEmitter", "Compiler/Codegen/", "Optional Ink-JSON string sink (D4); Level-2 oracle artifact.")
+    Component(err, "CompileError + reporter", "Compiler/Error/", "Single located, construct-named error; reject-list for unsupported constructs.")
+  }
+
+  Container_Boundary(rt, "SwiftInkRuntime :: existing layers") {
+    Component(blueprint, "StoryBlueprint", "Facade/", "+ internal init(root: ContainerNode) — no-JSON D3 path.")
+    Component(nodes, "ContainerNode / NodeKind", "Decoder/", "Internal node tree — REUSED as codegen output. R2: stays internal.")
+    Component(story, "Story (Facade)", "Facade/", "+ public compile entry.")
+  }
+
+  System_Ext(inklecate, "inklecate (TEST-ONLY oracle)", "Offline fixture generation; not a production dependency")
+
+  Rel(entry, io, "Reads source through")
+  Rel(io, comment, "Feeds comment-stripped source to")
+  Rel(comment, parser, "Provides clean source to")
+  Rel(parser, ast, "Builds")
+  Rel(ast, weave, "Resolves weaves via")
+  Rel(weave, codegen, "Hands resolved hierarchy to")
+  Rel(ast, codegen, "Generates runtime objects via")
+  Rel(codegen, nodes, "Emits tree of")
+  Rel(codegen, blueprint, "Wraps root via internal init into")
+  Rel(entry, blueprint, "Returns")
+  Rel(entry, story, "Constructs runnable story (optionally) as")
+  Rel(codegen, jsonemit, "Optionally serialises through")
+  Rel(parser, err, "Reports located errors via")
+  Rel(codegen, err, "Reports unsupported constructs via")
+  Rel(inklecate, jsonemit, "Compared against in TEST only")
+```
+
+#### External Integrations
+
+None in production. inklecate is a **test-only** oracle (offline fixture
+generation + macOS `InkSwift` JS-bridge execution comparison), exactly as the
+existing `SwiftInkRuntime` oracle harness uses it. No network, no third-party
+service, no runtime external API. Contract testing is not applicable.
+
+#### Implementation Notes
+
+1. **Verify inklecate encoding before codegen** (mirrors the Tier-3 house rule):
+   compile each supported construct with inklecate and inspect the JSON before
+   finalising the `RuntimeObjectEmitter` output for that construct. Hand-crafted
+   expected trees are forbidden; the oracle is ground truth.
+2. **Weave first (ADR-008)**: do not commit S3 sizing until the weave spike passes
+   oracle line/choice identity on the flat/nested/labeled-gather/sealed corpus.
+3. **D6 obligations are oracle-guarded**: CONST inlining (S2) and choice-flag/
+   invisible-default encoding (S3) are codegen responsibilities whose omission
+   surfaces as an oracle failure — they cannot be silently skipped.
+4. **Fail-loud detection lands with S1** (DDD-8): the reject-list runs from the
+   first supported slice so unsupported input never silently mis-compiles during
+   S1-S5 development.
+5. **Reuse the existing oracle harness verbatim**: committed `.ink.json` fixtures,
+   `#if os(macOS) import InkSwift`, REGEN env-gate. No new harness architecture.
+
+#### Architectural Enforcement (R5)
+
+SwiftLint `custom_rules` adds an R5 import/call-site rule: no `import`/reference of
+`Engine/` types from `Compiler/`; no `JSONSerialization` in `Compiler/`; no
+`Compiler/` import from `Decoder/`/`Engine/` and from `Facade/` only at the single
+compile entry. Runs in the existing `lint` CI stage before `build`; a single
+violation blocks the build. Supplementary to Swift access control (R2).
+
+#### ADR Index additions
+
+| ADR | Title | Status |
+|-----|-------|--------|
+| [ADR-006](./adr-006-compiler-output-contract-and-module-placement.md) | Compiler Output Contract and Module Placement | Accepted |
+| [ADR-007](./adr-007-parser-strategy.md) | Parser Strategy: Hand-Rolled Combinator Port | Accepted |
+| [ADR-008](./adr-008-weave-resolution-spike-gate.md) | Weave-Resolution Spike Gate | Accepted |
+| [ADR-009](./adr-009-error-model.md) | Error Model: Single-Error-Then-Stop, Located | Accepted |
+
+#### C4 Level 1 — System Context (compiler delta)
+
+The native compiler removes `inklecate` from the build path; the Ink JSON file
+becomes an *optional* secondary artifact rather than a required input. inklecate is
+demoted to a test-only oracle.
+
+```mermaid
+C4Context
+  title System Context — InkSwift Package (native-ink-compiler delta)
+
+  Person(dev, "Swift Developer", "Authors and embeds Ink stories")
+  System(pkg, "InkSwift Package", "SPM library: now compiles .ink AND plays it, in-process")
+  System_Ext(inksrc, "Ink .ink Source", "Authored story source — the new primary input")
+  System_Ext(inkjson, "Ink JSON Story File", "Optional secondary artifact (D4) / legacy input")
+  System_Ext(inklecate, "inklecate (C#)", "TEST-ONLY oracle — no longer on the build path")
+
+  Rel(dev, pkg, "Compiles and plays .ink via, in-process")
+  Rel(pkg, inksrc, "Compiles natively (new Compiler/ layer)")
+  Rel(pkg, inkjson, "Emits (secondary) / still parses (legacy)")
+  Rel(inklecate, pkg, "Generates oracle fixtures for, in TEST only")
+```
+
+#### C4 Level 2 — Container (compiler delta)
+
+The new `Compiler/` layer sits inside the (frozen-interface) `SwiftInkRuntime`
+module; `InkSwift` remains frozen and is used only as a test oracle.
+
+```mermaid
+C4Container
+  title Container Diagram — native-ink-compiler delta
+
+  Person(dev, "Swift Developer")
+
+  Container(inkswift, "InkSwift", "Swift module (frozen, D8)", "JS-bridge runtime. TEST oracle only for the compiler.")
+  Container(swiftinkruntime, "SwiftInkRuntime", "Swift module", "Now contains BOTH the tree-walker runtime AND the new Compiler/ layer (ADR-006).")
+  ContainerDb(inksrc, "Ink .ink Source", ".ink", "Authored story — primary compiler input")
+  ContainerDb(inkjsonfile, "Ink JSON File", ".ink.json", "Optional secondary artifact (D4)")
+  Container(siretests, "SwiftInkRuntimeTests", "XCTest target", "Compiler oracle + corpus tests. Imports InkSwift as oracle on macOS.")
+  System_Ext(inklecate, "inklecate (C#)", "TEST-ONLY: offline fixture generation")
+
+  Rel(dev, swiftinkruntime, "Compiles .ink and plays story via")
+  Rel(swiftinkruntime, inksrc, "Reads and compiles in-process")
+  Rel(swiftinkruntime, inkjsonfile, "Emits (secondary) and still parses (legacy)")
+  Rel(siretests, swiftinkruntime, "Exercises compiler + runtime")
+  Rel(siretests, inkswift, "Compares output against as oracle")
+  Rel(inklecate, siretests, "Provides reference .ink.json fixtures to, offline")
+```

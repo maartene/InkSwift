@@ -11,3 +11,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: swift test
+
+  lint:
+    name: SwiftLint (architecture boundary rules)
+    runs-on: macos-arm64
+    steps:
+      - uses: actions/checkout@v4
+      # SwiftLint may not be preinstalled on the runner; install it if absent.
+      - name: Ensure SwiftLint is available
+        run: |
+          if ! command -v swiftlint >/dev/null 2>&1; then
+            brew install swiftlint
+          fi
+          swiftlint version
+      # Enforce only the architecture boundary custom_rules (R1/R3/R4/R5) from
+      # .swiftlint.yml — not opinionated style rules. Passes on the current tree;
+      # the R5 Compiler/ rules activate automatically as the compiler lands.
+      - name: Enforce boundary rules (R1/R3/R4/R5)
+        run: swiftlint lint --strict --no-cache --config .swiftlint.yml

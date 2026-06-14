@@ -29,6 +29,16 @@ journeys:
     created: "2026-06-04"
     description: "Author uses moveToKnot to position a story at a specific knot for testing or gameplay control."
 
+  - id: "native-compilation"
+    name: "Compile an Ink Story in Pure Swift"
+    persona: "Maarten"
+    persona_file: "docs/product/personas/maarten.md"
+    file: "docs/feature/native-ink-compiler/discuss/journey-native-compilation.yaml"
+    status: "active"
+    feature: "native-ink-compiler"
+    created: "2026-06-14"
+    description: "Developer compiles a .ink source in-process (no external inklecate) into a story the SwiftInkRuntime Story plays directly; unsupported features fail loud with a located error; output matches the inklecate oracle."
+
 mental_model:
   - "GWT test structure: Given (set state) / When (execute) / Then (assert)"
   - "moveToKnot positions the cursor — it's the navigation primitive"

@@ -1,0 +1,159 @@
+schema_version: 1
+
+# Journey schema: Compile an Ink Story in Pure Swift
+# Feature: native-ink-compiler
+# DISCUSS scope: intent and behaviour only. No API signatures / type names.
+# Gherkin embedded per step; no standalone .feature file.
+
+journey:
+  name: "Compile an Ink Story in Pure Swift"
+  goal: "Turn a .ink source into a runnable story entirely within the Swift toolchain, with no external inklecate binary, and fail loud on unsupported features."
+  persona: "Maarten — Swift app developer embedding Ink stories"
+  job: "job-native-compilation"
+
+  emotional_arc:
+    start: "Dependent / wary — runtime is Swift but the build still needs the inklecate binary."
+    middle: "Focused / testing — does native output really match inklecate; what happens on unsupported features?"
+    end: "Confident / self-sufficient — one Swift toolchain, compile to run; unsupported features fail loud, not silent."
+
+steps:
+  - id: 1
+    name: "Compile a supported story in-process"
+    command: "Invoke the compile entry point on a .ink source (conceptual driving port)"
+    tui_mockup: |
+      +-- Compile (in-process, pure Swift) --------------------------+
+      | source:  story.ink  (uses only supported features)           |
+      | result:  a runnable story (no external process, no JSON      |
+      |          round-trip required)                                |
+      +--------------------------------------------------------------+
+    shared_artifacts:
+      - name: "compiled story shape"
+        source: "owned by SwiftInkRuntime Story (the runtime's input contract)"
+        displayed_as: "a runnable story"
+        consumers: ["compile output", "runtime input"]
+    emotional_state:
+      entry: "dependent / wary"
+      exit: "hopeful"
+    integration_checkpoint: |
+      The compiled story is directly consumable by the existing runtime with no
+      JSON round-trip. Compiled-story shape is the integration contract.
+    failure_modes:
+      - "Compiler accepts a feature the runtime cannot play (scope drift) — story mis-plays."
+      - "Compiler omits compile-time work the runtime assumes inklecate did (CONST inlining, choice-flag encoding) — supported story mis-plays."
+    gherkin: |
+      Scenario: A supported story compiles in-process to a runnable story
+        Given a .ink source that uses only features the runtime supports
+        When Maarten compiles it through the in-process compile entry point
+        Then he receives a story the runtime can play directly
+        And no external inklecate binary was invoked
+
+  - id: 2
+    name: "Play the compiled story and observe identical output"
+    command: "Play the compiled story through the existing runtime"
+    tui_mockup: |
+      +-- Play compiled story ---------------------------------------+
+      | runtime emits:  the same text inklecate would have produced  |
+      | oracle:         inklecate compiles same source; runtime      |
+      |                 plays both; output identical line-for-line   |
+      +--------------------------------------------------------------+
+    shared_artifacts:
+      - name: "inklecate oracle output"
+        source: "/Users/Maarten.Engels/.local/bin/inklecate"
+        displayed_as: "the same text inklecate would have produced"
+        consumers: ["every execution-equivalence acceptance test"]
+    emotional_state:
+      entry: "watching closely"
+      exit: "reassured / confident"
+    integration_checkpoint: |
+      Native output played through the runtime equals inklecate-compiled output
+      played through the runtime, line-for-line (execution-equivalence oracle).
+    failure_modes:
+      - "Native output diverges from inklecate oracle on some choice path."
+      - "Divergence is silent (no error) — the worst case the user explicitly wants to avoid."
+    gherkin: |
+      Scenario: Native-compiled story plays identically to the inklecate oracle
+        Given a supported .ink source compiled both natively and by inklecate
+        When the runtime plays each compiled story along the same choice path
+        Then the emitted text and choices are identical line-for-line
+
+  - id: 3
+    name: "Hit an unsupported feature and get a clear, located error"
+    command: "Compile a .ink source that uses an unsupported construct"
+    tui_mockup: |
+      +-- Compile FAILS (loud, not silent) --------------------------+
+      | source:  story.ink  (uses a LIST / thread / {a|b|c} seq)     |
+      | error:   "<construct> is not supported" + source location    |
+      |          (ideally) pointer to the supported-feature doc      |
+      | result:  NO story produced; compile stops                    |
+      +--------------------------------------------------------------+
+    shared_artifacts:
+      - name: "unsupported feature set"
+        source: "runtime Feature Coverage Matrix (brief.md rows 25-28, 36-39)"
+        displayed_as: "the named construct in the error"
+        consumers: ["reject behaviour", "feature reference doc", "error messages"]
+    emotional_state:
+      entry: "about to ship"
+      exit: "informed / in control (relief, not dread)"
+    integration_checkpoint: |
+      The rejected set is exactly the runtime's unsupported set. No silent
+      acceptance of an unsupported construct.
+    failure_modes:
+      - "Unsupported feature compiles to silently wrong output instead of erroring."
+      - "Error is generic ('compile failed') without naming the construct or location."
+    gherkin: |
+      Scenario: An unsupported construct fails loud with a named, located error
+        Given a .ink source that uses an Ink feature the runtime does not support
+        When Maarten compiles it through the in-process compile entry point
+        Then compilation stops without producing a story
+        And the error names the unsupported construct
+        And the error reports the source location of the construct
+
+  - id: 4
+    name: "Consult the supported/unsupported feature reference"
+    command: "Read the supported-feature reference document"
+    tui_mockup: |
+      +-- Supported / Unsupported feature reference -----------------+
+      | MUST COMPILE:  text, knots, stitches, diverts, choices,      |
+      |   gathers, read counts, glue, VAR/CONST/temp, operators,     |
+      |   conditionals, functions, tunnels, ref params, tags, ...    |
+      | MUST REJECT:   variable-text sequences/cycles/once/shuffle,  |
+      |   threads, LIST, RANDOM/SEED_RANDOM, external functions      |
+      | each row: example + supported? + why                         |
+      +--------------------------------------------------------------+
+    shared_artifacts:
+      - name: "supported feature set"
+        source: "runtime Feature Coverage Matrix (brief.md rows 1-35 supported)"
+        displayed_as: "the MUST COMPILE / MUST REJECT table"
+        consumers: ["compiler scope", "feature reference doc", "error messages"]
+    emotional_state:
+      entry: "uncertain about what's in bounds"
+      exit: "oriented / deliberate"
+    integration_checkpoint: |
+      The documented supported set matches the compiler's accepted set and the
+      runtime's playable set — one source of truth, three consumers.
+    failure_modes:
+      - "Doc claims a feature is supported that the compiler rejects (or vice versa)."
+      - "Doc drifts from the runtime matrix over time."
+    gherkin: |
+      Scenario: The feature reference lets an author stay inside supported bounds
+        Given the supported/unsupported feature reference document
+        When Maarten checks a construct before authoring with it
+        Then he can tell whether it will compile or be rejected
+        And the document's supported set matches what the compiler accepts
+
+integration_validation:
+  shared_artifact_consistency:
+    - artifact: "supported/unsupported feature set"
+      must_match_across: [1, 3, 4]
+      failure_message: "Compiler accepted set, rejected set, and the feature reference doc must all derive from the runtime's Feature Coverage Matrix. Drift = integration bug."
+    - artifact: "compiled story shape"
+      must_match_across: [1, 2]
+      failure_message: "Compiler output must be directly consumable by the runtime with no JSON round-trip."
+    - artifact: "inklecate oracle output"
+      must_match_across: [2]
+      failure_message: "Execution-equivalence is the correctness oracle for every supported story."
+
+changelog:
+  - date: "2026-06-14"
+    feature: "native-ink-compiler"
+    change: "Initial journey created in DISCUSS wave."
