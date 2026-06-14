@@ -163,6 +163,15 @@ private struct ExpressionTokenizer {
         var index = start + 1
         var contents = ""
         while index < characters.count, characters[index] != "\"" {
+            if characters[index] == "\\", index + 1 < characters.count {
+                // A backslash escapes the next character (an escaped quote or
+                // escaped backslash): copy the pair verbatim so the escaped
+                // quote does not terminate the literal early.
+                contents.append(characters[index])
+                contents.append(characters[index + 1])
+                index += 2
+                continue
+            }
             contents.append(characters[index])
             index += 1
         }

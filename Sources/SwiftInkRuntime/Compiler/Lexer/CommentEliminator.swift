@@ -49,6 +49,16 @@ enum CommentEliminator {
 
             if insideString {
                 output.append(character)
+                if character == "\\" {
+                    // The backslash escapes the next character (an escaped quote
+                    // or escaped backslash), so copy it through verbatim and let
+                    // it never act as a string terminator.
+                    if let escaped = following {
+                        output.append(escaped)
+                        index = source.index(after: next)
+                        continue
+                    }
+                }
                 if character == "\"" {
                     insideString = false
                 }

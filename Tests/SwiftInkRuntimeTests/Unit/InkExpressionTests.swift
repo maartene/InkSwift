@@ -51,6 +51,14 @@ struct InkExpressionParserTests {
         }
         #expect(left == .floatLiteral(1.5))
     }
+
+    // B1d — an escaped quote inside a string literal does NOT terminate the
+    // scan; the inner escaped-quote characters are carried in the contents
+    // rather than truncating at the first `\"`.
+    @Test func `parses a string literal containing escaped quotes`() throws {
+        let expression = try InkExpressionParser.parse(#""He said \"hello\"""#)
+        #expect(expression == .stringLiteral(#"He said \"hello\""#))
+    }
 }
 
 @Suite("RuntimeObjectEmitter — arithmetic expression lowering")

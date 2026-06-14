@@ -28,4 +28,19 @@ struct CommentEliminatorTests {
         let result = CommentEliminator.strip("say \"http://example.com\" now")
         #expect(result == "say \"http://example.com\" now")
     }
+
+    @Test func `preserves escaped quotes inside string literals`() {
+        // A single escaped quote must NOT close the string. With the bug, the
+        // `\"` terminates the literal early, the following `//` is then seen as
+        // a line comment, and ` end"` is wrongly stripped.
+        let source = #"say "a \" // end" now"#
+        #expect(CommentEliminator.strip(source) == source)
+    }
+
+    @Test func `strips a line comment after a string closed by an escaped backslash`() {
+        // `\\` is an escaped backslash, so the quote that follows genuinely
+        // closes the string; the trailing `//` IS a real comment to strip.
+        let source = #"path "C:\\" // drive"#
+        #expect(CommentEliminator.strip(source) == #"path "C:\\" "#)
+    }
 }
