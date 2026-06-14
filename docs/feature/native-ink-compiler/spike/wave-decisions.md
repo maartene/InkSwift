@@ -26,10 +26,11 @@
 
 ## Walking Skeleton (PROMOTE)
 - Driving adapter: `InkCompiler.compile(source:)` → `StoryBlueprint` → `Story`.
-- Acceptance test: `Tests/SwiftInkRuntimeTests/Acceptance/` — a `@walking_skeleton`
-  execution-equivalence scenario for `compile-weave-flat`.
-- Commit: _(filled in by the walking-skeleton commit)_.
-- Demo command: `swift test --filter <walking-skeleton test name>`.
+- Acceptance test: `Tests/SwiftInkRuntimeTests/Acceptance/Compiler_WalkingSkeleton_FlatWeaveTests.swift`
+  (`@walking_skeleton @driving_port`) — execution-equivalence for `compile-weave-flat`. GREEN.
+- Codegen: new `Compiler/Codegen/WeaveEmitter.swift` (the probe's template, now production).
+- Commit: `4fd4dec` — `feat(native-ink-compiler): walking skeleton — flat weave compiles and plays oracle-identical`.
+- Demo command: `swift test --filter Compiler_WalkingSkeleton_FlatWeaveTests`.
 
 ## Design Implications (for DELIVER S3 WeaveResolver / codegen)
 1. Emit the SIMPLE choice-text form (evalStack string via `str`), not inklecate's
