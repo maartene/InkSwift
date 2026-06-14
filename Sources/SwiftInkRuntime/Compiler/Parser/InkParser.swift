@@ -44,6 +44,12 @@ public enum InkParser {
         }
         let position = SourcePosition(line: lineNumber, column: column)
 
+        try UnsupportedConstructDetector.checkStatement(
+            line: trimmed,
+            lineNumber: position.line,
+            column: position.column
+        )
+
         if let kind = headerKind(of: trimmed) {
             statements.append(InkStatement(kind: kind, position: position))
             return

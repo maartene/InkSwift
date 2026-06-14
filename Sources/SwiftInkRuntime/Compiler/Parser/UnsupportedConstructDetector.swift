@@ -20,6 +20,58 @@ import Foundation
 /// the first one as an unsupported construct. Stateless; called per content line.
 enum UnsupportedConstructDetector {
 
+    /// Inspect a whole statement `line` for a statement-level unsupported
+    /// construct (matrix rows 36-39): thread `<- knot`, `LIST` declaration,
+    /// `RANDOM(`/`SEED_RANDOM(` calls, and `EXTERNAL` declaration. Throws a
+    /// located `.unsupportedConstruct` naming the construct so the statement scan
+    /// short-circuits BEFORE any StoryBlueprint is built (fail-closed). The
+    /// `line` is the whitespace-trimmed statement; `column` is its leading column.
+    static func checkStatement(line trimmed: String, lineNumber: Int, column: Int) throws {
+        guard let construct = statementConstruct(of: trimmed) else { return }
+        throw CompileError(
+            kind: .unsupportedConstruct,
+            construct: construct,
+            message: "Ink \(construct) is not supported by the runtime.",
+            line: lineNumber,
+            column: column
+        )
+    }
+
+    /// Name the statement-level unsupported construct of a trimmed statement, or
+    /// `nil` when the statement uses no such construct. Threads/LIST/EXTERNAL are
+    /// recognised by their leading keyword; RANDOM by its call appearing anywhere
+    /// in an expression (e.g. on a `~ temp x = RANDOM(...)` right-hand side).
+    private static func statementConstruct(of trimmed: String) -> String? {
+        if trimmed.hasPrefix("<-") {
+            return "thread"
+        }
+        if keyword(trimmed, isLeading: "LIST") {
+            return "list"
+        }
+        if keyword(trimmed, isLeading: "EXTERNAL") {
+            return "external"
+        }
+        if containsRandomCall(trimmed) {
+            return "random"
+        }
+        return nil
+    }
+
+    /// True when `trimmed` begins with `keyword` followed by whitespace, so
+    /// `LISTING` is not mistaken for `LIST` and `EXTERNALITY` not for `EXTERNAL`.
+    private static func keyword(_ trimmed: String, isLeading keyword: String) -> Bool {
+        guard trimmed.hasPrefix(keyword) else { return false }
+        let remainder = trimmed.dropFirst(keyword.count)
+        guard let first = remainder.first else { return false }
+        return first == " " || first == "\t"
+    }
+
+    /// True when the line contains a `RANDOM(` call (case-insensitive). This also
+    /// matches `SEED_RANDOM(`, since `RANDOM(` is its trailing substring.
+    private static func containsRandomCall(_ trimmed: String) -> Bool {
+        trimmed.range(of: "RANDOM(", options: .caseInsensitive) != nil
+    }
+
     /// Inspect the inline `{…}` groups of `line`. If one is a variable-text
     /// alternative (sequence / cycle / once / shuffle), throw a located
     /// `.unsupportedConstruct` naming it. Returns normally when none is present.
