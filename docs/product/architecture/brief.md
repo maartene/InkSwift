@@ -194,7 +194,7 @@ The oracle pattern in tests is a one-directional import: `SwiftInkRuntimeTests` 
 
 ### Ink Feature Coverage
 
-This section tracks which Ink language features the `SwiftInkRuntime` engine supports, using **The Intercept** (inkle, MIT) as the upper-bound reference story. The Intercept exercises Parts 1–4 of the official Ink specification (28 knots, 47 stitches, 21 variables, 156+ choices, 8 tunnels) without using sequences, lists, threads, or RANDOM — making it a well-bounded, achievable ceiling.
+This section tracks which Ink language features the `SwiftInkRuntime` engine supports, using **The Intercept** (inkle, MIT) as the upper-bound reference story. The Intercept exercises Parts 1–4 of the official Ink specification (28 knots, 47 stitches, 21 variables, 156+ choices, 8 tunnels) without using sequences, lists, threads, or RANDOM — making it a well-bounded, achievable ceiling. **[Corrected 2026-06-14 — inaccurate: `TheIntercept.ink` line 86 uses one variable-text sequence `{|…|}`. The native compiler rejects it; the runtime plays it via inklecate's visit-count lowering. See the native-compiler coverage note below — a documented compiler/runtime parity gap.]**
 
 Feature tiers follow inkle's own documentation structure:
 - **CORE** — required by every non-trivial story (Parts 1–2)
@@ -245,6 +245,23 @@ Feature tiers follow inkle's own documentation structure:
 | 37 | LIST declarations | BEYOND | No | **MISSING** | `listDefs` placeholder only |
 | 38 | RANDOM / SEED_RANDOM | BEYOND | No | **MISSING** | Not started |
 | 39 | External functions | BEYOND | No | **MISSING** | `exArgs` deferred |
+
+> **Native compiler coverage (native-ink-compiler DELIVER complete, 2026-06-14):** the native
+> in-process compiler now **COMPILES** the full supported ceiling — text/diverts/glue (rows 1–5, 15),
+> choices/gathers/weave (rows 6–14), VAR/CONST/temp/arithmetic (rows 16–21), conditionals
+> (rows 22–24), functions/inline calls/interpolation/tags (rows 29–32), and tunnels/ref-params
+> (rows 34–35) — and **REJECTS** the unsupported set (variable-text rows 25–28; threads/LIST/RANDOM/
+> external rows 36–39) with a clear, located `.unsupportedConstruct` error. Correctness is oracle
+> execution-equivalence; full suite 280 tests GREEN.
+>
+> **Correction:** the introductory claim that The Intercept exercises Parts 1–4 *"without using
+> sequences"* is **inaccurate** — `TheIntercept.ink` line 86 uses a variable-text sequence
+> `{|I rattle my fingers on the field table.|}`. The compiler therefore (correctly) rejects The
+> Intercept today, and the native-compile e2e was descoped (user-approved 2026-06-14).
+> **Parity gap / future work:** the *runtime already plays* this construct because inklecate lowers
+> `{|...|}` to a visit-count switch (visit + MIN + `==` + conditional diverts), all runtime-supported —
+> so deterministic variable-text (sequence/cycle/once) is a candidate the compiler could lower the
+> same way in future; only shuffle additionally needs RANDOM.
 
 #### Implementation Roadmap by Tier
 
@@ -969,6 +986,15 @@ or minimal EXTEND.
 > all shipped and oracle-green for slices S0/S1/S2. **Deferred to future slices:** `WeaveResolver`
 > (S3, spike-gated), `SourceReader` IO adapter (`compile(fileURL:)` still scaffolded), and the
 > unsupported-construct reject-list (S6). `swift-tools-version` raise (C-7) not yet applied.
+>
+> **Shipped (Component Inventory update — DELIVER S3–S6, 2026-06-14):** the weave resolver landed as
+> `WeaveEmitter` (`Compiler/Codegen/`, the highest-risk S3 algorithm — 4/4 fixtures oracle-green),
+> plus a new `ConditionalEmitter` (`Compiler/Codegen/`, inline/block/switch lowering) and a new
+> `UnsupportedConstructDetector` (`Compiler/Parser/`, the S6 reject-list). `RuntimeObjectEmitter`,
+> `InkParser`, `InkParserExpressions`, and `CompilerAST` were EXTENDed for functions/tunnels/
+> ref-params/tags. With this the native compiler covers the full supported ceiling (rows 1–35) and
+> rejects the unsupported set. **Still deferred:** `SourceReader` IO adapter (`compile(fileURL:)`) and
+> the `swift-tools-version` raise (C-7).
 
 #### Decisions (recommended; ADR-backed)
 

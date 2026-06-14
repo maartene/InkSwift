@@ -1357,3 +1357,71 @@ S2 renders `Hello, Ada.` / `Score: 3` / `Total: 13` / `Math: 14` — identical t
 ## Wave: DELIVER / [REF] Pre-requisites (consumed)
 
 DISTILL acceptance suites (`Compiler_S0/S1/S2`) + `CompilerOracleSupport.swift` + committed inklecate `.ink.json` oracle fixtures; DESIGN Component Decomposition (Lexer/Parser/AST/Codegen/Error/InkCompiler), DDD-2 (`StoryBlueprint(root:)`), DDD-5 (hand-rolled Pratt parser), DDD-9/D6 (CONST inlining); DEVOPS R5/R3 SwiftLint `custom_rules` (already live).
+
+---
+
+# Feature Delta: native-ink-compiler (DELIVER wave — S3–S6 continuation, 2026-06-14)
+
+**Wave**: DELIVER (continuation pass) | **Orchestrator**: Main instance (nw-deliver) | **Date**: 2026-06-14
+**Density**: lean (Tier-1 [REF]) | **Scope**: slices S3, S4, S5, S6 (completing S0–S6) | **Crafter**: @nw-software-crafter (object-oriented, example-based)
+**Branch**: `feat/native-ink-compiler-deliver` | **Commits**: `2e714a2..HEAD`
+
+> **Scope note**: This continuation pass shipped the remaining slices — **S3 (choices/gathers/weave), S4 (ceiling: conditionals/functions/tunnels/ref-params/tags), S5 (feature-reference consistency), S6 (unsupported-construct rejection)** — on top of the S0–S2 spine above. With this pass the native compiler covers the full supported ceiling (matrix rows 1–35) and rejects the unsupported set (rows 25–28, 36–39). Two roadmap adjustments were made during the pass and recorded in `roadmap.json` scope_note — see [WHY] Upstream Issues below.
+
+## Wave: DELIVER / [REF] Implementation Summary
+
+Completed the native compiler to the full supported ceiling. **S6** (steps 06-01/06-02) landed first as a guardrail: a `UnsupportedConstructDetector` that rejects variable-text sequences/cycles/once/shuffle and thread/LIST/RANDOM/EXTERNAL with a located `.unsupportedConstruct` error before any codegen, so no unsupported input can slip through silently during S3/S4 development. **S3** (step 03-01) delivered the general **weave resolver** — the research-flagged highest-risk algorithm — handling nested weaves, labeled and multiple gathers, sticky/plain/labeled choices, and sealed weaves; the choice-flag/invisible-default encoding (originally roadmap step D6) was validated by the S3 oracle corpus and **folded** into the resolver step. **S4** (steps 04-01/04-02) added conditionals (inline/block/switch — new `ConditionalEmitter`) + tags lowering, then functions + inline calls, tunnels, and reference parameters. **S5** (step 05-01) authored `docs/product/ink-feature-reference.md` (US-07), the supported/unsupported reference whose statuses match actual compiler behaviour. An L1–L6 refactor then cleaned the S3–S6 compiler code. All correctness is judged by **execution-equivalence** against the committed inklecate oracle.
+
+## Wave: DELIVER / [REF] Files Modified
+
+**Production (Compiler/ layer):**
+- `Compiler/Codegen/WeaveEmitter.swift` — general weave resolver (nested weaves, labeled/multiple gathers, sticky/plain/labeled choices, sealed weaves); emits the choice-flag bitfield + invisible-default encoding (folded D6).
+- `Compiler/Codegen/ConditionalEmitter.swift` — **new**: inline / block (if / else if) / switch-style conditional lowering; fixed a `true`/`false` bool-literal emission bug.
+- `Compiler/Codegen/RuntimeObjectEmitter.swift` — EXTEND: functions + inline calls, tunnels (`-> k ->`), reference parameters, tags wiring.
+- `Compiler/Parser/InkParser.swift` — EXTEND: choices/gathers/weave structure, conditionals, function/knot definitions; fixed a two-equals-vs-three-equals knot-marker bug.
+- `Compiler/Parser/InkParserExpressions.swift` — EXTEND: inline conditional / function-call / tunnel expression forms.
+- `Compiler/Parser/UnsupportedConstructDetector.swift` — **new**: locates and rejects rows 25–28, 36–39 with `.unsupportedConstruct(construct, location)`.
+- `Compiler/AST/CompilerAST.swift` — EXTEND: weave/choice/gather/conditional/function/tunnel/ref-param/tag AST nodes with source positions.
+
+**Tests:**
+- DISTILL-authored acceptance suites `Compiler_S3_ChoicesGathersTests`, `Compiler_S4_CeilingTests`, `Compiler_S5_FeatureReferenceConsistencyTests`, `Compiler_S6_UnsupportedRejectionTests` activated (flipped GREEN, not modified). The TheIntercept S4 end-to-end test is committed `.disabled` (descoped — see [WHY] below).
+- 2 new DELIVER unit suites (weave-resolver + unsupported-detector example coverage, backtick names).
+
+**Docs:**
+- `docs/product/ink-feature-reference.md` — **new** (US-07): every construct as MUST-COMPILE / MUST-REJECT with example + reason, derived from the Feature Coverage Matrix.
+
+## Wave: DELIVER / [REF] Scenarios Green Count
+
+(2026-06-14) **S3 4/4** weave fixtures (flat / nested / labeled-gather / sealed) GREEN — these *are* the ADR-008 weave-spike gate. **S4 2/2** active scenarios GREEN (+1 TheIntercept e2e intentionally `.disabled` / descoped). **S5 13/13** doc-vs-compiler consistency cases GREEN. **S6 8/8** unsupported-construct rejections GREEN (each located + construct-named). **Full suite: 280 tests GREEN**, 0 pre-existing regressions (TheIntercept S4 test `.disabled`).
+
+## Wave: DELIVER / [REF] DoD Check (S3–S6)
+
+- [x] KPI #1 (oracle execution-equivalence) — weave (S3) and full-ceiling (S4) supported corpus plays line-for-line + choice-for-choice identical to the inklecate oracle.
+- [x] KPI #2 (unsupported rejection / 0% silent wrong output) — 8/8 unsupported constructs rejected with named + located `.unsupportedConstruct`; none produce a story.
+- [x] KPI #3 (doc-vs-compiler consistency) — `ink-feature-reference.md` statuses match actual compiler behaviour (S5 13/13 GREEN).
+- [x] KPI #4 (no-inklecate guardrail) — still GREEN; production `Compiler/` spawns no subprocess.
+- [x] R3/R5 SwiftLint boundary gates — `--strict` 0 violations across S3–S6.
+
+## Wave: DELIVER / [REF] Demo Evidence
+
+This is a library API (no CLI/HTTP adapter — DISTILL Driving-Adapter Coverage); the dogfood moment is realised by the `@real-io` execution-equivalence acceptance suites. With this pass S3/S4/S5/S6 are GREEN and the **full 280-test suite passes** (`swift test`), proving a branching, full-ceiling supported story compiles in pure Swift and plays oracle-identical, while every unsupported construct is rejected with a clear located error.
+
+## Wave: DELIVER / [REF] Quality Gates
+
+| Phase | Outcome |
+|---|---|
+| Roadmap review (nw-acceptance-designer-reviewer) | APPROVED |
+| Per-step TDD (3-phase canon RED→GREEN→COMMIT) | 6/6 new steps (06-01, 06-02, 03-01, 04-01, 04-02, 05-01) COMMIT/PASS complete traces |
+| Post-merge integration gate | PASS — 280 tests GREEN, 0 regressions |
+| L1–L6 refactoring (Phase 3) | Applied to S3–S6 compiler code (`2f0454a`) |
+| Adversarial review + Testing Theater (Phase 4) | APPROVED — 0 blockers, 0 testing-theater |
+| Mutation testing (Phase 5) | SKIPPED — disabled project-wide (CLAUDE.md) |
+| Deliver integrity verification (Phase 6) | PASS (exit 0) — all 12 steps complete RED/GREEN/COMMIT traces |
+| SwiftLint R1/R3/R5 boundary gate | 0 violations |
+
+## Wave: DELIVER / [WHY] Upstream Issues
+
+- **The Intercept uses a sequence — the DESIGN brief is wrong.** The brief's "Ink Feature Coverage" claims The Intercept exercises Parts 1–4 "without using sequences." This is **inaccurate**: `TheIntercept.ink` line 86 contains a variable-text sequence `{|I rattle my fingers on the field table.|}`. Because the native compiler **correctly rejects** sequences (matrix rows 25–28; S6 / DDD-12 / DDD-8), The Intercept cannot be natively compiled today.
+- **Consequence — e2e descoped.** The TheIntercept native-compile end-to-end step was **descoped** (user-approved 2026-06-14); its S4 acceptance test is committed `.disabled`. The remaining S4 corpus exercises the full supported ceiling without it.
+- **Parity-gap finding (future-work candidate).** The *runtime* can already play `{|...|}`: inklecate lowers it to a visit-count switch (visit + MIN + `==` + conditional diverts), all of which the runtime executes — which is why the Milestone5b playthrough renders the first 100 lines (line 86 shows empty on first visit). So deterministic variable-text (sequence/cycle/once) is a documented **compiler/runtime parity gap** the compiler could close in future; shuffle additionally needs RANDOM (genuinely runtime-unsupported). **User decision (2026-06-14): keep sequences rejected as specced, descope the e2e, do not expand the supported set this pass.**
+- **Roadmap fold (D6 → S3).** The standalone choice-flag / invisible-default encoding step (D6) was **folded** into the weave-resolver step: the S3 oracle corpus validates the encoding per DDD-9 and was 4/4 GREEN once the resolver landed, so a separate step was redundant.
