@@ -1,8 +1,8 @@
 // Typed AST for the native Ink compiler (DDD-5). The InkParser produces a flat
 // stream of `InkStatement`s, each carrying its source position so downstream
-// codegen (01-02) can report located errors. Path RESOLUTION is deferred to
-// 01-02: qualified (`knot.stitch`) and relative (`.^.stitch`) divert targets are
-// captured here as raw, UNRESOLVED path strings.
+// codegen can report located errors. Divert targets are captured as raw,
+// UNRESOLVED path strings: absolute (`intro`), qualified (`knot.stitch`), and
+// relative (`.^.stitch`) forms are resolved by the runtime at play time.
 
 import Foundation
 
@@ -58,9 +58,7 @@ public enum InkStatementKind: Equatable {
 }
 
 /// A typed arithmetic expression node (DDD-5). Produced by the Pratt
-/// sub-parser and lowered to postfix runtime nodes by the codegen. The
-/// `variableReference` case is a placeholder wired up in 02-02; for the 02-01
-/// expression substrate, arithmetic over int/float literals suffices.
+/// sub-parser and lowered to postfix runtime nodes by the codegen.
 public indirect enum InkExpression: Equatable {
     /// An integer literal operand, e.g. `4`.
     case intLiteral(Int)

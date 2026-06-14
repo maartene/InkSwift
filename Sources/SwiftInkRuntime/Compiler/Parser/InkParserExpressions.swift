@@ -2,8 +2,8 @@
 // It is a hand-rolled, dependency-free token-level pass (DDD-5: no new
 // dependency) producing the typed `InkExpression` AST. Multiplicative operators
 // (`*` `/` `%`) bind tighter than additive ones (`+` `-`); both groups are
-// left-associative. Variable-reference operands are recognised as a placeholder
-// for 02-02; 02-01 exercises arithmetic over int/float literals.
+// left-associative. Operands are int/float/string literals, variable references,
+// and parenthesis-free binary combinations of those.
 //
 // This is a SEPARATE sub-parser from `InkParser` by DESIGN:
 //   WHY-NEW-FILE: Compiler/Parser/InkParserExpressions.swift

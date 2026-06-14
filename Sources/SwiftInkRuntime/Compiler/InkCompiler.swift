@@ -1,10 +1,9 @@
-// SCAFFOLD: true — RED scaffold created by DISTILL (native-ink-compiler).
-//
-// The driving port for the native Ink compiler (DDD-10). The real pipeline
-// (CommentEliminator -> StringParser/combinators -> InkParser -> AST ->
-// WeaveResolver -> RuntimeObjectEmitter -> ContainerNode) lands in DELIVER
-// (slices S0-S6). Every entry point here throws `CompileErrorKind.scaffold`
-// so the acceptance suite fails RED (missing functionality), never BROKEN.
+// The driving port for the native Ink compiler (DDD-10). The pipeline
+// (CommentEliminator -> InkParser -> AST -> RuntimeObjectEmitter ->
+// ContainerNode) is implemented for the S0-S2 supported set: plain text,
+// knots/stitches, diverts, glue, `-> END`, variable declarations, and inline
+// expression interpolation. Constructs introduced by later slices (S3-S6) are
+// not yet wired and surface as `CompileErrorKind.scaffold` until implemented.
 
 import Foundation
 
@@ -18,9 +17,12 @@ import Foundation
 /// wrong output.
 public enum InkCompiler {
 
+    /// Sentinel thrown by entry points whose construct support has not yet
+    /// landed (e.g. the file overload, pending S3-S6). Distinct from a genuine
+    /// `.unsupportedConstruct` rejection — this marks a not-yet-implemented path.
     private static let notImplemented = CompileError(
         kind: .scaffold,
-        message: "InkCompiler is not yet implemented — RED scaffold (DISTILL)."
+        message: "InkCompiler entry point not yet implemented."
     )
 
     /// Primary driving port: compile `.ink` source text into a runnable story.

@@ -95,12 +95,6 @@ enum RuntimeObjectEmitter {
         lowerInlineExpression(expression, constants: [:])
     }
 
-    /// Lower an expression to POSTFIX runtime nodes: operands depth-first, then
-    /// the operator. Used by the 02-01 expression substrate and tests.
-    static func lowerExpression(_ expression: InkExpression) -> [NodeKind] {
-        lowerExpression(expression, constants: [:])
-    }
-
     private static func lowerInlineExpression(
         _ expression: InkExpression,
         constants: [String: InkExpression]

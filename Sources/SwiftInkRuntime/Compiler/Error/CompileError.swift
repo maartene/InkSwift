@@ -1,10 +1,6 @@
-// SCAFFOLD: true — RED scaffold created by DISTILL (native-ink-compiler).
-//
 // The compile-error taxonomy (ADR-009 / DDD-7: single-error-then-stop, located,
-// construct-named). DELIVER replaces this scaffold with the real reporter; the
-// `.scaffold` sentinel case is removed at that time. This file exists now only
-// so the acceptance suite compiles and fails RED (assertion), never BROKEN
-// (build/import error).
+// construct-named). `InkCompiler.compile` yields a runnable `StoryBlueprint` or
+// throws exactly one `CompileError`.
 
 import Foundation
 
@@ -17,9 +13,10 @@ public enum CompileErrorKind: Equatable {
     case syntaxError
     /// A divert / function / variable reference that does not resolve.
     case unresolvedReference
-    /// DISTILL RED-scaffold sentinel. Emitted by the not-yet-implemented compiler
-    /// so acceptance tests fail RED (missing functionality) rather than BROKEN
-    /// (infrastructure). DELIVER removes this case.
+    /// Sentinel for compiler entry points whose construct support has not yet
+    /// landed (later slices S3-S6). Distinct from `.unsupportedConstruct`, which
+    /// names a construct outside the runtime's supported set; `.scaffold` marks a
+    /// path that is in scope but not yet implemented.
     case scaffold
 }
 

@@ -85,16 +85,4 @@ public struct StringParser {
         }
         column += 1
     }
-
-    /// Back-compat helper consumed by `InkCompiler` since S0: split sanitized
-    /// source into plain-text lines. Retained while codegen migrates to the AST.
-    static func parseLines(_ source: String) -> [String] {
-        let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            return []
-        }
-        return trimmed
-            .split(separator: "\n", omittingEmptySubsequences: false)
-            .map(String.init)
-    }
 }
