@@ -30,14 +30,13 @@ enum RuntimeObjectEmitter {
     private static let globalDeclKey = "global decl"
 
     /// Build the runnable root container from the parsed statement stream.
-    static func emitRoot(statements: [InkStatement]) -> ContainerNode {
+    static func emitRoot(statements: [InkStatement]) throws -> ContainerNode {
         let constants = collectConstants(statements)
         let (rootBody, knots) = partitionTopLevel(statements)
 
-        var rootChildren = lowerBody(rootBody, constants: constants)
-        rootChildren.append(.controlCommand("done"))
-
         var namedContent: [String: ContainerNode] = [:]
+        let rootChildren = try lowerRootBody(rootBody, constants: constants, named: &namedContent)
+
         for knot in knots {
             namedContent[knot.name] = emitKnot(knot, constants: constants)
         }
@@ -45,6 +44,25 @@ enum RuntimeObjectEmitter {
             namedContent[globalDeclKey] = globalDecl
         }
         return ContainerNode(children: rootChildren, namedContent: namedContent, flags: 0, name: nil)
+    }
+
+    /// Lower the pre-knot root body. A body containing a weave routes through the
+    /// `WeaveEmitter` (which appends its own `done` and contributes the `c-N`/
+    /// `g-N` outcome/gather containers into `named`); a plain body lowers flatly
+    /// and terminates in `done`.
+    private static func lowerRootBody(
+        _ rootBody: [InkStatement],
+        constants: [String: InkExpression],
+        named: inout [String: ContainerNode]
+    ) throws -> [NodeKind] {
+        guard WeaveEmitter.containsWeave(rootBody) else {
+            return lowerBody(rootBody, constants: constants) + [.controlCommand("done")]
+        }
+        let weave = try WeaveEmitter.lower(rootBody) { lowerBody($0, constants: constants) }
+        for (key, container) in weave.named {
+            named[key] = container
+        }
+        return weave.children
     }
 
     // MARK: - Declarations
@@ -283,6 +301,10 @@ enum RuntimeObjectEmitter {
             return []
         case .knot, .stitch:
             // Headers are consumed during grouping and never reach lowering.
+            return []
+        case .choice, .gather:
+            // Weave lines are resolved by the WeaveEmitter before reaching the
+            // flat statement lowerer; they never lower individually here.
             return []
         }
     }

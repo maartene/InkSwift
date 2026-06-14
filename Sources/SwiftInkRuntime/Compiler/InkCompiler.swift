@@ -31,7 +31,7 @@ public enum InkCompiler {
     public static func compile(source: String) throws -> StoryBlueprint {
         let sanitized = CommentEliminator.strip(source)
         let statements = try InkParser.parse(sanitized)
-        let root = RuntimeObjectEmitter.emitRoot(statements: statements)
+        let root = try RuntimeObjectEmitter.emitRoot(statements: statements)
         return StoryBlueprint(root: root)
     }
 
@@ -47,7 +47,7 @@ public enum InkCompiler {
     public static func emitJSON(source: String) throws -> String {
         let sanitized = CommentEliminator.strip(source)
         let statements = try InkParser.parse(sanitized)
-        let root = RuntimeObjectEmitter.emitRoot(statements: statements)
+        let root = try RuntimeObjectEmitter.emitRoot(statements: statements)
         return JSONEmitter.emit(root: root)
     }
 }

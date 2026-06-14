@@ -55,6 +55,17 @@ public enum InkStatementKind: Equatable {
     case temporaryVariable(name: String, value: InkExpression)
     /// A `~ name = expr` reassignment of an existing variable.
     case assignment(name: String, value: InkExpression)
+    /// A weave choice line: `* [label] body` (bracketed, choice-only) or
+    /// `* body` (plain, label echoes). `level` is the weave nesting depth
+    /// (number of leading `*`/`+` markers). `isSticky` distinguishes `+`
+    /// (sticky) from `*` (once-only). `choiceOnlyLabel` is the bracketed
+    /// `[…]` span when present (the choice text shown but not echoed into the
+    /// body); `body` is the outcome text that runs after the choice is taken.
+    case choice(level: Int, isSticky: Bool, choiceOnlyLabel: String?, body: String)
+    /// A weave gather line: `- outcome` (or `- - outcome` at deeper levels).
+    /// `level` is the gather depth (number of leading `-` markers). `label`
+    /// is the optional `(name)` gather label. `outcome` is the gather's text.
+    case gather(level: Int, label: String?, outcome: String)
 }
 
 /// A typed arithmetic expression node (DDD-5). Produced by the Pratt

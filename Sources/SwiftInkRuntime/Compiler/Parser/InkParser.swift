@@ -56,6 +56,10 @@ public enum InkParser {
             statements.append(InkStatement(kind: divertKind(of: trimmed), position: position))
             return
         }
+        if let kind = weaveKind(of: trimmed) {
+            statements.append(InkStatement(kind: kind, position: position))
+            return
+        }
         try appendContent(from: trimmed, position: position, into: &statements)
     }
 
@@ -110,6 +114,91 @@ public enum InkParser {
             .trimmingCharacters(in: .whitespaces)
         let value = try InkExpressionParser.parse(rightHandSide)
         return (name, value)
+    }
+
+    /// Recognise a weave line: a choice (`*`/`+`, once-only/sticky) or a gather
+    /// (`-`). The leading marker run gives the weave level; the remainder is the
+    /// choice/gather text. `->` is NOT a gather — it is consumed as a divert
+    /// before this is reached. Returns `nil` for any non-weave line.
+    private static func weaveKind(of trimmed: String) -> InkStatementKind? {
+        guard let marker = trimmed.first else { return nil }
+        if marker == "*" || marker == "+" {
+            return choiceKind(of: trimmed, marker: marker)
+        }
+        if marker == "-" {
+            return gatherKind(of: trimmed)
+        }
+        return nil
+    }
+
+    /// Parse a choice line `* [label] body` / `+ body`. The leading run of the
+    /// same marker is the weave level; `[…]` (when present) is the choice-only
+    /// label that is shown but not echoed into the outcome body.
+    private static func choiceKind(of trimmed: String, marker: Character) -> InkStatementKind {
+        let (level, remainder) = consumeMarkers(trimmed, marker: marker)
+        let (choiceOnlyLabel, body) = splitChoiceOnlyLabel(remainder)
+        return .choice(
+            level: level,
+            isSticky: marker == "+",
+            choiceOnlyLabel: choiceOnlyLabel,
+            body: body
+        )
+    }
+
+    /// Parse a gather line `- outcome` / `- - outcome` / `- (name) outcome`.
+    private static func gatherKind(of trimmed: String) -> InkStatementKind {
+        let (level, remainder) = consumeMarkers(trimmed, marker: "-")
+        let (label, outcome) = splitGatherLabel(remainder)
+        return .gather(level: level, label: label, outcome: outcome)
+    }
+
+    /// Consume the leading run of `marker` characters (separated by optional
+    /// whitespace, e.g. `* * `), returning the count (weave level) and the
+    /// trimmed text after the run.
+    private static func consumeMarkers(_ trimmed: String, marker: Character) -> (level: Int, rest: String) {
+        var level = 0
+        var index = trimmed.startIndex
+        while index < trimmed.endIndex {
+            let character = trimmed[index]
+            if character == marker {
+                level += 1
+                index = trimmed.index(after: index)
+                continue
+            }
+            if character == " " || character == "\t" {
+                index = trimmed.index(after: index)
+                continue
+            }
+            break
+        }
+        let rest = String(trimmed[index...]).trimmingCharacters(in: .whitespaces)
+        return (level, rest)
+    }
+
+    /// Split a `[choice-only] body` remainder into the bracketed choice-only
+    /// label and the outcome body. With no brackets the whole remainder is body.
+    private static func splitChoiceOnlyLabel(_ remainder: String) -> (label: String?, body: String) {
+        guard remainder.hasPrefix("["),
+              let close = remainder.firstIndex(of: "]") else {
+            return (nil, remainder)
+        }
+        let label = String(remainder[remainder.index(after: remainder.startIndex)..<close])
+        let body = String(remainder[remainder.index(after: close)...])
+            .trimmingCharacters(in: .whitespaces)
+        return (label, body)
+    }
+
+    /// Split a `(name) outcome` remainder into the optional gather label and the
+    /// outcome text. With no parenthesised label the whole remainder is outcome.
+    private static func splitGatherLabel(_ remainder: String) -> (label: String?, outcome: String) {
+        guard remainder.hasPrefix("("),
+              let close = remainder.firstIndex(of: ")") else {
+            return (nil, remainder)
+        }
+        let label = String(remainder[remainder.index(after: remainder.startIndex)..<close])
+        let outcome = String(remainder[remainder.index(after: close)...])
+            .trimmingCharacters(in: .whitespaces)
+        return (label, outcome)
     }
 
     private static func headerKind(of trimmed: String) -> InkStatementKind? {
