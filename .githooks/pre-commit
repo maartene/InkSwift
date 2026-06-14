@@ -1,0 +1,50 @@
+#!/bin/sh
+# InkSwift pre-commit gate — trunk-based development.
+#
+# Mirrors .forgejo/workflows/tests.yml so that a commit which passes locally
+# also passes CI. Blocks the commit on:
+#   1) SwiftLint architecture-boundary violations (R1/R3/R4/R5, --strict)
+#   2) any failing test (swift test)
+#
+# Bypass once (emergencies / WIP only):  git commit --no-verify
+# Or:                                     INKSWIFT_SKIP_HOOK=1 git commit ...
+#
+# This file is versioned. It is activated via `git config core.hooksPath
+# .githooks` — run `.githooks/install.sh` after cloning.
+set -e
+
+# macOS GUI git clients (and some shells) start with a minimal PATH that omits
+# Homebrew. Make swiftlint/swift discoverable regardless of how git was invoked.
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+
+if [ "${INKSWIFT_SKIP_HOOK:-0}" = "1" ]; then
+  echo "⏭  INKSWIFT_SKIP_HOOK=1 set — skipping pre-commit gate."
+  exit 0
+fi
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+echo "▶ InkSwift pre-commit gate (SwiftLint + swift test)…"
+
+# 1) SwiftLint — architecture boundary rules only (see .swiftlint.yml).
+if ! command -v swiftlint >/dev/null 2>&1; then
+  echo "✖ swiftlint not found on PATH. Install it:  brew install swiftlint" >&2
+  echo "  (bypass once with: git commit --no-verify)" >&2
+  exit 1
+fi
+
+echo "  → swiftlint lint --strict --no-cache --config .swiftlint.yml"
+if ! swiftlint lint --strict --no-cache --config .swiftlint.yml; then
+  echo "✖ SwiftLint boundary rules failed — commit blocked." >&2
+  exit 1
+fi
+
+# 2) Tests.
+echo "  → swift test"
+if ! swift test; then
+  echo "✖ Tests failed — commit blocked." >&2
+  exit 1
+fi
+
+echo "✓ Pre-commit gate passed — safe to land on main."
