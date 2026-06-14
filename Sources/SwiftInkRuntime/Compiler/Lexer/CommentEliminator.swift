@@ -38,6 +38,11 @@ enum CommentEliminator {
                     index = source.index(after: next)
                     continue
                 }
+                // Preserve newlines so downstream source positions stay accurate
+                // even across a multi-line block comment.
+                if character == "\n" {
+                    output.append(character)
+                }
                 index = next
                 continue
             }
