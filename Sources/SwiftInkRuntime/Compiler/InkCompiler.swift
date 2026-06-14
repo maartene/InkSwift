@@ -28,8 +28,8 @@ public enum InkCompiler {
     ///   construct, syntax error, or unresolved reference.
     public static func compile(source: String) throws -> StoryBlueprint {
         let sanitized = CommentEliminator.strip(source)
-        let lines = StringParser.parseLines(sanitized)
-        let root = RuntimeObjectEmitter.emitRoot(lines: lines)
+        let statements = try InkParser.parse(sanitized)
+        let root = RuntimeObjectEmitter.emitRoot(statements: statements)
         return StoryBlueprint(root: root)
     }
 
@@ -44,8 +44,8 @@ public enum InkCompiler {
     /// to Ink-JSON text via deterministic string building (R3 boundary).
     public static func emitJSON(source: String) throws -> String {
         let sanitized = CommentEliminator.strip(source)
-        let lines = StringParser.parseLines(sanitized)
-        let root = RuntimeObjectEmitter.emitRoot(lines: lines)
+        let statements = try InkParser.parse(sanitized)
+        let root = RuntimeObjectEmitter.emitRoot(statements: statements)
         return JSONEmitter.emit(root: root)
     }
 }
