@@ -39,6 +39,42 @@ enum RuntimeObjectEmitter {
         return ContainerNode(children: rootChildren, namedContent: namedContent, flags: 0, name: nil)
     }
 
+    // MARK: - Expression lowering
+
+    /// Lower an inline-printed expression `{ <expr> }` into the runtime nodes
+    /// that evaluate it and emit the result, matching the committed oracle
+    /// token order for `{2 + 3 * 4}`: `ev, 2, 3, 4, *, +, out, /ev`. The
+    /// expression body is lowered to POSTFIX (RPN) so it drives the runtime's
+    /// evaluation stack directly; `out` pops the result and prints it.
+    static func lowerInlineExpression(_ expression: InkExpression) -> [NodeKind] {
+        var nodes: [NodeKind] = [.controlCommand("ev")]
+        nodes.append(contentsOf: lowerExpression(expression))
+        nodes.append(.controlCommand("out"))
+        nodes.append(.controlCommand("/ev"))
+        return nodes
+    }
+
+    /// Lower an expression to POSTFIX runtime nodes: operands depth-first, then
+    /// the operator. `a OP b` becomes `<lower a> <lower b> .nativeFunction(OP)`.
+    /// Int/float literals lower to `.intValue`/`.floatValue`; the
+    /// variable-reference placeholder lowers to `.variableReference` (wired up
+    /// fully in 02-02).
+    static func lowerExpression(_ expression: InkExpression) -> [NodeKind] {
+        switch expression {
+        case .intLiteral(let value):
+            return [.intValue(value)]
+        case .floatLiteral(let value):
+            return [.floatValue(value)]
+        case .variableReference(let name):
+            return [.variableReference(name: name)]
+        case .binary(let oper, let left, let right):
+            var nodes = lowerExpression(left)
+            nodes.append(contentsOf: lowerExpression(right))
+            nodes.append(.nativeFunction(oper))
+            return nodes
+        }
+    }
+
     // MARK: - Grouping
 
     /// A knot and its body, plus the stitches declared inside it.

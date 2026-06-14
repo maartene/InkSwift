@@ -36,6 +36,22 @@ public enum InkStatementKind: Equatable {
     case text(String)
 }
 
+/// A typed arithmetic expression node (DDD-5). Produced by the Pratt
+/// sub-parser and lowered to postfix runtime nodes by the codegen. The
+/// `variableReference` case is a placeholder wired up in 02-02; for the 02-01
+/// expression substrate, arithmetic over int/float literals suffices.
+public indirect enum InkExpression: Equatable {
+    /// An integer literal operand, e.g. `4`.
+    case intLiteral(Int)
+    /// A floating-point literal operand, e.g. `1.5`.
+    case floatLiteral(Double)
+    /// A variable reference operand (placeholder — resolved in 02-02).
+    case variableReference(String)
+    /// A binary operation `left OP right`, e.g. `3 * 4`. The operator is held
+    /// as its runtime native-function symbol (`+ - * / %`).
+    case binary(op: String, left: InkExpression, right: InkExpression)
+}
+
 /// One parsed statement plus where it came from.
 public struct InkStatement: Equatable {
     public let kind: InkStatementKind
