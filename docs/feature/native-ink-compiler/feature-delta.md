@@ -974,29 +974,29 @@ DISCUSS assumption (D1-D8). No DISCUSS decision is reversed:
 
 | Environment | Platform | Oracle | Runs | Precondition |
 |---|---|---|---|---|
-| `clean` | macos, linux | none | `swift build` + oracle-independent compiler units + unsupported-construct rejection (KPI #2) | Swift ≥ 5.8; no JS-bridge needed |
-| `with-oracle-macos` | macos | InkSwift JS-bridge | full units + execution-equivalence (KPI #1) + rejection (KPI #2) + doc-consistency (KPI #3) + no-inklecate guardrail (KPI #4). **The supported CI env (macos-arm64).** | InkSwift/JXKit builds; committed `.ink.json` fixtures present |
+| `clean` | macos, linux | committed inklecate `.ink.json` fixtures | `swift build` + **execution-equivalence KPI #1** (native compile vs committed `.ink.json`, hermetic) + rejection (KPI #2) + doc-consistency (KPI #3) + no-inklecate guardrail (KPI #4) | Swift ≥ 5.8; no JS-bridge needed |
+| `with-oracle-macos` | macos | InkSwift JS-bridge | all of `clean` **plus** the SECONDARY JS-bridge ground-truth cross-check for KPI #1. The macos-arm64 CI host. | InkSwift/JXKit builds; committed `.ink.json` fixtures present |
 | `with-inklecate-local` | macos, linux | inklecate (offline) | REGEN-gated `.ink.json` fixture (re)generation only | inklecate on PATH; REGEN flag set |
 
-inklecate is **test-only/offline** (fixture provenance); CI consumes committed fixtures, never inklecate. Linux is build-only/best-effort (no oracle there). Machine artifact: `environments.yaml`.
+inklecate is **test-only/offline** (fixture provenance); CI consumes committed fixtures, never inklecate. **[DISTILL UI-1 reconciliation, 2026-06-14]**: KPI #1's core comparison imports no `InkSwift`, so it is hermetic and runs cross-platform on `clean` (the original matrix scoped it to `with-oracle-macos`); the JS-bridge is now the secondary cross-check. Machine artifact: `environments.yaml`.
 
 ---
 
 ## Wave: DEVOPS / [REF] CI/CD Pipeline Outline
 
-**Platform**: Forgejo Actions, extending `.forgejo/workflows/tests.yml` (one `test-macos` job on `macos-arm64`). macOS-only because the oracle is the macOS-only InkSwift JS-bridge.
+**Platform**: Forgejo Actions, extending `.forgejo/workflows/tests.yml` (a `macOS` test job on `macos-arm64` + a live `lint` job). The macos-arm64 host runs the full suite incl. the secondary JS-bridge cross-check; the hermetic KPI #1/#2/#3/#4 gates are themselves cross-platform (UI-1).
 
 **Trigger rules (Trunk-Based)**: `on: push` + `on: pull_request` — every push and PR to `main` and short-lived slice branches runs the full job (main always releasable).
 
 **Stage list (Tier-1 outline)** — commit stage only; no acceptance/capacity/production stages apply to a library:
 
 1. `checkout`
-2. **`lint` (boundary gate, R1/R3/R5)** — `swiftlint --strict --config .swiftlint.yml`. *Activation*: wired into the live workflow alongside the FIRST `Compiler/` slice in DELIVER (with a swiftlint-availability step), so CI is not redded before there is anything to lint. The `.swiftlint.yml` is authored now and passes on the current tree.
+2. **`lint` (boundary gate, R1/R3/R5)** — `swiftlint lint --strict --config .swiftlint.yml`. **[DISTILL UI-2 reconciliation, 2026-06-14]**: this `lint` job is **already LIVE** in `.forgejo/workflows/tests.yml` (landed in merge `a2fa4ac`), with a brew-install availability step. It passes on the current tree; the R5 `custom_rules` are path-scoped to `Compiler/` and so activate automatically as those files land. (The original D2 plan deferred activation to the first `Compiler/` slice; reality landed it early and green.)
 3. `build` — `swift build` (raise tools to 5.8 when `Compiler/` lands).
-4. `test` — `swift test` (existing 154-test suite + new compiler tests; execution-equivalence oracle runs here on macOS).
+4. `test` — `swift test` (existing runtime suite + new compiler tests; execution-equivalence KPI #1 runs here — hermetic, cross-platform).
 5. **`no-inklecate guardrail` (KPI #4)** — source guard (production `Compiler/` references no `Process`/inklecate) + a test asserting no inklecate subprocess is spawned during native compile. *Activation*: with first `Compiler/` slice.
 
-> **Proposed `tests.yml` delta (do not land before first slice)**: add a `lint` step running swiftlint (with an install/availability step), and a `no-inklecate` guard step, both inside the existing `test-macos` job. Activation gate: lands with the first `Compiler/` slice so green CI is never pre-emptively broken.
+> **`tests.yml` status**: the `lint` job is live (UI-2). The `no-inklecate` guard test ships with the DISTILL suite (`Compiler_NoInklecateGuardrailTests`) and runs inside the existing test job.
 
 **Quality-gate taxonomy** (per shift-left): local pre-commit/pre-push (optional, mirror `swiftlint` + `swift test`) → PR status checks (the `test-macos` job is the required check) → CI commit stage (lint/build/test/guardrail above). No deploy/canary/production gates (library).
 
@@ -1008,7 +1008,7 @@ There is no runtime telemetry; each KPI is a CI gate (a test assertion). SSOT: `
 
 | KPI | Outcome | CI Instrument | Pass Threshold | Guardrail Semantics |
 |---|---|---|---|---|
-| **#1** Oracle execution-equivalence | supported story compiles + plays oracle-identical | execution-equivalence oracle suite (per-slice + `TheIntercept` e2e) on `with-oracle-macos` | 100% line/choice identical | any divergence fails CI (North-Star gate; blocks merge) |
+| **#1** Oracle execution-equivalence | supported story compiles + plays oracle-identical | execution-equivalence oracle suite (per-slice + `TheIntercept` e2e): native compile vs committed inklecate `.ink.json`, hermetic, on `clean` (primary); JS-bridge cross-check on `with-oracle-macos` (secondary) | 100% line/choice identical | any divergence fails CI (North-Star gate; blocks merge) |
 | **#2** Unsupported-construct rejection | clear located error, not a broken story | unsupported-construct corpus test (named + located error, no story) | 100% rejected | **HARD GUARDRAIL: 0% silent wrong output — must never regress** |
 | **#3** Doc-vs-compiler consistency | author predicts compile/reject from the reference | doc-vs-compiler consistency test over the reference construct list | 100% documented; statuses match compiler | a doc/compiler disagreement fails CI |
 | **#4** No-inklecate guardrail | supported builds compile without inklecate | source guard (no `Process`/inklecate in production `Compiler/`) + no-subprocess test | 0 inklecate invocations | any `Process`/inklecate reference or spawned subprocess fails CI |
@@ -1084,3 +1084,344 @@ develop/release branches; no GitFlow.
 **None.** Every DEVOPS decision (D1-D9 in `devops/wave-decisions.md`) aligns with DESIGN
 (DDD-1..DDD-12) and DISCUSS (D1-D8). No DESIGN assumption is contradicted, so no
 `## Changed Assumptions` block and no `devops/upstream-changes.md` are required.
+
+---
+
+# Feature Delta: native-ink-compiler (DISTILL wave)
+
+**Wave**: DISTILL | **Acceptance Designer**: Sentinel-authored, orchestrator-run
+**Date**: 2026-06-14 | **Density**: lean (Tier-1 [REF])
+**Status**: acceptance suite written + RED-classified; pending Final Wave Review Gate.
+
+> Acceptance tests are **Swift Testing** `@Test func` oracle suites with backtick
+> names (project convention + `CLAUDE.md` mandate), NOT Gherkin/pytest-bdd. The
+> skill's Python examples are adapted to the existing Milestone oracle harness.
+> The executable `.swift` suites under `Tests/SwiftInkRuntimeTests/Acceptance/`
+> are the scenario SSOT; the sections below are pointers + structured summaries.
+
+---
+
+## Wave: DISTILL / [REF] Reconciliation Gate
+
+**Reconciliation passed — 0 contradictions.** All three prior-wave `wave-decisions.md`
+(DISCUSS D1-D8, DESIGN DDD-1..DDD-12 / Forks 1-4, DEVOPS D1-D9) are mutually
+consistent; ADR-006/007/008/009 are all **Accepted (user-confirmed 2026-06-14)**.
+No DISCUSS decision is contradicted by DESIGN or DEVOPS. Scenario writing proceeded.
+
+Graceful-degradation matrix: DISCUSS/DESIGN/DEVOPS artifacts all present — no WARN/BLOCK.
+
+---
+
+## Wave: DISTILL / [REF] Scenario List (tags)
+
+Executable SSOT: `Tests/SwiftInkRuntimeTests/Acceptance/Compiler_*.swift`.
+Each non-skeleton suite maps to one DELIVER slice (one-at-a-time: a slice's suite
+flips GREEN as its codegen lands). 37 tests total; 36 RED + 1 GREEN guardrail.
+
+| Suite / Scenario | Slice / Story | Tags |
+|---|---|---|
+| `Compiler_S0` one line compiles in-process, matches oracle | S0 / US-01 | `@walking_skeleton @driving_adapter @real-io @us-01 @kpi-1` |
+| `Compiler_S0` convenience surface yields a playable story | S0 / US-01 | `@driving_adapter @us-01` |
+| `Compiler_S0` empty source ends cleanly | S0 / US-01 | `@us-01 @boundary` |
+| `Compiler_S0` secondary JSON sink emits Ink-JSON | S0 / US-01 (D4) | `@driving_adapter @us-01` |
+| `Compiler_S1` multi-knot linear story matches oracle | S1 / US-02 | `@us-02 @real-io @kpi-1` |
+| `Compiler_S1` glue joins lines as oracle | S1 / US-02 | `@us-02 @real-io` |
+| `Compiler_S2` state-driven story matches oracle | S2 / US-03 | `@us-03 @real-io @kpi-1` |
+| `Compiler_S2` CONST inlining + arithmetic match oracle | S2 / US-03 (D6) | `@us-03 @real-io` |
+| `Compiler_S3` weave corpus choice-for-choice identical ×4 | S3 / US-04 | `@us-04 @real-io @kpi-1 @weave-spike` |
+| `Compiler_S4` full ceiling matches oracle | S4 / US-05 | `@us-05 @real-io @kpi-1` |
+| `Compiler_S4` functions/tunnels/ref-param match oracle | S4 / US-05 | `@us-05 @real-io` |
+| `Compiler_S4` The Intercept native compile == oracle (e2e) | S4 / US-05 | `@us-05 @real-io @kpi-1` |
+| `Compiler_S5` documented-supported actually compiles ×5 | S5 / US-07 | `@us-07 @kpi-3` |
+| `Compiler_S5` documented-unsupported actually rejected ×8 | S5 / US-07 | `@us-07 @kpi-3 @error` |
+| `Compiler_S6` unsupported construct rejected, named+located ×8 | S6 / US-06 | `@us-06 @error @kpi-2` |
+| `Compiler_NoInklecate` production refs no inklecate/Process | KPI #4 | `@us-04 @kpi-4 @guardrail` (GREEN) |
+
+Error/edge coverage: S5(8) + S6(8) reject scenarios + S0 boundary = **≥45%** of
+scenarios are error/edge — exceeds the 40% target. Sad paths are enumerated, one
+construct per fixture (Mandate 11 — never PBT-generated).
+
+---
+
+## Wave: DISTILL / [REF] Walking-Skeleton Strategy
+
+Per the project **ATDD Infrastructure Policy** (`docs/architecture/atdd-infrastructure-policy.md`,
+bootstrapped this wave — first DISTILL in the repo). Port-class → treatment:
+driving = real in-process call; driven-internal (`ContainerNode` runnable tree) =
+real; driven-external (inklecate) = test-only committed `.ink.json` fixture.
+
+WS scenario: `Compiler_S0` — one line of plain text compiled in-process through the
+production `InkCompiler.compile` entry point, played through the real `Story`
+runtime, output matched line-for-line to the inklecate oracle (`@walking_skeleton
+@driving_adapter`). Litmus: a stakeholder confirms "compile a story in pure Swift,
+no external binary, get the same output" — yes. **Authored RED** (DWD-2): no SPIKE
+promoted a skeleton, so S0 goes GREEN in DELIVER S0 (it is the first slice).
+
+---
+
+## Wave: DISTILL / [REF] Adapter Coverage (Mandate 6)
+
+| Driven adapter | `@real-io` scenario | Covered by |
+|---|---|---|
+| inklecate oracle (test-only) | YES | committed `.ink.json` fixtures (offline provenance) replayed in every S0-S4 equivalence test |
+| Source/INCLUDE filesystem read | YES | every compile test reads the real `.ink` SOURCE from `Bundle.module` (`CompilerOracle.source`) |
+| Runnable-story tree (`ContainerNode`) | YES | every compile+play test constructs `Story(blueprint:)` and plays the real tree |
+| InkSwift JS-bridge (macOS, secondary) | inherited | existing Milestone oracle harness (`#if os(macOS)`); the compiler reuses it as Level-2 ground truth |
+
+Zero "NO — MISSING" rows. inklecate is the only external; it is a test-only fixture
+source (not a per-CI dependency), satisfying the costly-external allowance.
+
+---
+
+## Wave: DISTILL / [REF] Scaffolds (Mandate 7)
+
+RED-ready Swift stubs (`// SCAFFOLD: true`; throw `CompileError(kind: .scaffold)`
+so failures classify RED, never BROKEN). Detect: `grep -rn "SCAFFOLD: true" Sources/`.
+
+- `Sources/SwiftInkRuntime/Compiler/InkCompiler.swift` — `compile(source:)`,
+  `compile(fileURL:)`, `emitJSON(source:)`, `Story(inkSource:)` convenience.
+- `Sources/SwiftInkRuntime/Compiler/Error/CompileError.swift` — `CompileError`
+  (`kind`, `construct`, `message`, `line`, `column`) + `CompileErrorKind`
+  (`unsupportedConstruct` / `syntaxError` / `unresolvedReference` / `scaffold`).
+
+DELIVER removes the `.scaffold` sentinel + markers slice-by-slice; zero markers
+remain at feature completion.
+
+---
+
+## Wave: DISTILL / [REF] Test Placement
+
+- Suites: `Tests/SwiftInkRuntimeTests/Acceptance/Compiler_*.swift` + shared
+  `CompilerOracleSupport.swift` — mirrors the existing `Milestone*`/`WalkingSkeleton`
+  acceptance precedent (same dir, same `@testable import` + `#if os(macOS) import
+  InkSwift` harness).
+- Fixtures: `Tests/SwiftInkRuntimeTests/*.ink` (source) + `*.ink.json` (oracle),
+  registered as `.process` resources in `Package.swift` (alongside existing slice
+  fixtures). `TheIntercept.ink` source copied in for the e2e ceiling test.
+
+---
+
+## Wave: DISTILL / [REF] Driving-Adapter Coverage
+
+| DESIGN entry point | Protocol | AT exercising it |
+|---|---|---|
+| `InkCompiler.compile(source:)` (primary, DDD-10) | in-process call | S0 WS `@driving_adapter` + every S1-S6 suite |
+| `Story(inkSource:)` convenience (DWD-1) | in-process call | S0 convenience-surface test |
+| `InkCompiler.emitJSON(source:)` (secondary D4) | in-process call | S0 JSON-sink test |
+
+No CLI/HTTP/hook adapter in this feature (library API only); subprocess/HTTP
+protocol coverage is N/A. The no-inklecate guardrail asserts the compile path
+spawns no subprocess (KPI #4).
+
+---
+
+## Wave: DISTILL / [REF] Pre-requisites
+
+- DESIGN driving ports: `InkCompiler.compile` / `emitJSON` / `Story(inkSource:)` — scaffolded.
+- DEVOPS environment matrix: `clean` (PRIMARY — build + hermetic KPI #1 + reject +
+  doc-consistency + guardrail; cross-platform) and `with-oracle-macos` (SECONDARY
+  JS-bridge cross-check). UI-1 **applied** (maintainer-confirmed 2026-06-14): the
+  core equivalence comparison imports no `InkSwift`, so KPI #1 now runs hermetically
+  on `clean`; `kpi-contracts.yaml`, `environments.yaml`, and the DEVOPS sections were
+  updated to match. See `distill/upstream-issues.md`.
+- inklecate (`/Users/Maarten.Engels/.local/bin/inklecate`) — verified working;
+  generated all 8 supported `.ink.json` oracle fixtures offline (REGEN provenance).
+
+---
+
+## Wave: DISTILL / [REF] Outcomes Registry
+
+**N/A — correctly skipped.** The `nwave-ai outcomes register` CLI and
+`docs/product/outcomes/registry.yaml` do not exist in this Swift repo (registry is
+Python-tool infrastructure). The feature's typed contracts (`InkCompiler.compile`,
+`CompileError`, the reject specification) are tracked instead by `kpi-contracts.yaml`
+(KPI #1-#4) and the executable acceptance SSOT. Recorded here so the skip is explicit,
+not silent.
+
+---
+
+## Wave: DISTILL / [REF] DISTILL Wave Decisions (DWD)
+
+| # | Decision | Rationale |
+|---|---|---|
+| DWD-1 | Public compile surface = `InkCompiler.compile(source:)` primary (DDD-10) + `Story(inkSource:)` convenience; both exercised. | Resolves DESIGN deferred Q#4 ("and/or"); DDD-10 names compile as THE driving port, convenience aids ergonomics. |
+| DWD-2 | Walking skeleton authored **RED**; goes GREEN in DELIVER S0. | No SPIKE promoted a skeleton, so the "WS green at handoff" rule cannot apply; S0 is the first slice to GREEN. Justified deviation. |
+| DWD-3 | ATs are Swift Testing oracle suites, not Gherkin/pytest-bdd. | Project conventions win (skill LANGUAGE CONVENTION FRAME); `CLAUDE.md` backtick mandate; reuse Milestone harness. |
+| DWD-4 | Execution-equivalence = native compile vs committed inklecate `.ink.json`, both via the production runtime along the same choice script. The compiler ATs import no `InkSwift` (verified). | Level-1 oracle (D5). Because the comparison needs no JS-bridge it is *also* hermetic/cross-platform. Surfaced as back-propagation UI-1 and **applied (maintainer-confirmed 2026-06-14)**: `kpi-contracts.yaml` / `environments.yaml` / the DEVOPS sections now run KPI #1 hermetically on `clean`; the macOS JS-bridge remains the secondary ground truth. See `distill/upstream-issues.md` UI-1. |
+| DWD-5 | Reject corpus is example-only/enumerated, one construct per fixture. | Mandate 11 — sad paths never PBT-generated; KPI #2 needs per-construct named+located assertions. |
+| DWD-6 | The S3 four-fixture weave corpus (flat/nested/labeled-gather/sealed) **is** the ADR-008 spike gate. | DDD-6: S3 sizing committed in DELIVER only after these pass oracle line/choice identity. |
+| DWD-7 | Outcomes registry skipped (N/A — no `nwave-ai` CLI in this repo). | Recorded explicitly; KPI contracts + executable SSOT track the typed contracts. |
+| DWD-8 | Mandate-8/12 (`assert_state_delta`/Universe, step-reuse ratio) N/A. | Those are pytest-bdd/Python infra; the project's correctness instrument is the oracle suite. Project conventions win. |
+| DWD-9 | Tier B (state-machine PBT) **skipped**; Tier A oracle equivalence only. | Observable is line/choice equivalence modeled by example fixtures; no domain-rich input space warranting `RuleBasedStateMachine` (Two-Tier guidance). |
+
+---
+
+## Wave: DISTILL / [REF] Self-Review Checklist
+
+- [x] WS strategy declared (Infrastructure Policy + WS section).
+- [x] WS/equivalence scenarios tagged (`@real-io`, `@walking_skeleton`).
+- [x] Every driven adapter has a `@real-io` scenario (coverage table, 0 missing).
+- [x] In-memory doubles: none used (real runtime + real fixtures); N/A documented.
+- [x] inklecate test-only/offline preference documented (Infra Policy + DWD-4).
+- [x] Mandate 7: all imported production modules scaffolded (`InkCompiler`, `CompileError`).
+- [x] Driving adapters (compile / convenience / emitJSON) each exercised by ≥1 scenario.
+- [x] Mandate 7: scaffolds carry `// SCAFFOLD: true`.
+- [x] Mandate 7: scaffold methods throw `CompileError` (assertion-class RED), not a fatal/infra error.
+- [x] Mandate 7: tests run RED (not BROKEN) — verified via `swift test` + `distill/red-classification.md`.
+- [x] ≥1 `@real-io` scenario per driven adapter (synthetic-data gap closed by real bundled `.ink`).
+- [x] Timing assertions: none (no flaky budgets introduced).
+- [x] Boundary R5 respected — `Story(inkSource:)` lives in the `Compiler/` layer, `Facade/` does not import `Compiler/`.
+- [x] Existing 154-runtime suite stays GREEN (now 232 tests; 0 regressions).
+
+---
+
+## Wave: DISTILL / [REF] Pre-DELIVER Gate Result
+
+`swift test` → **fail-for-the-right-reason PASS**. 36/36 failing compiler scenarios
+classify `MISSING_FUNCTIONALITY` (scaffold), 0 BROKEN, 0 wrong-assertion; 1 guardrail
+GREEN; all prior suites GREEN (233 tests total). Full classification:
+`docs/feature/native-ink-compiler/distill/red-classification.md`. **DELIVER handoff
+unblocked** pending the Final Wave Review Gate below.
+
+---
+
+# Feature Delta: native-ink-compiler (DELIVER wave)
+
+**Wave**: DELIVER | **Orchestrator**: Main instance (nw-deliver) | **Date**: 2026-06-14
+**Density**: lean (Tier-1 [REF]) | **Scope**: slices S0, S1, S2 (of S0–S6) | **Crafter**: @nw-software-crafter (object-oriented, example-based)
+**Branch**: `feat/native-ink-compiler-deliver`
+
+> **Scope note**: This DELIVER pass shipped slices **S0 (walking skeleton), S1 (core flow), S2 (variables & expressions)** only. Slices S3 (choices/gathers — weave-spike gated), S4 (ceiling), S5 (reference consistency), S6 (unsupported rejection) remain authored-RED in the DISTILL suite and are **future slices**, intentionally out of this scope.
+
+## Wave: DELIVER / [REF] Implementation Summary
+
+Built the native, in-process Ink compiler spine — `read → CommentEliminator → StringParser → InkParser (AST) → RuntimeObjectEmitter → StoryBlueprint(root:) → runnable Story` — with **no JSON round-trip** (D3) and **no external inklecate** (KPI #4). S0 compiles plain text and the empty story; S1 adds knots, stitches, absolute/qualified/relative (`.^`) diverts, and glue, lowering them to `namedContent` and resolved `.divert` nodes; S2 adds a Pratt expression sub-parser, arithmetic (postfix/RPN emission matching the runtime eval stack), VAR/CONST/temp declarations with **compile-time CONST inlining** (D6/DDD-9), variable reads, and string interpolation. A secondary `emitJSON` Ink-JSON sink (D4) is delivered using `JSONEncoder`/string building (never `JSONSerialization`, R3). All comparison is **execution-equivalence** (native compile vs committed inklecate `.ink.json`, both played through the same runtime) — not structural-JSON parity.
+
+## Wave: DELIVER / [REF] Files Modified
+
+**Production (Compiler/ layer + one Facade extend):**
+- `Compiler/Lexer/CommentEliminator.swift` — strip `//` and `/* */`, string-literal + escaped-quote aware.
+- `Compiler/Parser/StringParser.swift` — stateful cursor with line/column tracking + combinators.
+- `Compiler/Parser/InkParser.swift` — statement rules → AST (knot/stitch/divert/glue/END/text).
+- `Compiler/Parser/InkParserExpressions.swift` — Pratt precedence-climbing expression sub-parser (escaped-quote aware string scan).
+- `Compiler/AST/CompilerAST.swift` — typed parsed-AST nodes with source positions + unresolved divert paths.
+- `Compiler/Codegen/RuntimeObjectEmitter.swift` — AST → `ContainerNode`/`NodeKind`; divert resolution, glue, postfix arithmetic, CONST inlining, global-decl container, interpolation.
+- `Compiler/Codegen/JSONEmitter.swift` — secondary Ink-JSON sink (D4), no `JSONSerialization`.
+- `Compiler/Error/CompileError.swift` — located, construct-named error (ADR-009); `.scaffold` case retained for S3–S6.
+- `Compiler/InkCompiler.swift` — driving port `compile(source:)`/`emitJSON`; `Story(inkSource:)` convenience.
+- `Facade/StoryBlueprint.swift` — EXTEND: internal `init(root: ContainerNode)` no-JSON seam (DDD-2).
+
+**Tests (DELIVER unit, example-based, backtick names):**
+- `Tests/.../Unit/CommentEliminatorTests.swift`, `StringParserTests.swift`, `InkParserTests.swift`, `InkExpressionTests.swift`.
+- DISTILL-authored acceptance suites `Compiler_S0/S1/S2*.swift` flipped GREEN (not modified).
+
+## Wave: DELIVER / [REF] Scenarios Green Count
+
+**8 of 8 in-scope acceptance scenarios GREEN** (2026-06-14): S0 4/4 (plain-text compile+play, convenience surface, empty source, emitJSON sink), S1 2/2 (multi-knot linear, glue), S2 2/2 (state-driven, CONST inlining+arithmetic). Plus 25 DELIVER unit tests + KPI #4 no-inklecate guardrail GREEN. Out-of-scope S3–S6 acceptance scenarios remain RED by design (future slices). Full suite: 262 tests; 0 pre-existing regressions.
+
+## Wave: DELIVER / [REF] DoD Check (in-scope)
+
+- [x] KPI #1 (oracle execution-equivalence) — S0/S1/S2 supported corpus plays line-for-line identical to inklecate oracle.
+- [x] KPI #4 (no-inklecate guardrail) — production `Compiler/` references no `Process`/inklecate; no subprocess spawned (test-verified).
+- [x] D3 (no JSON round-trip) — primary path uses `StoryBlueprint(root:)`; D4 emitJSON is a separate secondary sink.
+- [x] D6/DDD-9 (CONST inlining) — `BONUS` inlined to literal; no runtime CONST variable (oracle-verified: Total: 13).
+- [x] R3/R5 boundary gates — SwiftLint `--strict` 0 violations (no Engine import, no JSONSerialization in Compiler/).
+- [~] KPI #2 (unsupported rejection) / KPI #3 (doc consistency) — out of scope (S5/S6 future slices).
+
+## Wave: DELIVER / [REF] Demo Evidence
+
+This is a library API (no CLI/HTTP adapter — DISTILL Driving-Adapter Coverage); the dogfood moment ("compile a story in pure Swift, no external binary, get the same output as inklecate") is realised by the `@real-io` execution-equivalence acceptance tests. Captured 2026-06-14 via `swift test`:
+
+```
+Suite "Compiler S0 — Walking Skeleton (compile and play one line)"  passed
+Suite "Compiler S1 — Core Flow (knots, stitches, diverts, glue)"     passed
+Suite "Compiler S2 — Variables & Expressions (VAR, CONST, temp, ...)" passed
+Suite "Compiler — No-inklecate Guardrail (KPI #4)"                    passed
+Test run with 22 tests in 7 suites passed
+```
+S2 renders `Hello, Ada.` / `Score: 3` / `Total: 13` / `Math: 14` — identical to the inklecate oracle.
+
+## Wave: DELIVER / [REF] Quality Gates
+
+| Phase | Outcome |
+|---|---|
+| Roadmap review (nw-acceptance-designer-reviewer) | REJECTED once (02-01 enabling-step framing) → fixed → APPROVED |
+| Per-step TDD (3-phase canon RED→GREEN→COMMIT) | 6/6 steps COMMIT/PASS; DES integrity: all 6 steps complete traces (exit 0) |
+| Post-merge integration gate (3.5) | PASS — 9 in-scope acceptance + guardrail GREEN, 0 regressions |
+| L1–L6 refactoring (Phase 3) | Applied (L1 dead-code/readability; stale scaffold headers removed; `.scaffold` case retained) |
+| Adversarial review + Testing Theater (Phase 4) | REJECTED once (escaped-quote BLOCKER) → fixed via TDD → resolved |
+| Mutation testing (Phase 5) | SKIPPED — disabled project-wide (CLAUDE.md / DEVOPS) |
+| Deliver integrity verification (Phase 6) | PASS (exit 0) |
+| SwiftLint R1/R3/R5 boundary gate | 0 violations across all passes |
+
+## Wave: DELIVER / [REF] Pre-requisites (consumed)
+
+DISTILL acceptance suites (`Compiler_S0/S1/S2`) + `CompilerOracleSupport.swift` + committed inklecate `.ink.json` oracle fixtures; DESIGN Component Decomposition (Lexer/Parser/AST/Codegen/Error/InkCompiler), DDD-2 (`StoryBlueprint(root:)`), DDD-5 (hand-rolled Pratt parser), DDD-9/D6 (CONST inlining); DEVOPS R5/R3 SwiftLint `custom_rules` (already live).
+
+---
+
+# Feature Delta: native-ink-compiler (DELIVER wave — S3–S6 continuation, 2026-06-14)
+
+**Wave**: DELIVER (continuation pass) | **Orchestrator**: Main instance (nw-deliver) | **Date**: 2026-06-14
+**Density**: lean (Tier-1 [REF]) | **Scope**: slices S3, S4, S5, S6 (completing S0–S6) | **Crafter**: @nw-software-crafter (object-oriented, example-based)
+**Branch**: `feat/native-ink-compiler-deliver` | **Commits**: `2e714a2..HEAD`
+
+> **Scope note**: This continuation pass shipped the remaining slices — **S3 (choices/gathers/weave), S4 (ceiling: conditionals/functions/tunnels/ref-params/tags), S5 (feature-reference consistency), S6 (unsupported-construct rejection)** — on top of the S0–S2 spine above. With this pass the native compiler covers the full supported ceiling (matrix rows 1–35) and rejects the unsupported set (rows 25–28, 36–39). Two roadmap adjustments were made during the pass and recorded in `roadmap.json` scope_note — see [WHY] Upstream Issues below.
+
+## Wave: DELIVER / [REF] Implementation Summary
+
+Completed the native compiler to the full supported ceiling. **S6** (steps 06-01/06-02) landed first as a guardrail: a `UnsupportedConstructDetector` that rejects variable-text sequences/cycles/once/shuffle and thread/LIST/RANDOM/EXTERNAL with a located `.unsupportedConstruct` error before any codegen, so no unsupported input can slip through silently during S3/S4 development. **S3** (step 03-01) delivered the general **weave resolver** — the research-flagged highest-risk algorithm — handling nested weaves, labeled and multiple gathers, sticky/plain/labeled choices, and sealed weaves; the choice-flag/invisible-default encoding (originally roadmap step D6) was validated by the S3 oracle corpus and **folded** into the resolver step. **S4** (steps 04-01/04-02) added conditionals (inline/block/switch — new `ConditionalEmitter`) + tags lowering, then functions + inline calls, tunnels, and reference parameters. **S5** (step 05-01) authored `docs/product/ink-feature-reference.md` (US-07), the supported/unsupported reference whose statuses match actual compiler behaviour. An L1–L6 refactor then cleaned the S3–S6 compiler code. All correctness is judged by **execution-equivalence** against the committed inklecate oracle.
+
+## Wave: DELIVER / [REF] Files Modified
+
+**Production (Compiler/ layer):**
+- `Compiler/Codegen/WeaveEmitter.swift` — general weave resolver (nested weaves, labeled/multiple gathers, sticky/plain/labeled choices, sealed weaves); emits the choice-flag bitfield + invisible-default encoding (folded D6).
+- `Compiler/Codegen/ConditionalEmitter.swift` — **new**: inline / block (if / else if) / switch-style conditional lowering; fixed a `true`/`false` bool-literal emission bug.
+- `Compiler/Codegen/RuntimeObjectEmitter.swift` — EXTEND: functions + inline calls, tunnels (`-> k ->`), reference parameters, tags wiring.
+- `Compiler/Parser/InkParser.swift` — EXTEND: choices/gathers/weave structure, conditionals, function/knot definitions; fixed a two-equals-vs-three-equals knot-marker bug.
+- `Compiler/Parser/InkParserExpressions.swift` — EXTEND: inline conditional / function-call / tunnel expression forms.
+- `Compiler/Parser/UnsupportedConstructDetector.swift` — **new**: locates and rejects rows 25–28, 36–39 with `.unsupportedConstruct(construct, location)`.
+- `Compiler/AST/CompilerAST.swift` — EXTEND: weave/choice/gather/conditional/function/tunnel/ref-param/tag AST nodes with source positions.
+
+**Tests:**
+- DISTILL-authored acceptance suites `Compiler_S3_ChoicesGathersTests`, `Compiler_S4_CeilingTests`, `Compiler_S5_FeatureReferenceConsistencyTests`, `Compiler_S6_UnsupportedRejectionTests` activated (flipped GREEN, not modified). The TheIntercept S4 end-to-end test is committed `.disabled` (descoped — see [WHY] below).
+- 2 new DELIVER unit suites (weave-resolver + unsupported-detector example coverage, backtick names).
+
+**Docs:**
+- `docs/product/ink-feature-reference.md` — **new** (US-07): every construct as MUST-COMPILE / MUST-REJECT with example + reason, derived from the Feature Coverage Matrix.
+
+## Wave: DELIVER / [REF] Scenarios Green Count
+
+(2026-06-14) **S3 4/4** weave fixtures (flat / nested / labeled-gather / sealed) GREEN — these *are* the ADR-008 weave-spike gate. **S4 2/2** active scenarios GREEN (+1 TheIntercept e2e intentionally `.disabled` / descoped). **S5 13/13** doc-vs-compiler consistency cases GREEN. **S6 8/8** unsupported-construct rejections GREEN (each located + construct-named). **Full suite: 280 tests GREEN**, 0 pre-existing regressions (TheIntercept S4 test `.disabled`).
+
+## Wave: DELIVER / [REF] DoD Check (S3–S6)
+
+- [x] KPI #1 (oracle execution-equivalence) — weave (S3) and full-ceiling (S4) supported corpus plays line-for-line + choice-for-choice identical to the inklecate oracle.
+- [x] KPI #2 (unsupported rejection / 0% silent wrong output) — 8/8 unsupported constructs rejected with named + located `.unsupportedConstruct`; none produce a story.
+- [x] KPI #3 (doc-vs-compiler consistency) — `ink-feature-reference.md` statuses match actual compiler behaviour (S5 13/13 GREEN).
+- [x] KPI #4 (no-inklecate guardrail) — still GREEN; production `Compiler/` spawns no subprocess.
+- [x] R3/R5 SwiftLint boundary gates — `--strict` 0 violations across S3–S6.
+
+## Wave: DELIVER / [REF] Demo Evidence
+
+This is a library API (no CLI/HTTP adapter — DISTILL Driving-Adapter Coverage); the dogfood moment is realised by the `@real-io` execution-equivalence acceptance suites. With this pass S3/S4/S5/S6 are GREEN and the **full 280-test suite passes** (`swift test`), proving a branching, full-ceiling supported story compiles in pure Swift and plays oracle-identical, while every unsupported construct is rejected with a clear located error.
+
+## Wave: DELIVER / [REF] Quality Gates
+
+| Phase | Outcome |
+|---|---|
+| Roadmap review (nw-acceptance-designer-reviewer) | APPROVED |
+| Per-step TDD (3-phase canon RED→GREEN→COMMIT) | 6/6 new steps (06-01, 06-02, 03-01, 04-01, 04-02, 05-01) COMMIT/PASS complete traces |
+| Post-merge integration gate | PASS — 280 tests GREEN, 0 regressions |
+| L1–L6 refactoring (Phase 3) | Applied to S3–S6 compiler code (`2f0454a`) |
+| Adversarial review + Testing Theater (Phase 4) | APPROVED — 0 blockers, 0 testing-theater |
+| Mutation testing (Phase 5) | SKIPPED — disabled project-wide (CLAUDE.md) |
+| Deliver integrity verification (Phase 6) | PASS (exit 0) — all 12 steps complete RED/GREEN/COMMIT traces |
+| SwiftLint R1/R3/R5 boundary gate | 0 violations |
+
+## Wave: DELIVER / [WHY] Upstream Issues
+
+- **The Intercept uses a sequence — the DESIGN brief is wrong.** The brief's "Ink Feature Coverage" claims The Intercept exercises Parts 1–4 "without using sequences." This is **inaccurate**: `TheIntercept.ink` line 86 contains a variable-text sequence `{|I rattle my fingers on the field table.|}`. Because the native compiler **correctly rejects** sequences (matrix rows 25–28; S6 / DDD-12 / DDD-8), The Intercept cannot be natively compiled today.
+- **Consequence — e2e descoped.** The TheIntercept native-compile end-to-end step was **descoped** (user-approved 2026-06-14); its S4 acceptance test is committed `.disabled`. The remaining S4 corpus exercises the full supported ceiling without it.
+- **Parity-gap finding (future-work candidate).** The *runtime* can already play `{|...|}`: inklecate lowers it to a visit-count switch (visit + MIN + `==` + conditional diverts), all of which the runtime executes — which is why the Milestone5b playthrough renders the first 100 lines (line 86 shows empty on first visit). So deterministic variable-text (sequence/cycle/once) is a documented **compiler/runtime parity gap** the compiler could close in future; shuffle additionally needs RANDOM (genuinely runtime-unsupported). **User decision (2026-06-14): keep sequences rejected as specced, descope the e2e, do not expand the supported set this pass.**
+- **Roadmap fold (D6 → S3).** The standalone choice-flag / invisible-default encoding step (D6) was **folded** into the weave-resolver step: the S3 oracle corpus validates the encoding per DDD-9 and was 4/4 GREEN once the resolver landed, so a separate step was redundant.
