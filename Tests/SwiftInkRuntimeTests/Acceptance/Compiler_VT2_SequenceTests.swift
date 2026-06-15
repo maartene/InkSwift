@@ -27,8 +27,7 @@ import Foundation
 struct Compiler_VT2_SequenceTests {
 
     // Scenario: A three-stage sequence advances then clamps, matching the oracle.
-    @Test(.disabled("pending DELIVER slice-02: VariableTextEmitter sequence lowering"))
-    func `a three-stage sequence advances then clamps on the last stage, matching the oracle`() throws {
+    @Test func `a three-stage sequence advances then clamps on the last stage, matching the oracle`() throws {
         let result = try CompilerOracle.compileAndPlay("vt-seq-three", choiceScript: [0])
 
         #expect(result.native == result.oracle)
@@ -37,8 +36,7 @@ struct Compiler_VT2_SequenceTests {
 
     // Scenario: A two-stage prose sequence renders each stage then clamps —
     // the boundary vs the once-only form.
-    @Test(.disabled("pending DELIVER slice-02: two-stage sequence clamp boundary"))
-    func `a two-stage sequence renders each stage then clamps, distinct from once-only`() throws {
+    @Test func `a two-stage sequence renders each stage then clamps, distinct from once-only`() throws {
         let result = try CompilerOracle.compileAndPlay("vt-seq-two", choiceScript: [0])
 
         #expect(result.native == result.oracle)
@@ -47,8 +45,7 @@ struct Compiler_VT2_SequenceTests {
 
     // Scenario (OQ-3 / DISTILL AC): a body mixing variable text and a conditional
     // produces no key collision and plays oracle-identically.
-    @Test(.disabled("pending DELIVER slice-02: mixed variable-text + conditional (OQ-3 key-collision AC)"))
-    func `a body mixing variable text and a conditional has no key collision and matches the oracle`() throws {
+    @Test func `a body mixing variable text and a conditional has no key collision and matches the oracle`() throws {
         let result = try CompilerOracle.compileAndPlay("vt-mixed", choiceScript: [0])
 
         #expect(result.native == result.oracle)
