@@ -33,8 +33,14 @@ enum RuntimeObjectEmitter {
     static func emitRoot(statements: [InkStatement]) throws -> ContainerNode {
         let constants = collectConstants(statements)
         let functions = collectFunctionSignatures(statements)
-        let context = LoweringContext(constants: constants, functions: functions)
         let (rootBody, knots, functionDefinitions) = partitionTopLevel(statements)
+        // Discovery pre-pass (ADR-011 EXTEND #3): record the labelled weave-point
+        // paths before lowering so read-count references resolve order-independently.
+        // Write-only at this slice — populated, not yet consumed (02-03 emits CNT?).
+        let weaveLabelPaths = WeaveEmitter.discover(rootBody).labelPaths
+        let context = LoweringContext(
+            constants: constants, functions: functions, weaveLabelPaths: weaveLabelPaths
+        )
 
         var namedContent: [String: ContainerNode] = [:]
         let rootChildren = try lowerRootBody(rootBody, context: context, named: &namedContent)
@@ -57,6 +63,13 @@ enum RuntimeObjectEmitter {
     struct LoweringContext {
         let constants: [String: InkExpression]
         let functions: [String: [FunctionParameter]]
+        /// The weave-label addressing table (ADR-011 EXTEND #3): source label ->
+        /// absolute compiled path, populated by the discovery pre-pass before
+        /// expression lowering so a read-count reference (later steps) resolves a
+        /// label to its container path order-independently. Labelled-only. Threaded
+        /// identically to the CONST and function tables; write-only at this slice
+        /// (02-03 consumes it to emit `.readCount`).
+        var weaveLabelPaths: [String: [String]] = [:]
         /// Names that are function-local in the current scope (parameters plus
         /// `~ temp` declarations inside a function body). An assignment to a local
         /// name lowers to `temp=` so the runtime consults the call frame — the
@@ -65,7 +78,10 @@ enum RuntimeObjectEmitter {
         var localNames: Set<String> = []
 
         func bindingLocals(_ names: Set<String>) -> LoweringContext {
-            LoweringContext(constants: constants, functions: functions, localNames: names)
+            LoweringContext(
+                constants: constants, functions: functions,
+                weaveLabelPaths: weaveLabelPaths, localNames: names
+            )
         }
     }
 

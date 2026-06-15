@@ -60,9 +60,147 @@ enum WeaveEmitter {
         _ statements: [InkStatement],
         lowerStatement: @escaping ([InkStatement]) -> [NodeKind]
     ) throws -> (children: [NodeKind], named: [String: ContainerNode]) {
+        let resolved = try lowerWithLabelPaths(statements, lowerStatement: lowerStatement)
+        return (resolved.children, resolved.named)
+    }
+
+    /// Lower a weave AND expose the `label -> absolute compiled path` table the
+    /// `WeaveResolver` writes at its keying site (criterion 3). The same arithmetic
+    /// that keys the outcome/gather containers records the labelled-only path —
+    /// never re-derived. Unlabelled `c-N`/`g-N` containers are not registered.
+    static func lowerWithLabelPaths(
+        _ statements: [InkStatement],
+        lowerStatement: @escaping ([InkStatement]) -> [NodeKind]
+    ) throws -> (children: [NodeKind], named: [String: ContainerNode], labelPaths: [String: [String]]) {
         let block = WeaveParser.parse(statements, atLevel: 1)
         let resolver = WeaveResolver(lowerStatement: lowerStatement)
-        return try resolver.resolve(block, keyPrefix: [], fallThrough: .end)
+        let resolved = try resolver.resolve(block, keyPrefix: [], fallThrough: .end)
+        return (resolved.children, resolved.named, resolver.labelPaths)
+    }
+
+    /// Discovery pre-pass (ADR-011 EXTEND #3 — the inklecate `ResolveWeavePointNaming`
+    /// phase-1 analogue): walk the level-partitioned weave BEFORE expression
+    /// lowering and (a) record every LABELLED container's absolute path into the
+    /// table, (b) collect the SET of labels that appear as read-count references
+    /// (a condition subject naming a known label). Running before lowering makes
+    /// resolution order-independent — a forward reference resolves (criterion 4).
+    /// Unlabelled `c-N`/`g-N` containers are NOT registered (criterion 5).
+    static func discover(
+        _ statements: [InkStatement]
+    ) -> (labelPaths: [String: [String]], referencedLabels: Set<String>) {
+        let block = WeaveParser.parse(statements, atLevel: 1)
+        var labelPaths: [String: [String]] = [:]
+        WeaveDiscovery.recordLabelPaths(block, keyPrefix: [], into: &labelPaths)
+        let referencedLabels = WeaveDiscovery.referencedLabels(block, knownLabels: Set(labelPaths.keys))
+        return (labelPaths, referencedLabels)
+    }
+}
+
+// MARK: - Discovery pre-pass (phase-1 weave-point naming)
+
+/// Walks the parsed `WeaveBlock` tree to register labelled weave-point paths and
+/// the labels referenced as read-counts — independent of lowering order, so a
+/// forward reference resolves. Reuses the resolver's `label ?? c-N/g-N` keying
+/// shape but registers ONLY the labelled segments (labelled-only addressability).
+private enum WeaveDiscovery {
+
+    /// Record every labelled container's absolute path (keyPrefix + label) into
+    /// `labelPaths`. Unlabelled `c-N`/`g-N` ordinals are walked for nesting but
+    /// not registered; a nested labelled container keys under its parent label.
+    static func recordLabelPaths(
+        _ block: WeaveBlock,
+        keyPrefix: [String],
+        into labelPaths: inout [String: [String]]
+    ) {
+        var choiceOrdinal = 0
+        var gatherOrdinal = 0
+        for item in block.items {
+            switch item {
+            case .choice(let choice):
+                let key = choice.weaveLabel ?? "c-\(choiceOrdinal)"
+                registerIfLabelled(choice.weaveLabel, key: key, keyPrefix: keyPrefix, into: &labelPaths)
+                if let nested = choice.nested {
+                    recordLabelPaths(nested, keyPrefix: keyPrefix + [key], into: &labelPaths)
+                }
+                choiceOrdinal += 1
+            case .gather(let gather):
+                let key = gather.label ?? "g-\(gatherOrdinal)"
+                registerIfLabelled(gather.label, key: key, keyPrefix: keyPrefix, into: &labelPaths)
+                if let nested = gather.nested {
+                    recordLabelPaths(nested, keyPrefix: keyPrefix + [key], into: &labelPaths)
+                }
+                gatherOrdinal += 1
+            }
+        }
+    }
+
+    private static func registerIfLabelled(
+        _ label: String?,
+        key: String,
+        keyPrefix: [String],
+        into labelPaths: inout [String: [String]]
+    ) {
+        guard let label else { return }
+        labelPaths[label] = keyPrefix + [key]
+    }
+
+    /// The SET of known labels appearing as a read-count reference: any condition
+    /// (a choice guard) whose expression references a name whose dotted segments
+    /// include a known label. Walks every choice/gather's condition and nested
+    /// structure (order-independent — the known-label set is computed up front).
+    static func referencedLabels(_ block: WeaveBlock, knownLabels: Set<String>) -> Set<String> {
+        var referenced: Set<String> = []
+        collectReferenced(block, knownLabels: knownLabels, into: &referenced)
+        return referenced
+    }
+
+    private static func collectReferenced(
+        _ block: WeaveBlock,
+        knownLabels: Set<String>,
+        into referenced: inout Set<String>
+    ) {
+        for item in block.items {
+            switch item {
+            case .choice(let choice):
+                if let condition = choice.condition {
+                    collectLabelsIn(condition, knownLabels: knownLabels, into: &referenced)
+                }
+                if let nested = choice.nested {
+                    collectReferenced(nested, knownLabels: knownLabels, into: &referenced)
+                }
+            case .gather(let gather):
+                if let nested = gather.nested {
+                    collectReferenced(nested, knownLabels: knownLabels, into: &referenced)
+                }
+            }
+        }
+    }
+
+    /// Add any known label named by a variable reference inside `expression` —
+    /// matching either the bare name (`{label: …}`) or any dotted segment
+    /// (`{head.label: …}`) — to the referenced set.
+    private static func collectLabelsIn(
+        _ expression: InkExpression,
+        knownLabels: Set<String>,
+        into referenced: inout Set<String>
+    ) {
+        switch expression {
+        case .variableReference(let name):
+            for segment in name.split(separator: ".").map(String.init) where knownLabels.contains(segment) {
+                referenced.insert(segment)
+            }
+        case .binary(_, let left, let right):
+            collectLabelsIn(left, knownLabels: knownLabels, into: &referenced)
+            collectLabelsIn(right, knownLabels: knownLabels, into: &referenced)
+        case .unary(_, let operand):
+            collectLabelsIn(operand, knownLabels: knownLabels, into: &referenced)
+        case .functionCall(_, let arguments):
+            for argument in arguments {
+                collectLabelsIn(argument, knownLabels: knownLabels, into: &referenced)
+            }
+        case .intLiteral, .boolLiteral, .floatLiteral, .stringLiteral:
+            break
+        }
     }
 }
 
@@ -97,6 +235,10 @@ private struct WeaveChoice {
     let body: [InkStatement]
     /// A nested weave inside the choice body, when the body contains deeper choices.
     let nested: WeaveBlock?
+    /// The optional `{…}` guard expression (ADR-011): captured so the discovery
+    /// pre-pass can collect labels referenced as read-counts. Not lowered here
+    /// (the choice-offer guard emission is a later slice); discovery-only at 02-02.
+    let condition: InkExpression?
 }
 
 private struct WeaveGather {
@@ -172,7 +314,7 @@ private enum WeaveParser {
         cursor: inout Int,
         atLevel level: Int
     ) -> WeaveChoice {
-        guard case .choice(_, let isSticky, let choiceOnlyLabel, let body, let weaveLabel, _) = header.kind else {
+        guard case .choice(_, let isSticky, let choiceOnlyLabel, let body, let weaveLabel, let condition) = header.kind else {
             fatalError("parseChoice requires a choice statement")
         }
         var bodyStatements: [InkStatement] = []
@@ -199,7 +341,8 @@ private enum WeaveParser {
             echoesLabel: choiceOnlyLabel == nil,
             isSticky: isSticky,
             body: bodyStatements,
-            nested: nested
+            nested: nested,
+            condition: condition
         )
     }
 
@@ -303,9 +446,18 @@ private enum FallThrough {
 /// `c-N`/`g-N` namespace; addresses are absolute-qualified from root via
 /// `keyPrefix`. Loose ends stitch to the nearest gather at the current level or
 /// fall through to the enclosing-level `fallThrough`.
-private struct WeaveResolver {
+private final class WeaveResolver {
 
     let lowerStatement: ([InkStatement]) -> [NodeKind]
+
+    /// The `label -> absolute compiled path` table written at the keying site as
+    /// containers resolve (criterion 3): the same `keyPrefix + key` the container
+    /// is addressed by, recorded for the labelled-only entries — never re-derived.
+    private(set) var labelPaths: [String: [String]] = [:]
+
+    init(lowerStatement: @escaping ([InkStatement]) -> [NodeKind]) {
+        self.lowerStatement = lowerStatement
+    }
 
     func resolve(
         _ block: WeaveBlock,
@@ -322,6 +474,7 @@ private struct WeaveResolver {
             switch item {
             case .choice(let choice):
                 let key = choiceKey(choice, ordinal: choiceOrdinal)
+                recordLabelPath(choice.weaveLabel, keyPrefix: keyPrefix, key: key)
                 children.append(contentsOf: choicePointNodes(choice, target: qualified(keyPrefix, key)))
                 named[key] = try outcomeContainer(
                     choice,
@@ -332,6 +485,7 @@ private struct WeaveResolver {
                 choiceOrdinal += 1
             case .gather(let gather):
                 let key = gatherKey(gather, ordinal: gatherOrdinal)
+                recordLabelPath(gather.label, keyPrefix: keyPrefix, key: key)
                 named[key] = try gatherContainer(
                     gather,
                     key: key,
@@ -343,6 +497,15 @@ private struct WeaveResolver {
         }
         children.append(.controlCommand("done"))
         return (children, named)
+    }
+
+    /// Record a labelled container's absolute path into the label table, reusing
+    /// the already-computed `keyPrefix`/`key` the container is keyed by — never
+    /// re-deriving the path (criterion 3). Unlabelled `c-N`/`g-N` keys pass a `nil`
+    /// label and are not registered (criterion 5).
+    private func recordLabelPath(_ label: String?, keyPrefix: [String], key: String) {
+        guard let label else { return }
+        labelPaths[label] = qualified(keyPrefix, key)
     }
 
     /// A gather's namedContent key: its `(label)` when present, else `g-N`.
