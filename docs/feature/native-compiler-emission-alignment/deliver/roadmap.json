@@ -1,57 +1,37 @@
 {
   "roadmap": {
     "project_id": "native-compiler-emission-alignment",
-    "created_at": "2026-06-15T21:34:18Z",
-    "total_steps": 2
+    "created_at": "2026-06-15T22:27:02Z",
+    "total_steps": 1
   },
   "phases": [
     {
       "id": "01",
-      "name": "Variable-text continuation threading (#3b)",
-      "description": "Fix the two-layer variable-text bug the Phase-3 spike found: (1) a pre-existing loose-end fall-through defect in the inline variable-text path, then (2) gather-lead variable-text threading that builds on the corrected loose-end. All inside Compiler/; no runtime change.",
+      "name": "Choice-label read-count resolution (#4b)",
+      "description": "Resolve dotted read-count references to a nested choice label (in a guard or inline conditional) to .readCount(path), so they stop surviving as unresolvable .variableReference. Extends the prior weave-label resolution to nested choice labels. Compiler/ only; no runtime change.",
       "default_agent": "nw-software-crafter",
       "default_deps_strategy": "sequential",
       "steps": [
         {
           "id": "01-01",
-          "name": "Thread variable-text loose-end to the enclosing scope",
+          "name": "Resolve nested choice-label read-count references",
           "criteria": [
-            "continuationLowerer no longer hardcodes fallThrough:.end; it threads the enclosing loose-end target down to WeaveEmitter.lower.",
-            "WeaveEmitter.lower / lowerWithLabelPaths accept a fallThrough parameter and pass it to WeaveResolver.resolve (reusing WeaveResolver.FallThrough .gather/.end).",
-            "Choices that follow an inline variable-text line and then gather fall through to the enclosing gather, not to end.",
-            "The vt-inline-choices-gather AT passes (native==oracle) and its .disabled trait is removed."
+            "A dotted read-count ref to a nested choice label resolves to .readCount in both a guard ({not knot.label}) and an inline conditional ({knot.label: text}).",
+            "The newly-resolved target containers carry the 0x1 CountVisits flag (via the existing auto-flag reconciliation) so the read count evaluates at runtime.",
+            "A dotted name resolving to no known label/knot/stitch still falls through to .variableReference (not an error).",
+            "The rc-choicelabel-guard and rc-choicelabel-inline ATs pass (native==oracle) and their .disabled traits are removed.",
+            "No regression in the existing weave / read-count / variable-text corpus."
           ],
           "agent": "nw-software-crafter",
           "deps": [],
-          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_VariableTextThreadingTests.swift",
-          "scenario_name": "inline variable-text choices fall through to the trailing gather, matching the oracle",
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_ChoiceLabelReadCountTests.swift",
+          "scenario_name": "read-count of a nested choice label used in a guard suppresses the guarded choice, matching the oracle",
           "files_to_modify": [
+            "Sources/SwiftInkRuntime/Compiler/Codegen/WeaveEmitter.swift",
             "Sources/SwiftInkRuntime/Compiler/Codegen/RuntimeObjectEmitter.swift",
-            "Sources/SwiftInkRuntime/Compiler/Codegen/WeaveEmitter.swift",
-            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_VariableTextThreadingTests.swift"
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_ChoiceLabelReadCountTests.swift"
           ],
-          "implementation_notes": "TEST PARADIGM: example-based Swift Testing oracle execution-equivalence (compileAndPlay) per CLAUDE.md (OOP; PBT N/A). Backtick function-name style MANDATORY; @Test(\"string\") FORBIDDEN. SPIKE-VALIDATED (docs/feature/native-compiler-emission-alignment/feature-delta.md SPIKE section): this is layer 2 — a PRE-EXISTING latent bug. continuationLowerer (RuntimeObjectEmitter.swift ~line 743) calls WeaveEmitter.lower with hardcoded fallThrough:.end (WeaveEmitter.swift:90); plumb the enclosing loose-end target down lowerBody -> lowerVariableTextLine -> continuationLowerer -> WeaveEmitter.lower (add a fallThrough param; WeaveResolver.FallThrough already models .gather([String])/.end). RE-ENABLES vt-inline-choices-gather (the pure inline case, no gather-lead fold needed). Boundary: Compiler/ only; no Engine/ import (R1); no JSONSerialization (R5); no runtime/Decoder change."
-        },
-        {
-          "id": "01-02",
-          "name": "Fold gather-lead variable-text choices into the continuation",
-          "criteria": [
-            "A gather whose lead line is variable-text {|...|} threads its nested choices as that line's continuation instead of orphaned siblings (no dead-end).",
-            "Threading is mode-independent: sequence, cycle {&...}, and once {!...} all thread identically.",
-            "The fix reuses the corrected loose-end fall-through from 01-01 (gather-lead with a trailing gather falls through correctly).",
-            "The 5 gather-lead ATs pass (native==oracle) and their .disabled traits are removed.",
-            "No regression in the existing variable-text / weave / gather corpus."
-          ],
-          "agent": "nw-software-crafter",
-          "deps": ["01-01"],
-          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_VariableTextThreadingTests.swift",
-          "scenario_name": "gather-lead variable-text threads its nested choices then ends, matching the oracle",
-          "files_to_modify": [
-            "Sources/SwiftInkRuntime/Compiler/Codegen/WeaveEmitter.swift",
-            "Sources/SwiftInkRuntime/Compiler/Parser/InkParser.swift",
-            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_VariableTextThreadingTests.swift"
-          ],
-          "implementation_notes": "TEST PARADIGM: example-based Swift Testing oracle execution-equivalence (compileAndPlay) per CLAUDE.md (OOP; PBT N/A). Backtick function-name style MANDATORY; @Test(\"string\") FORBIDDEN. SPIKE-VALIDATED Option A (parser fold, zero observed regression, 324/324 green on the probe): when a gather body leads with a variable-text/inline-conditional line, keep the gather's following choices in the FLAT body (set nested:nil) so the flat continuation path threads them; this builds on the 01-01 fallThrough plumbing so the threaded choices get the correct enclosing loose-end. Fold site: WeaveParser.parseGather (WeaveEmitter.swift ~line 387) or InkParser gather parsing. RE-ENABLES the 5 gather-lead ATs (vt-gather-lead-end, vt-gather-lead-gather, vt-gather-lead-empty-choice, vt-gather-lead-cycle-once, vt-gather-lead-single-choice). Do NOT re-enable the TheIntercept e2e (it also needs Phases 1/2 #4a/#4b). Boundary: Compiler/ only; no Engine/ import (R1); no JSONSerialization (R5); no runtime/Decoder change."
+          "implementation_notes": "TEST PARADIGM: example-based Swift Testing oracle execution-equivalence (compileAndPlay) per CLAUDE.md (OOP; PBT N/A). Backtick function-name style MANDATORY; @Test(\"string\") FORBIDDEN. CONTEXT: the playback probe (DIAG_INTERCEPT2) shows native TheIntercept dead-ends at output line 4 because two dotted refs to nested CHOICE LABELS survive unresolved as .variableReference: start.delay (in a guard {not start.delay}) and harris_demands_component.cant_talk_right (inline {..: helplessly}). The prior weave-label slice resolves a simpler shape (the green RED-pin: a root/stitch label in a plain condition) but NOT a choice label nested in a knot referenced from a guard/inline. INVESTIGATE in RED: why the discovery pre-pass / weaveLabelPaths registration + lowerExpression resolution miss these (likely the pre-pass does not register nested choice labels, or registers them under a path that does not match the dotted source name knot.label). FIX: extend the discovery pre-pass (WeaveEmitter) to register nested choice labels' absolute paths under their source-dotted name (reuse the resolver's already-computed keyPrefix; never re-derive), and ensure lowerExpression resolves them (RuntimeObjectEmitter); the existing post-emission auto-flag reconciliation then flags the resolved .readCount targets. Boundary: Compiler/ only; no Engine/ import (R1); no JSONSerialization (R5); no runtime/Decoder change. Do NOT re-enable the TheIntercept e2e (needs #4a too)."
         }
       ]
     }
@@ -67,8 +47,8 @@
   },
   "validation": {
     "status": "approved",
-    "reviewer": "orchestrator (gates + AT-mapping check; derives from reviewed SPIKE + Accepted ADR-012 + distilled ATs)",
-    "approved_at": "2026-06-15",
-    "notes": "des-roadmap validate + des-verify-integrity --roadmap-only both exit 0. All 6 distilled variable-text ATs mapped: 01-01 re-enables vt-inline-choices-gather (layer-2 inline); 01-02 re-enables the 5 gather-lead ATs (layer-1 fold building on 01-01). No step exceeds the 8-scenario sizing threshold; dependency order matches the spike's two-layer finding. Decomposition 2 steps / 3 distinct production files = 0.67."
+    "reviewer": "orchestrator (gates + AT-mapping; derives from probe diagnosis + Accepted ADR-012 #4b + distilled ATs)",
+    "approved_at": "2026-06-16",
+    "notes": "Single coherent fix: both #4b ATs (rc-choicelabel-guard, rc-choicelabel-inline) share one root cause (nested choice-label resolution not reached by the prior weave-label slice). des-roadmap validate + integrity --roadmap-only to be run before execution. Boundary R1/R3/R5 + no-runtime-change held."
   }
 }

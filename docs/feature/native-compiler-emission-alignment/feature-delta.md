@@ -284,3 +284,15 @@ Asserted via execution-equivalence (`CompilerOracle.compileAndPlay`, native comp
 **Reconciliation**: 0 contradictions. This DISTILL slice extends the existing Phase-1 (#4b) scope from "dotted ref to a knot.stitch" (already RED-pinned) to "dotted ref to a nested choice-label referenced from a guard / inline conditional" — the diagnosed playback-probe blocker. No DISCUSS/DESIGN/DEVOPS `wave-decisions.md` files exist for this DESIGN-only feature; nothing to reconcile against. TheIntercept e2e stays `.disabled` (unchanged); no production code touched; no roadmap created.
 
 **Gate**: both ATs compile, report SKIPPED (`.disabled`), full suite **333 tests / 65 suites green** (incl. both TheIntercept playthroughs); swiftlint `--strict` + pre-commit hook pass without `--no-verify`.
+
+---
+
+## Wave: DELIVER / [REF] Phase 1 (#4b) — choice-label read-count + RE-DIAGNOSIS finding (2026-06-16)
+
+**Shipped (as scoped):** step 01-01 (commit `25434b0`): the 2 `#4b` choice-label read-count ATs (`rc-choicelabel-guard`, `rc-choicelabel-inline`) GREEN. Real compiler improvements in `WeaveEmitter.inlineBodyStatements`: inline-conditional in a choice outcome with a trailing divert now lowers to `.content` (conditional no longer echoed as literal text); same-line inline divert (`text -> target`) now glues. Full suite 333 green; review pending; DES integrity 1/1.
+
+**RE-DIAGNOSIS (DIAG_INTERCEPT2) — the important finding:** TheIntercept is UNCHANGED by Phase 3 and #4b. Native still dead-ends at output **line 4** (intro only), and the same two refs (`start.delay`, `harris_demands_component.cant_talk_right`) still survive UNRESOLVED. Root cause = **the granular minimal fixtures are false-green proxies** that do not reproduce TheIntercept's real complexity:
+- The real `opts` gather (`start` knot, source line 85) is a **labelled** gather with a variable-text lead, **multiple nested choices including level-2 choices** (`(cooperate)`/`(delay)` under `(plan)`), and a `-> opts` **loop-back**. Phase 3's `vt-gather-lead-empty-choice` miniature did not capture this — the real `opts` still dead-ends, so native never passes the intro.
+- The real `(delay)` label is nested **3 levels deep** (`start → opts → plan → delay`) but referenced flat as `start.delay`. inklecate resolves by name in the knot's flat namespace regardless of depth; native registers by physical path, so the shallow #4b fixture passed while the deep real ref misses.
+
+**Implication:** the minimal-fixture DELIVER loop produces local greens without advancing the e2e. Strategic decision required (see playback probe + analysis): (a) switch to REAL-fragment / probe-driven ATs and fix against actual complexity, (b) invoke the ADR-012 subset-cap fallback (keep inklecate for complex stories), or (c) continue with faithfully-deep fixtures. Phase 1/#4b is NOT a true close of the TheIntercept gap; the committed improvements stand on their own merit.
