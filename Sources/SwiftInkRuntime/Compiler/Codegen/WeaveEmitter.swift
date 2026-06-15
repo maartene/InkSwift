@@ -88,6 +88,9 @@ private enum WeaveItem {
 
 private struct WeaveChoice {
     let label: String
+    /// The optional leading `(name)` weave label — symmetric with a gather's
+    /// `label`. Keys the choice's outcome container (`weaveLabel ?? "c-N"`).
+    let weaveLabel: String?
     let echoesLabel: Bool
     let isSticky: Bool
     /// Body prose that runs after the choice is taken (before any nested weave).
@@ -169,7 +172,7 @@ private enum WeaveParser {
         cursor: inout Int,
         atLevel level: Int
     ) -> WeaveChoice {
-        guard case .choice(_, let isSticky, let choiceOnlyLabel, let body, _, _) = header.kind else {
+        guard case .choice(_, let isSticky, let choiceOnlyLabel, let body, let weaveLabel, _) = header.kind else {
             fatalError("parseChoice requires a choice statement")
         }
         var bodyStatements: [InkStatement] = []
@@ -192,6 +195,7 @@ private enum WeaveParser {
         }
         return WeaveChoice(
             label: choiceOnlyLabel ?? body,
+            weaveLabel: weaveLabel,
             echoesLabel: choiceOnlyLabel == nil,
             isSticky: isSticky,
             body: bodyStatements,
@@ -317,7 +321,7 @@ private struct WeaveResolver {
         for (position, item) in block.items.enumerated() {
             switch item {
             case .choice(let choice):
-                let key = "c-\(choiceOrdinal)"
+                let key = choiceKey(choice, ordinal: choiceOrdinal)
                 children.append(contentsOf: choicePointNodes(choice, target: qualified(keyPrefix, key)))
                 named[key] = try outcomeContainer(
                     choice,
@@ -344,6 +348,13 @@ private struct WeaveResolver {
     /// A gather's namedContent key: its `(label)` when present, else `g-N`.
     private func gatherKey(_ gather: WeaveGather, ordinal: Int) -> String {
         gather.label ?? "g-\(ordinal)"
+    }
+
+    /// A choice outcome container's namedContent key: its `(label)` when present,
+    /// else `c-N`. The identical `label ?? default` idiom as `gatherKey`; the
+    /// labelled name becomes the addressable segment in the absolute path.
+    private func choiceKey(_ choice: WeaveChoice, ordinal: Int) -> String {
+        choice.weaveLabel ?? "c-\(ordinal)"
     }
 
     // MARK: Choice lowering
