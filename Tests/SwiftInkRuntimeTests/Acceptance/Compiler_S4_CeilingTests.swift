@@ -33,14 +33,30 @@ struct Compiler_S4_CeilingTests {
     }
 
     // End-to-end ceiling oracle: The Intercept is the comprehensive supported-set
-    // story (existing fixture). DESCOPED (user-approved 2026-06-14): TheIntercept.ink
-    // line 86 uses a variable-text sequence `{|...|}`, which is OUTSIDE the locked
-    // supported set (matrix rows 25-28) and is correctly rejected by the compiler
-    // (S6 / DDD-12 / DDD-8). The runtime plays it via inklecate's visit-count
-    // lowering, so this is a documented compiler/runtime parity gap, NOT a defect —
-    // see feature-delta `DELIVER / [WHY] Upstream Issues`. Re-enable this test if/when
-    // deterministic variable-text sequence codegen is added to the compiler.
-    @Test(.disabled("Descoped: TheIntercept uses an unsupported variable-text sequence (line 86); rejected by S6/DDD-12. Documented parity gap — see DELIVER Upstream Issues."))
+    // story (existing fixture). It was DESCOPED (user-approved 2026-06-14) solely
+    // because TheIntercept.ink line 86 uses a once-only variable-text form
+    // `{|I rattle...|}` (matrix row 27), then outside the supported set.
+    //
+    // @us-04 @kpi-1 @kpi-2 (compiler-variable-text US-04 — distinct from this
+    // file's @us-05 native-ink-compiler ceiling tests above).
+    // This is the US-04 acceptance test for the `compiler-variable-text` feature.
+    // Slices 01-03 lowered the variable-text forms (rows 25-27), so the line-86
+    // once-only form `{|...|}` that originally caused the descope now compiles.
+    //
+    // STILL BLOCKED (slice-04 RED finding, 2026-06-15): re-enabling the trait
+    // surfaces TWO compiler gaps unrelated to variable text and OUT OF SCOPE for
+    // this feature — the 2026-06-14 descope premise (line-86 variable-text only)
+    // was incomplete:
+    //   1. `not` unary operator in conditions (50 uses, e.g. `{not think:...}`) —
+    //      runtime already supports unary `!`; mechanical compiler-only fix.
+    //   2. dotted read-count references in conditions, e.g.
+    //      `{harris_demands_component.cant_talk_right: ...}` → inklecate `CNT?`
+    //      addressing of a NAMED stitch — a substantial compiler capability that
+    //      belongs to native-ink-compiler, not this slice.
+    // Escalated to nw-solution-architect (re-scope) + nw-acceptance-designer
+    // (AT re-enable timing). Trait stays `.disabled` until those land; the AT
+    // genuinely fails and must NOT be weakened.
+    @Test(.disabled("BLOCKED slice-04: TheIntercept native compile needs out-of-scope compiler features (not-unary operator + dotted read-count addressing of named stitches); descope premise falsified. Escalated to architect/acceptance-designer."))
     func `The Intercept compiles natively and plays identical to the inklecate oracle`() throws {
         let oracleJSON = try CompilerOracle.oracleJSON("TheIntercept")
         let interceptScript = [0, 2, 1, 0, 0, 1, 2, 0, 1, 0]
