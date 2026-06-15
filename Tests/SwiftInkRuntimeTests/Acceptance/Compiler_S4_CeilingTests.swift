@@ -96,6 +96,91 @@ struct Compiler_S4_CeilingTests {
         let doubled = try InkExpressionParser.parse("not not x")
         #expect(describeNotLowering(doubled) == ["ev", "var:x", "fn:!", "fn:!", "out", "/ev"])
     }
+
+    // GAP-2 enabler (step 06-01): a dotted read-count reference to a NAMED target
+    // inside a condition — e.g. `{some_knot.some_stitch: text}` — must lower to a
+    // read-count node (`.readCount(path)`) addressing the resolved container, NOT a
+    // `.variableReference("some_knot.some_stitch")` the runtime cannot resolve.
+    //
+    // RED finding (step 06-01): the tokenizer treats `.` as a word char, so
+    // `a.b` lexes as one identifier and `lowerExpression`'s `.variableReference`
+    // case emits `.variableReference("a.b")`. inklecate instead emits a `CNT?`
+    // addressing the named target's container. This test pins the defect at the
+    // emitter boundary: a dotted condition subject that names a knot.stitch target
+    // present in the compiled tree must surface as a `.readCount`, never a
+    // `.variableReference`.
+    //
+    // Authored crafter-side (no DISTILL AT covers this internal mechanism); the
+    // port-level AT is the TheIntercept e2e re-run at step 04-01.
+    //
+    // SCOPE-GUARD (step 06-01, 2026-06-15): this test was authored in RED and
+    // genuinely fails — but the failure surfaced a far larger gap than the
+    // "RESOLUTION only" scoping assumed. A dotted read-count subject is rejected
+    // at PARSE time (`.unexpectedToken("waiting.guard_post")`), and a correct,
+    // execution-equivalent implementation additionally needs: (1) parser support
+    // for `(label)` weave-labels AND `{condition}` guards on choice lines (both
+    // missing from the AST `choice` case); (2) label-keyed choice outcome
+    // containers in WeaveEmitter (today keyed `c-N`, addressable neither as divert
+    // target nor read-count); (3) the count-visits flag (0x1) set on addressable
+    // containers (no compiler-emitted knot/stitch/gather/choice container sets it,
+    // so a resolved read-count would always evaluate 0); (4) a name→path table on
+    // LoweringContext. This is multiple major weave subsystems — the SCOPE-GUARD
+    // STOP condition. Disabled (not deleted) so the suite stays releasable and the
+    // pending mechanism stays documented; re-enabled when the expanded-scope step
+    // lands the resolver. Escalated to the orchestrator.
+    @Test(.disabled("pending step 06-01 expanded scope (escalated): dotted read-count addressing needs choice (label)+{condition} parsing, label-keyed choice containers, count-visits flagging, and a name→path table — multiple weave subsystems missing; SCOPE-GUARD STOP"))
+    func `a dotted read-count reference to a named stitch lowers to a read-count node`() throws {
+        let source = """
+        -> waiting
+        === waiting ===
+        = guard_post
+        The corridor is empty.
+        {waiting.guard_post: He has been here before.}
+        -> END
+        """
+        let blueprint = try InkCompiler.compile(source: source)
+
+        let dottedReferences = variableReferenceNames(in: blueprint.root)
+            .filter { $0.contains(".") }
+        #expect(
+            dottedReferences.isEmpty,
+            "dotted read-count subject lowered as a variableReference: \(dottedReferences)"
+        )
+        #expect(
+            containsReadCount(blueprint.root),
+            "no .readCount node emitted for the dotted read-count subject"
+        )
+    }
+}
+
+/// Collect every `.variableReference` name anywhere in the container tree so the
+/// dotted read-count assertion can prove no `a.b` identifier survived lowering.
+private func variableReferenceNames(in container: ContainerNode) -> [String] {
+    var names: [String] = []
+    for child in container.children {
+        switch child {
+        case .variableReference(let name):
+            names.append(name)
+        case .container(let nested):
+            names.append(contentsOf: variableReferenceNames(in: nested))
+        default:
+            break
+        }
+    }
+    for nested in container.namedContent.values {
+        names.append(contentsOf: variableReferenceNames(in: nested))
+    }
+    return names
+}
+
+/// True when any node in the container tree is a `.readCount` — the node the
+/// dotted read-count subject must lower to.
+private func containsReadCount(_ container: ContainerNode) -> Bool {
+    for child in container.children {
+        if case .readCount = child { return true }
+        if case .container(let nested) = child, containsReadCount(nested) { return true }
+    }
+    return container.namedContent.values.contains(where: containsReadCount)
 }
 
 /// Render a lowered expression's nodes into intention-revealing tokens so the
