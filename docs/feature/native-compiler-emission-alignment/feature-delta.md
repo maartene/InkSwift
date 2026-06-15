@@ -159,3 +159,32 @@ now.** Reasoning grounded in the census:
 - Whether the `opts` fix (#3b) requires any `VariableTextEmitter` stage-container `-end` signature
   change vs a pure `WeaveResolver` splice — DELIVER Phase 3 RED to localize.
 - Phase 4 behavioral-field set: confirm `flags` comparison restricts to read-count-backed flags only.
+
+---
+
+## Wave: SPIKE / [REF] Phase-3 feasibility (#3b gather-lead variable-text) — 2026-06-15
+
+**Verdict: TRACTABLE (with caveats).** The fix is **entirely inside `Compiler/`, no runtime/Engine/Decoder change** (boundary clean; every mechanism — conditional diverts, choicePoints, `seq*-d`/`seq*-end` containers, visit-count dispatch — already exists; only two divert *targets* change). The Option-C subset-cap fallback is therefore **not needed** for Phase 3.
+
+**Key discovery — the bug is TWO layers, and layer 2 is broader than #3b:**
+1. **Threading (the #3b headline).** A gather whose lead line is a variable-text `{|…|}` must make the gather's nested choices the *continuation* (`seq*-end`) of that line, instead of orphaned siblings emitted after the dispatch divert (today they are unreachable → total dead-end, native play `[]`).
+2. **Loose-end propagation (PRE-EXISTING latent bug, orthogonal to gather-lead).** `RuntimeObjectEmitter.continuationLowerer` (~line 743) calls `WeaveEmitter.lower` with a hardcoded `fallThrough: .end` (`WeaveEmitter.swift:90`), so choices that follow ANY variable-text line and then gather get the wrong fall-through target. This already mis-compiles the **inline** variable-text path (not just gather-lead), and is exactly why the real `opts`/`waited` exemplar (`* [Wait]` empty body → `- -> waited`, TheIntercept lines 105-106) fails. Both layers must be fixed together — the naive layer-1 fix converges onto layer-2's residual bug.
+
+**Recommended fix shape (probe-validated, 324/324 existing tests green on the layer-1 fold):**
+- Plumb an enclosing `fallThrough` target down `lowerBody → lowerVariableTextLine → continuationLowerer → WeaveEmitter.lower` (replace the hardcoded `.end` at `WeaveEmitter.swift:90`; `WeaveResolver.FallThrough` already models `.gather([String])`/`.end`).
+- Gather-lead threading: **Option (A) parser fold** (keep the gather's nested choices in the flat `body` when the lead is variable-text/inline-conditional, so the flat path threads them) — smallest diff, zero observed regression. Option (B) resolver splice in `WeaveResolver.containerSpliced` is more faithful to inklecate's inlined shape but touches the shared named-collector flow.
+
+**Regression surface:** low — no current passing fixture exercises "variable-text line precedes choices that gather" (which is why layer 2 went unnoticed), so the layer-2 plumbing must be guarded by NEW ATs.
+
+### DISTILL tuning (granular ATs to author — execution-equivalence via `compileAndPlay`, not structural)
+
+| Fixture | Source shape | Pins |
+|---|---|---|
+| `gather-lead-vt-end` | gather lead `{\|x\|}` + 2 choices + `-> END` | layer 1 (threading); loose-end = `end` |
+| `gather-lead-vt-gather` | gather lead `{\|x\|}` + 2 choices + trailing `- They wait.` | **layer 2** (loose-end → enclosing gather) — discriminating case |
+| `inline-vt-choices-gather` | knot-lead inline `{\|x\|}` + 2 choices + trailing gather | the **pre-existing inline** latent bug, independent of gather-lead |
+| `gather-lead-vt-empty-choice` | gather lead `{\|x\|}` + `* [Wait]` empty-body choice + trailing gather | the exact TheIntercept `opts`/`waited` exemplar in miniature |
+| `gather-lead-cycle-vs-once` | as `-end` but `{&a\|b}` and `{\!a\|b}` | threading is mode-independent (seq/cycle/once) |
+| `gather-lead-vt-single-choice` | gather lead `{\|x\|}` + exactly 1 choice | boundary: single vs multi nested choice |
+
+Then re-enable `theintercept-e2e` after these land (its lines 85-106 are `gather-lead-vt-empty-choice` + an explicit `-> opts` loop-back). **DISTILL must add a #3b-layer-2 phase note:** the loose-end fix is a pre-existing-bug repair, so the `inline-vt-choices-gather` AT belongs to the same DELIVER step even though it is not gather-lead.
