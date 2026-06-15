@@ -188,3 +188,52 @@ now.** Reasoning grounded in the census:
 | `gather-lead-vt-single-choice` | gather lead `{\|x\|}` + exactly 1 choice | boundary: single vs multi nested choice |
 
 Then re-enable `theintercept-e2e` after these land (its lines 85-106 are `gather-lead-vt-empty-choice` + an explicit `-> opts` loop-back). **DISTILL must add a #3b-layer-2 phase note:** the loose-end fix is a pre-existing-bug repair, so the `inline-vt-choices-gather` AT belongs to the same DELIVER step even though it is not gather-lead.
+
+---
+
+## Wave: DISTILL / [REF] Scenario List
+
+Six granular execution-equivalence ATs (native `compile`+play vs committed inklecate `.ink.json`, both played through the production runtime along a fixed choice script — D1/D5 Level-1, NOT structural identity). Each pins one construct from the SPIKE-tuned table. All authored `.disabled` (CLAUDE.md DISTILL discipline) — re-enabled on green by the DELIVER Phase-3 step. Driving port: `InkCompiler.compile(source:)` → `Story(blueprint:)` → `CompilerOracle.play`. Harness reused as-is: `CompilerOracle.compileAndPlay` (`Tests/SwiftInkRuntimeTests/Acceptance/CompilerOracleSupport.swift`).
+
+| AT (backtick scenario) | Fixture | Choice script | Layer | Pins | Tags |
+|---|---|---|---|---|---|
+| gather-lead variable-text threads its nested choices then ends | `vt-gather-lead-end` | `[0]` | **1** | gather-lead `{\|x\|}` threads nested choices; loose-end = END | `@real-io @kpi-1` |
+| gather-lead variable-text falls through to the enclosing gather | `vt-gather-lead-gather` | `[0]` | **2** | discriminating: choice body falls through to trailing gather, not END (the hardcoded `fallThrough:.end` bug) | `@real-io @kpi-1` |
+| inline variable-text choices fall through to the trailing gather | `vt-inline-choices-gather` | `[0]` | **2 (inline)** | pre-existing latent loose-end bug, orthogonal to gather-lead | `@real-io @kpi-1` |
+| gather-lead variable-text with an empty-body choice threads to the continuation | `vt-gather-lead-empty-choice` | `[0]` | **1 + 2** | exact TheIntercept `opts`/`waited` miniature (`* [Wait]` empty body → `-> waited`) | `@real-io @kpi-1` |
+| gather-lead cycle and once variable-text thread identically across two visits | `vt-gather-lead-cycle-once` | `[0, 0]` | **1 + 2** | mode-independence: `{&…}` cycle + `{!…}` once lead lines; two sticky-choice visits exercise both cells | `@real-io @kpi-1` |
+| gather-lead variable-text with a single nested choice threads correctly | `vt-gather-lead-single-choice` | `[0]` | **1** | boundary: single vs multi nested choice | `@real-io @kpi-1` |
+
+Error/edge coverage: the suite is by construction a behavioral-divergence battery — every AT is a known-RED gap (native currently dead-ends or mis-falls-through). The discriminating layer-2 case (`vt-gather-lead-gather`), the empty-body boundary (`vt-gather-lead-empty-choice`), the single-choice boundary, and the cycle/once mode-independence case are the edge axes; happy-path (`vt-gather-lead-end`) is the floor. No `@error` parse-rejection scenarios — all six are valid Ink that inklecate accepts (confirmed offline); the defect is silent mis-compilation, not rejection.
+
+WS strategy: inherited project Architecture of Reference — driving port `InkCompiler.compile` is the real adapter; the inklecate oracle is a committed offline fixture (driven-external treated as captured artifact, never invoked in CI). No InMemory doubles; every AT is `@real-io` against the production compiler + runtime. No Tier B (config-shaped per-construct ATs, not a ≥3-chained-scenario journey).
+
+## Wave: DISTILL / [REF] Test Placement
+
+- **Suite**: `Tests/SwiftInkRuntimeTests/Acceptance/Compiler_VariableTextThreadingTests.swift` — sits beside the precedent `Compiler_S4_CeilingTests.swift` in the existing `Acceptance/` compiler-equivalence band; reuses the `CompilerOracle` harness and the `@Suite` + backtick-name + `.disabled("…")` trait conventions verbatim.
+- **Fixtures** (sources + committed inklecate oracles) under `Tests/SwiftInkRuntimeTests/Fixtures/` — bundled via the existing `.process("Fixtures")` resource in `Package.swift` (verified: no Package.swift change required):
+  - `vt-gather-lead-end.ink` / `.ink.json`
+  - `vt-gather-lead-gather.ink` / `.ink.json`
+  - `vt-inline-choices-gather.ink` / `.ink.json`
+  - `vt-gather-lead-empty-choice.ink` / `.ink.json`
+  - `vt-gather-lead-cycle-once.ink` / `.ink.json`
+  - `vt-gather-lead-single-choice.ink` / `.ink.json`
+- **Oracle provenance**: each `.ink.json` generated OFFLINE via `inklecate -o <name>.ink.json <name>.ink` (all six compiled clean, exit 0, no rejected shapes) and committed. CI never invokes inklecate (DDD-10).
+- **Pre-commit gate**: all six ATs `.disabled` ⇒ reported SKIPPED ⇒ full `swift test` stays green (330 tests / 63 suites passed + legacy XCTest suite passed) ⇒ swiftlint `--strict` + hook pass without `--no-verify`.
+
+## Wave: DISTILL / [REF] Reconciliation — AT → root-cause layer → DELIVER step
+
+Wave-Decision Reconciliation: 0 contradictions. The SPIKE (`## Wave: SPIKE`) does not contradict DESIGN — it sharpens #3b by discovering the layer-2 loose-end bug; both are owned by the single Phase-3 DELIVER step. No DISCUSS/DESIGN/DEVOPS `wave-decisions.md` files exist for this DESIGN-only feature; nothing to reconcile against.
+
+| AT fixture | Root-cause layer | DELIVER step that re-enables |
+|---|---|---|
+| `vt-gather-lead-end` | layer 1 (gather-lead threading) | Phase 3 (#3b) |
+| `vt-gather-lead-gather` | layer 2 (loose-end → enclosing gather) — discriminating | Phase 3 (#3b) |
+| `vt-inline-choices-gather` | layer 2 (loose-end), INLINE — **pre-existing bug, NOT gather-lead** | Phase 3 (#3b) — same step |
+| `vt-gather-lead-empty-choice` | layer 1 **+** layer 2 (TheIntercept exemplar) | Phase 3 (#3b) |
+| `vt-gather-lead-cycle-once` | layer 1 + layer 2, mode-independent | Phase 3 (#3b) |
+| `vt-gather-lead-single-choice` | layer 1, single-choice boundary | Phase 3 (#3b) |
+
+**Layer-2 phase note (per SPIKE directive)**: `vt-inline-choices-gather` pins the PRE-EXISTING `continuationLowerer` hardcoded-`fallThrough:.end` bug (`WeaveEmitter.swift:90`), which mis-compiles the inline variable-text continuation independently of gather-lead. The naive layer-1 (threading) fix converges onto this layer-2 residual, so the inline AT is repaired by the SAME Phase-3 step even though its shape is not gather-lead. The two layers are fixed together; no separate DELIVER step.
+
+**TheIntercept e2e**: stays `.disabled` (its existing trait in `Compiler_S4_CeilingTests.swift` is unchanged here). Re-enabled only AFTER these six land green — its lines 85-106 are the `vt-gather-lead-empty-choice` shape plus an explicit `-> opts` loop-back. Out of scope for this DISTILL session per task directive.
