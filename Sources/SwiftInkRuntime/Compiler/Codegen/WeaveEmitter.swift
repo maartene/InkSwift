@@ -73,11 +73,14 @@ enum WeaveEmitter {
         keyPrefix: [String] = [],
         fallThrough: FallThrough = .end,
         lowerStatement: @escaping ([InkStatement]) -> [NodeKind],
+        lowerStatementWithFallThrough: (([InkStatement], FallThrough) -> [NodeKind])? = nil,
         lowerCondition: @escaping (InkExpression) -> [NodeKind] = { _ in [] }
     ) throws -> (children: [NodeKind], named: [String: ContainerNode]) {
         let resolved = try lowerWithLabelPaths(
             statements, keyPrefix: keyPrefix, fallThrough: fallThrough,
-            lowerStatement: lowerStatement, lowerCondition: lowerCondition
+            lowerStatement: lowerStatement,
+            lowerStatementWithFallThrough: lowerStatementWithFallThrough,
+            lowerCondition: lowerCondition
         )
         return (resolved.children, resolved.named)
     }
@@ -97,10 +100,15 @@ enum WeaveEmitter {
         keyPrefix: [String] = [],
         fallThrough: FallThrough = .end,
         lowerStatement: @escaping ([InkStatement]) -> [NodeKind],
+        lowerStatementWithFallThrough: (([InkStatement], FallThrough) -> [NodeKind])? = nil,
         lowerCondition: @escaping (InkExpression) -> [NodeKind] = { _ in [] }
     ) throws -> (children: [NodeKind], named: [String: ContainerNode], labelPaths: [String: [String]]) {
         let block = WeaveParser.parse(statements, atLevel: 1)
-        let resolver = WeaveResolver(lowerStatement: lowerStatement, lowerCondition: lowerCondition)
+        let resolver = WeaveResolver(
+            lowerStatement: lowerStatement,
+            lowerStatementWithFallThrough: lowerStatementWithFallThrough,
+            lowerCondition: lowerCondition
+        )
         let resolved = try resolver.resolve(block, keyPrefix: keyPrefix, fallThrough: fallThrough)
         return (resolved.children, resolved.named, resolver.labelPaths)
     }
@@ -411,7 +419,10 @@ private enum WeaveParser {
         if outcome.isEmpty == false {
             // A gather whose outcome is a divert (`- -> target`, parser bug #1)
             // lowers via the shared inline-body helper so the leading `->` becomes
-            // a real divert, not literal text. Plain prose still lowers to `.text`.
+            // a real divert, not literal text. An outcome carrying a `{…}` group
+            // (variable-text / inline-conditional gather lead, #3b layer 1) lowers
+            // to a `.content` statement so `lowerBody` threads it — not echoed as
+            // literal text. Plain prose still lowers to `.text`.
             body.append(contentsOf: inlineBodyStatements(outcome, at: header.position))
         }
         while cursor < statements.count {
@@ -422,10 +433,30 @@ private enum WeaveParser {
             body.append(statement)
             cursor += 1
         }
+        // #3b layer 1 — gather-lead variable-text fold: when the gather body LEADS
+        // with a variable-text / inline-conditional line, its trailing choices are
+        // the CONTINUATION of that line, not orphaned siblings. Keep them in the
+        // FLAT body so `lowerBody → lowerVariableTextLine` threads them off the
+        // line's `seq*-end` continuation (with the gather's loose-end fall-through);
+        // routing them through `nested` instead would emit unreachable choicePoints
+        // after the dispatch divert (total dead-end, native play []). Otherwise the
+        // pre-existing nested-block path applies (a gather whose body is plain prose
+        // then choices).
         var nested: WeaveBlock?
         if cursor < statements.count, isAnyChoice(statements[cursor]) {
-            let block = parseBlock(statements, cursor: &cursor, atLevel: level, stopAtSameLevelGather: true)
-            if block.items.isEmpty == false { nested = block }
+            if leadsWithVariableTextOrConditional(body) {
+                // Fold the gather's own sub-scope (its choices and their bodies) into
+                // the flat body, up to the next same-or-shallower gather (which is the
+                // gather's loose-end target, resolved at lowering as `fallThrough`).
+                while cursor < statements.count,
+                      isSameOrShallowerGather(statements[cursor], level: level) == false {
+                    body.append(statements[cursor])
+                    cursor += 1
+                }
+            } else {
+                let block = parseBlock(statements, cursor: &cursor, atLevel: level, stopAtSameLevelGather: true)
+                if block.items.isEmpty == false { nested = block }
+            }
         }
         return WeaveGather(label: label, body: body, nested: nested)
     }
@@ -435,13 +466,44 @@ private enum WeaveParser {
         return false
     }
 
+    /// True when a (gather/choice) body's first content statement is a variable-text
+    /// or inline-conditional line — the gather-lead variable-text fold trigger (#3b
+    /// layer 1). A leading divert/plain-text gather keeps the pre-existing nested
+    /// path; only a brace-bearing lead owns its trailing choices as a continuation.
+    private static func leadsWithVariableTextOrConditional(_ body: [InkStatement]) -> Bool {
+        for statement in body {
+            switch statement.kind {
+            case .content(let segments):
+                return segments.contains { segment in
+                    if case .variableText = segment { return true }
+                    if case .conditional = segment { return true }
+                    return false
+                }
+            case .text, .glue:
+                continue
+            default:
+                return false
+            }
+        }
+        return false
+    }
+
     /// Lower a bracketed choice's inline outcome (`* [menu] body`) into body
     /// statements: any leading prose as text, plus a trailing inline divert
     /// (`-> target` / `-> END`) parsed as a divert/end so the choice diverts away
     /// rather than echoing the arrow as literal text. An empty body yields none.
     private static func inlineBodyStatements(_ body: String, at position: SourcePosition) -> [InkStatement] {
         guard body.isEmpty == false else { return [] }
+        // A non-divert outcome is parsed by the shared outcome recogniser so it
+        // behaves like the body line it stands in for: a brace-bearing outcome
+        // (variable-text `{|…|}` / inline-conditional `{c: …}`, #3b layer 1) lowers
+        // to `.content` so `lowerBody` recognises and threads it; a `~` logic line
+        // executes; plain prose stays `.text`. The arrow path below still handles
+        // `- -> target` (including a leading prose prefix).
         guard let arrowRange = body.range(of: "->") else {
+            if let statement = try? InkParser.outcomeStatement(body, at: position) {
+                return [statement]
+            }
             return [InkStatement(kind: .text(body), position: position)]
         }
         var statements: [InkStatement] = []
@@ -496,6 +558,12 @@ private typealias FallThrough = WeaveEmitter.FallThrough
 private final class WeaveResolver {
 
     let lowerStatement: ([InkStatement]) -> [NodeKind]
+    /// Lowers a gather/choice body while threading the enclosing loose-end target,
+    /// so a body that LEADS with a variable-text / inline-conditional line falls
+    /// through to the enclosing gather (not the hardcoded `.end`) once its trailing
+    /// choices thread off that line (#3b layer 1+2). `nil` falls back to the plain
+    /// `lowerStatement` (callers that do not thread a loose-end into bodies).
+    let lowerStatementWithFallThrough: (([InkStatement], FallThrough) -> [NodeKind])?
     /// Lowers a choice's `{guard}` expression to POSTFIX eval-stack nodes, reusing
     /// the `RuntimeObjectEmitter.lowerExpression` idiom (composes with 02-03's dotted
     /// read-count operands). The resolver wraps the result in an `ev … /ev` block.
@@ -508,10 +576,22 @@ private final class WeaveResolver {
 
     init(
         lowerStatement: @escaping ([InkStatement]) -> [NodeKind],
+        lowerStatementWithFallThrough: (([InkStatement], FallThrough) -> [NodeKind])? = nil,
         lowerCondition: @escaping (InkExpression) -> [NodeKind] = { _ in [] }
     ) {
         self.lowerStatement = lowerStatement
+        self.lowerStatementWithFallThrough = lowerStatementWithFallThrough
         self.lowerCondition = lowerCondition
+    }
+
+    /// Lower a gather/choice body, threading `looseEnd` when a fall-through-aware
+    /// lowerer is available (so a variable-text-lead body falls through correctly);
+    /// otherwise lower it plainly.
+    private func lowerBody(_ body: [InkStatement], looseEnd: FallThrough) -> [NodeKind] {
+        if let lowerStatementWithFallThrough {
+            return lowerStatementWithFallThrough(body, looseEnd)
+        }
+        return lowerStatement(body)
     }
 
     func resolve(
@@ -632,7 +712,7 @@ private final class WeaveResolver {
             lead.append(.text(choice.label))
             lead.append(.newline)
         }
-        lead.append(contentsOf: lowerStatement(choice.body))
+        lead.append(contentsOf: lowerBody(choice.body, looseEnd: looseEnd))
         return try containerSpliced(
             lead: lead, body: choice.body, nested: choice.nested,
             key: key, nestedKeyPrefix: keyPrefix, looseEnd: looseEnd
@@ -652,7 +732,7 @@ private final class WeaveResolver {
         looseEnd: FallThrough
     ) throws -> ContainerNode {
         try containerSpliced(
-            lead: lowerStatement(gather.body), body: gather.body, nested: gather.nested,
+            lead: lowerBody(gather.body, looseEnd: looseEnd), body: gather.body, nested: gather.nested,
             key: key, nestedKeyPrefix: keyPrefix + [key], looseEnd: looseEnd
         )
     }

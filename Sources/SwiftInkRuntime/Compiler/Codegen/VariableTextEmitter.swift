@@ -162,9 +162,14 @@ enum VariableTextEmitter {
         named: inout [String: ContainerNode],
         lowerContinuation: ContinuationLowerer
     ) {
-        var endNamed: [String: ContainerNode] = [:]
+        // Seed the continuation's collector with the dispatch container ALREADY
+        // registered for THIS line so a second variable-text segment on the same
+        // line (`{&…} {!…}`) picks the NEXT ordinal (`seq1-*`, not a colliding
+        // `seq0-*`). The seeded entries are pruned before merging back so the end
+        // container does not re-nest its own siblings.
+        var endNamed = named
         let children = lowerContinuation(continuation, keyPrefix + [endKey], &endNamed)
-        for (innerKey, container) in endNamed {
+        for (innerKey, container) in endNamed where named[innerKey] == nil {
             named[innerKey] = container
         }
         named[endKey] = ContainerNode(children: children, namedContent: [:], flags: 0, name: endKey)
@@ -194,11 +199,14 @@ enum VariableTextEmitter {
         prefix + [key]
     }
 
-    /// The next variable-text ordinal for this container: the count of alternatives
-    /// already registered in `named` (each contributes one `seq{N}-end` key). This
-    /// is deterministic and free of shared mutable state, so sibling alternatives in
-    /// one body get distinct, stable container keys across compiles.
+    /// The next variable-text ordinal for this container: the count of dispatch
+    /// containers already registered in `named` (each alternative contributes one
+    /// `seq{N}-d` key, registered BEFORE its continuation lowers — so a second
+    /// segment on the same line, lowering inside the first segment's `-end`
+    /// continuation seeded with the first dispatch, picks the next ordinal). This is
+    /// deterministic and free of shared mutable state, so sibling alternatives get
+    /// distinct, stable container keys across compiles.
     private static func nextOrdinal(in named: [String: ContainerNode]) -> Int {
-        named.keys.filter { $0.hasPrefix("seq") && $0.hasSuffix("-end") }.count
+        named.keys.filter { $0.hasPrefix("seq") && $0.hasSuffix("-d") }.count
     }
 }

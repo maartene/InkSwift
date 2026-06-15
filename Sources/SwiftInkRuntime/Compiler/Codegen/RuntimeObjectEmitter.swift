@@ -264,6 +264,18 @@ enum RuntimeObjectEmitter {
                 bodyNamed.merge(weaveNamed)
                 return children
             },
+            // Threads the gather/choice loose-end into a body that LEADS with a
+            // variable-text line, so its folded trailing choices fall through to the
+            // enclosing gather (not the hardcoded `.end`) — #3b layer 1+2.
+            lowerStatementWithFallThrough: { statements, looseEnd in
+                var weaveNamed: [String: ContainerNode] = [:]
+                let children = lowerBody(
+                    statements, context: context, keyPrefix: keyPrefix,
+                    fallThrough: looseEnd, named: &weaveNamed
+                )
+                bodyNamed.merge(weaveNamed)
+                return children
+            },
             lowerCondition: { expression in lowerExpression(expression, context: context) }
         )
         for (key, container) in weave.named {
@@ -647,6 +659,7 @@ enum RuntimeObjectEmitter {
         _ statements: [InkStatement],
         context: LoweringContext,
         keyPrefix: [String],
+        fallThrough: WeaveEmitter.FallThrough = .end,
         named: inout [String: ContainerNode]
     ) -> [NodeKind] {
         var children: [NodeKind] = []
@@ -673,7 +686,7 @@ enum RuntimeObjectEmitter {
                let variableTextIndex = segments.firstIndex(where: isVariableTextSegment) {
                 children.append(contentsOf: lowerVariableTextLine(
                     segments, variableTextIndex: variableTextIndex, restOfBody: rest,
-                    context: context, keyPrefix: keyPrefix, named: &named
+                    context: context, keyPrefix: keyPrefix, fallThrough: fallThrough, named: &named
                 ))
                 return children
             }
@@ -755,14 +768,37 @@ enum RuntimeObjectEmitter {
             // the continuation's own `prefix`. The loose-end fall-through threads the
             // enclosing target down so choices after the variable-text line fall
             // through to the enclosing gather, not the hardcoded `.end` (#3b layer 2).
-            guard WeaveEmitter.containsWeave(body),
+            //
+            // Route through the resolver ONLY when the continuation LEADS with a
+            // weave item (choice/gather). When it leads with ANOTHER variable-text /
+            // inline-conditional line (a multi-segment line `{&…} {!…}` then choices),
+            // the flat `lowerBody` path chains that segment's own continuation into
+            // the trailing choices — threading `fallThrough` so they still fall
+            // through to the enclosing gather. Routing such a body through the
+            // resolver would split the second segment's lead from the choice items,
+            // dead-ending the dispatch before the choices are reached (#3b layer 1+2).
+            guard leadsWithWeave(body),
                   let weave = try? WeaveEmitter.lower(
                       body, keyPrefix: enclosingKeyPrefix, fallThrough: fallThrough,
                       lowerStatement: { statements in
                           var weaveNamed: [String: ContainerNode] = [:]
                           return lowerBody(statements, context: context, keyPrefix: prefix, named: &weaveNamed)
+                      },
+                      lowerStatementWithFallThrough: { statements, looseEnd in
+                          var weaveNamed: [String: ContainerNode] = [:]
+                          return lowerBody(
+                              statements, context: context, keyPrefix: prefix,
+                              fallThrough: looseEnd, named: &weaveNamed
+                          )
                       }) else {
-                return lowerBody(body, context: context, keyPrefix: prefix, named: &collected)
+                // Address the chained segment's containers under `enclosingKeyPrefix`
+                // (not the continuation's own `prefix`): like the weave branch above,
+                // its dispatch/stage/choice containers promote up into the enclosing
+                // scope's collector, so their paths must resolve from that scope.
+                return lowerBody(
+                    body, context: context, keyPrefix: enclosingKeyPrefix,
+                    fallThrough: fallThrough, named: &collected
+                )
             }
             for (key, container) in weave.named {
                 collected[key] = container

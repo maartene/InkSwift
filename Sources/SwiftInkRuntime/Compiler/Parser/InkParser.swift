@@ -556,6 +556,32 @@ public enum InkParser {
         return .divert(target)
     }
 
+    /// Parse a weave-outcome string (a gather's `- outcome`) into a single
+    /// `InkStatement`, applying the SAME line recognisers the main statement pass
+    /// uses so a gather outcome behaves like the body line it stands in for:
+    /// a `~` logic line executes (not echoed), a `{…}` group lowers to `.content`
+    /// (variable-text / inline-conditional gather lead recognised by `lowerBody`,
+    /// #3b layer 1), and plain prose is `.text`. (`->` diverts are handled by the
+    /// caller's arrow split, which also supports a leading prose prefix.) An empty
+    /// outcome yields `nil`. No new parsing logic is added — the existing
+    /// declaration / content recognisers are reused.
+    public static func outcomeStatement(
+        _ outcome: String,
+        at position: SourcePosition
+    ) throws -> InkStatement? {
+        let trimmed = outcome.trimmingCharacters(in: .whitespaces)
+        guard trimmed.isEmpty == false else { return nil }
+        if let kind = try declarationKind(of: trimmed) {
+            return InkStatement(kind: kind, position: position)
+        }
+        guard trimmed.contains("{") else {
+            return InkStatement(kind: .text(trimmed), position: position)
+        }
+        try UnsupportedConstructDetector.check(line: trimmed, lineNumber: position.line)
+        let segments = try parseContentSegments(trimmed)
+        return InkStatement(kind: .content(segments), position: position)
+    }
+
     private static func appendContent(
         from trimmed: String,
         position: SourcePosition,

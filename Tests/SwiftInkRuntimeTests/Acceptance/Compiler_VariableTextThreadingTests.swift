@@ -35,7 +35,7 @@ struct Compiler_VariableTextThreadingTests {
     // LAYER 1 (threading), loose-end = END. The gather's nested choices must
     // thread off the `{|…|}` lead line; selecting a choice reaches its body and
     // falls through to END. Script [0] picks the left door.
-    @Test(.disabled("pending DELIVER native-compiler-emission-alignment Phase 3 (#3b): gather-lead/inline variable-text continuation threading + loose-end fall-through fix"))
+    @Test
     func `gather-lead variable-text threads its nested choices then ends, matching the oracle`() throws {
         let result = try CompilerOracle.compileAndPlay("vt-gather-lead-end", choiceScript: [0])
         #expect(result.native == result.oracle)
@@ -46,7 +46,7 @@ struct Compiler_VariableTextThreadingTests {
     // through to the enclosing gather, not to END — exactly the hardcoded
     // `fallThrough: .end` bug. Script [0] → left door, "They wait.", "The hall
     // falls quiet.".
-    @Test(.disabled("pending DELIVER native-compiler-emission-alignment Phase 3 (#3b): gather-lead/inline variable-text continuation threading + loose-end fall-through fix"))
+    @Test
     func `gather-lead variable-text falls through to the enclosing gather, matching the oracle`() throws {
         let result = try CompilerOracle.compileAndPlay("vt-gather-lead-gather", choiceScript: [0])
         #expect(result.native == result.oracle)
@@ -66,7 +66,7 @@ struct Compiler_VariableTextThreadingTests {
     // `{|…|}` + a single `* [Wait]` empty-body choice + a loose-end diverting to
     // `waited`. The empty bracket choice produces no body text but must thread to
     // `waited`. Script [0] → "Time passes.".
-    @Test(.disabled("pending DELIVER native-compiler-emission-alignment Phase 3 (#3b): gather-lead/inline variable-text continuation threading + loose-end fall-through fix"))
+    @Test
     func `gather-lead variable-text with an empty-body choice threads to the continuation, matching the oracle`() throws {
         let result = try CompilerOracle.compileAndPlay("vt-gather-lead-empty-choice", choiceScript: [0])
         #expect(result.native == result.oracle)
@@ -77,7 +77,7 @@ struct Compiler_VariableTextThreadingTests {
     // Sticky choices loop the gather twice (turns < 2), so visit 1 shows the
     // first cells and visit 2 the second cells. Script [0,0] picks the left door
     // both visits, exercising both alternatives of each mode.
-    @Test(.disabled("pending DELIVER native-compiler-emission-alignment Phase 3 (#3b): gather-lead/inline variable-text continuation threading + loose-end fall-through fix"))
+    @Test
     func `gather-lead cycle and once variable-text thread identically across two visits, matching the oracle`() throws {
         let result = try CompilerOracle.compileAndPlay("vt-gather-lead-cycle-once", choiceScript: [0, 0])
         #expect(result.native == result.oracle)
@@ -86,7 +86,7 @@ struct Compiler_VariableTextThreadingTests {
     // Boundary: exactly ONE nested choice under the variable-text gather lead
     // (single vs multi). Pins that threading does not depend on having ≥2
     // choices. Script [0] → only door, "The hall falls quiet.".
-    @Test(.disabled("pending DELIVER native-compiler-emission-alignment Phase 3 (#3b): gather-lead/inline variable-text continuation threading + loose-end fall-through fix"))
+    @Test
     func `gather-lead variable-text with a single nested choice threads correctly, matching the oracle`() throws {
         let result = try CompilerOracle.compileAndPlay("vt-gather-lead-single-choice", choiceScript: [0])
         #expect(result.native == result.oracle)

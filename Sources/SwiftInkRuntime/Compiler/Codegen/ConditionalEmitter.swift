@@ -170,6 +170,22 @@ enum ConditionalEmitter {
 
     private static func inlineBranchContainer(_ text: String, key: String, endPath: [String]) -> ContainerNode {
         var children: [NodeKind] = []
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        // An inline-conditional branch whose body is a divert (`{c: -> target}`)
+        // emits a real divert and diverts AWAY — it does not rejoin the shared
+        // continuation. Any leading prose before the `->` still renders. A non-divert
+        // branch renders its text (if any) then falls through to the continuation.
+        if let arrowRange = trimmed.range(of: "->") {
+            let prose = String(trimmed[..<arrowRange.lowerBound]).trimmingCharacters(in: .whitespaces)
+            if prose.isEmpty == false {
+                children.append(.text(prose))
+            }
+            let target = String(trimmed[arrowRange.upperBound...]).trimmingCharacters(in: .whitespaces)
+            children.append(target == "END"
+                ? .controlCommand("end")
+                : unconditionalDivert(to: [target]))
+            return ContainerNode(children: children, namedContent: [:], flags: 0, name: key)
+        }
         if text.isEmpty == false {
             children.append(.text(text))
         }
