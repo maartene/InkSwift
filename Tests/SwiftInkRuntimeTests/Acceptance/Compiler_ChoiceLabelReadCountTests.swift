@@ -42,7 +42,7 @@ struct Compiler_ChoiceLabelReadCountTests {
     //     pick 1 (Give up) → "You turn back." → END
     // If `start.delay` survives as a `.variableReference`, the guard cannot
     // evaluate and the available-choice set diverges from the oracle.
-    @Test(.disabled("pending DELIVER native-compiler-emission-alignment Phase 1 (#4b): read-count resolution for a nested choice-label referenced in a guard / inline conditional"))
+    @Test
     func `read-count of a nested choice label used in a guard suppresses the guarded choice, matching the oracle`() throws {
         let result = try CompilerOracle.compileAndPlay("rc-choicelabel-guard", choiceScript: [0, 1])
         #expect(result.native == result.oracle)
@@ -59,7 +59,7 @@ struct Compiler_ChoiceLabelReadCountTests {
     //     pick 1 (Step back) → "You speak helplessly." (inline rendered) → END
     // If `harris.cant_talk_right` survives as a `.variableReference`, the inline
     // conditional cannot evaluate and the rendered text diverges from the oracle.
-    @Test(.disabled("pending DELIVER native-compiler-emission-alignment Phase 1 (#4b): read-count resolution for a nested choice-label referenced in a guard / inline conditional"))
+    @Test
     func `read-count of a nested choice label used in an inline conditional renders the gated word, matching the oracle`() throws {
         let result = try CompilerOracle.compileAndPlay("rc-choicelabel-inline", choiceScript: [0, 1])
         #expect(result.native == result.oracle)

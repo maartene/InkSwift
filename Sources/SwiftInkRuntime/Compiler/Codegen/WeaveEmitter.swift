@@ -509,9 +509,26 @@ private enum WeaveParser {
         var statements: [InkStatement] = []
         let prose = String(body[..<arrowRange.lowerBound]).trimmingCharacters(in: .whitespaces)
         if prose.isEmpty == false {
-            statements.append(InkStatement(kind: .text(prose), position: position))
+            // Route the prose preceding the divert through the same outcome
+            // recogniser as the no-arrow path so a brace-bearing prefix
+            // (inline-conditional `{c: …}` / variable-text `{|…|}`) lowers to
+            // `.content` and is threaded by `lowerBody` — not echoed as literal text.
+            if let statement = try? InkParser.outcomeStatement(prose, at: position) {
+                statements.append(statement)
+            } else {
+                statements.append(InkStatement(kind: .text(prose), position: position))
+            }
         }
         let target = String(body[arrowRange.upperBound...]).trimmingCharacters(in: .whitespaces)
+        // An inline divert (`prose -> target` on ONE source line) auto-glues the
+        // prose to the divert target (ink default divert glue): emit explicit glue
+        // so the re-entered target's first line joins on the same output line,
+        // matching inklecate. A divert on its OWN line (the flat S1 path) is NOT
+        // routed here, so cross-line diverts stay un-glued. `-> END` terminates the
+        // flow and needs no glue.
+        if target != "END", prose.isEmpty == false {
+            statements.append(InkStatement(kind: .glue, position: position))
+        }
         let divertKind: InkStatementKind = target == "END" ? .end : .divert(target)
         statements.append(InkStatement(kind: divertKind, position: position))
         return statements
