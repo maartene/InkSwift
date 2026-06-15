@@ -56,7 +56,7 @@ struct Compiler_VariableTextThreadingTests {
     // a knot-lead inline `{|…|}` then choices then a trailing gather. Pins that
     // the loose-end fix also repairs the inline variable-text continuation.
     // Script [0] → "You step forward.", "The room settles.".
-    @Test(.disabled("pending DELIVER native-compiler-emission-alignment Phase 3 (#3b): gather-lead/inline variable-text continuation threading + loose-end fall-through fix"))
+    @Test
     func `inline variable-text choices fall through to the trailing gather, matching the oracle`() throws {
         let result = try CompilerOracle.compileAndPlay("vt-inline-choices-gather", choiceScript: [0])
         #expect(result.native == result.oracle)

@@ -716,6 +716,7 @@ enum RuntimeObjectEmitter {
         restOfBody: [InkStatement],
         context: LoweringContext,
         keyPrefix: [String],
+        fallThrough: WeaveEmitter.FallThrough = .end,
         named: inout [String: ContainerNode]
     ) -> [NodeKind] {
         guard case .variableText(let mode, let stages) = segments[variableTextIndex] else {
@@ -730,7 +731,9 @@ enum RuntimeObjectEmitter {
         children.append(contentsOf: VariableTextEmitter.lower(
             mode: mode, stages: stages, continuation: continuation,
             keyPrefix: keyPrefix, named: &named,
-            lowerContinuation: continuationLowerer(context: context)
+            lowerContinuation: continuationLowerer(
+                context: context, enclosingKeyPrefix: keyPrefix, fallThrough: fallThrough
+            )
         ))
         return children
     }
@@ -741,14 +744,24 @@ enum RuntimeObjectEmitter {
     /// `c-N`/`g-N` outcome containers (promoted into the caller's collector so they
     /// resolve from the enclosing scope); otherwise lower it flatly.
     private static func continuationLowerer(
-        context: LoweringContext
+        context: LoweringContext,
+        enclosingKeyPrefix: [String],
+        fallThrough: WeaveEmitter.FallThrough
     ) -> (_ body: [InkStatement], _ prefix: [String], _ named: inout [String: ContainerNode]) -> [NodeKind] {
         return { body, prefix, collected in
+            // The weave's `c-N`/`g-N` outcome/gather containers promote up into the
+            // ENCLOSING scope's named map (the variable-text caller's collector), so
+            // they are addressed from that scope — keyed by `enclosingKeyPrefix`, not
+            // the continuation's own `prefix`. The loose-end fall-through threads the
+            // enclosing target down so choices after the variable-text line fall
+            // through to the enclosing gather, not the hardcoded `.end` (#3b layer 2).
             guard WeaveEmitter.containsWeave(body),
-                  let weave = try? WeaveEmitter.lower(body, lowerStatement: { statements in
-                      var weaveNamed: [String: ContainerNode] = [:]
-                      return lowerBody(statements, context: context, keyPrefix: prefix, named: &weaveNamed)
-                  }) else {
+                  let weave = try? WeaveEmitter.lower(
+                      body, keyPrefix: enclosingKeyPrefix, fallThrough: fallThrough,
+                      lowerStatement: { statements in
+                          var weaveNamed: [String: ContainerNode] = [:]
+                          return lowerBody(statements, context: context, keyPrefix: prefix, named: &weaveNamed)
+                      }) else {
                 return lowerBody(body, context: context, keyPrefix: prefix, named: &collected)
             }
             for (key, container) in weave.named {

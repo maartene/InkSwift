@@ -43,6 +43,18 @@ import Foundation
 
 enum WeaveEmitter {
 
+    /// Where a body's loose end falls when it does not divert away itself. Lives on
+    /// `WeaveEmitter` (not nested in the private `WeaveResolver`) so a caller can
+    /// thread an enclosing-scope loose-end target into `lower` (#3b layer 2): an
+    /// inline/gather-lead variable-text continuation that opens a weave must fall
+    /// through to its ENCLOSING gather, not the hardcoded `.end`.
+    enum FallThrough {
+        /// Divert to a gather container at this qualified path.
+        case gather([String])
+        /// Terminate the story (top-level weave with no enclosing gather).
+        case end
+    }
+
     /// Does this body contain at least one weave choice (and so must lower
     /// through the weave resolver rather than the flat statement lowerer)?
     static func containsWeave(_ statements: [InkStatement]) -> Bool {
@@ -59,11 +71,12 @@ enum WeaveEmitter {
     static func lower(
         _ statements: [InkStatement],
         keyPrefix: [String] = [],
+        fallThrough: FallThrough = .end,
         lowerStatement: @escaping ([InkStatement]) -> [NodeKind],
         lowerCondition: @escaping (InkExpression) -> [NodeKind] = { _ in [] }
     ) throws -> (children: [NodeKind], named: [String: ContainerNode]) {
         let resolved = try lowerWithLabelPaths(
-            statements, keyPrefix: keyPrefix,
+            statements, keyPrefix: keyPrefix, fallThrough: fallThrough,
             lowerStatement: lowerStatement, lowerCondition: lowerCondition
         )
         return (resolved.children, resolved.named)
@@ -82,12 +95,13 @@ enum WeaveEmitter {
     static func lowerWithLabelPaths(
         _ statements: [InkStatement],
         keyPrefix: [String] = [],
+        fallThrough: FallThrough = .end,
         lowerStatement: @escaping ([InkStatement]) -> [NodeKind],
         lowerCondition: @escaping (InkExpression) -> [NodeKind] = { _ in [] }
     ) throws -> (children: [NodeKind], named: [String: ContainerNode], labelPaths: [String: [String]]) {
         let block = WeaveParser.parse(statements, atLevel: 1)
         let resolver = WeaveResolver(lowerStatement: lowerStatement, lowerCondition: lowerCondition)
-        let resolved = try resolver.resolve(block, keyPrefix: keyPrefix, fallThrough: .end)
+        let resolved = try resolver.resolve(block, keyPrefix: keyPrefix, fallThrough: fallThrough)
         return (resolved.children, resolved.named, resolver.labelPaths)
     }
 
@@ -471,13 +485,9 @@ private enum WeaveParser {
 
 // MARK: - Resolving the tree into the runtime container tree
 
-/// Where a body's loose end falls when it does not divert away itself.
-private enum FallThrough {
-    /// Divert to a gather container at this qualified path.
-    case gather([String])
-    /// Terminate the story (top-level weave with no enclosing gather).
-    case end
-}
+/// The resolver's loose-end target type is `WeaveEmitter.FallThrough` (declared on
+/// the emitter so a caller can thread an enclosing-scope target in).
+private typealias FallThrough = WeaveEmitter.FallThrough
 
 /// Lowers a `WeaveBlock` tree into runnable `(children, named)`. Owns the
 /// `c-N`/`g-N` namespace; addresses are absolute-qualified from root via
