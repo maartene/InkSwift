@@ -296,3 +296,19 @@ Asserted via execution-equivalence (`CompilerOracle.compileAndPlay`, native comp
 - The real `(delay)` label is nested **3 levels deep** (`start → opts → plan → delay`) but referenced flat as `start.delay`. inklecate resolves by name in the knot's flat namespace regardless of depth; native registers by physical path, so the shallow #4b fixture passed while the deep real ref misses.
 
 **Implication:** the minimal-fixture DELIVER loop produces local greens without advancing the e2e. Strategic decision required (see playback probe + analysis): (a) switch to REAL-fragment / probe-driven ATs and fix against actual complexity, (b) invoke the ADR-012 subset-cap fallback (keep inklecate for complex stories), or (c) continue with faithfully-deep fixtures. Phase 1/#4b is NOT a true close of the TheIntercept gap; the committed improvements stand on their own merit.
+
+---
+
+## Wave: DELIVER / [REF] Probe-driven TheIntercept real-fixing — batch 1 (2026-06-16)
+
+User decision: pursue the e2e via **probe-driven real fixing** (DIAG_INTERCEPT2 playback probe as the gate; ratchet AT `Compiler_TheInterceptProgressTests` pins the achieved oracle-matching floor, only ever rising). Batch of 3 increments:
+
+| Step | Commit | Blocker cleared | matched floor |
+|---|---|---|---|
+| 01-01 | `4686262` | real `opts` gather loose-end `-> waited` not qualified to `start.waited` (stitch-local divert qualification) | 4 → 6 |
+| 01-02 | `64aa56f` | deep nested label `start.delay` (3 levels deep, folded into flat body) invisible to discovery → register folded labels under flat knot-namespace | 6 → 11 (dotted refs 2 → 0) |
+| 01-03 | `4d25dbf` | `-> pushes_cup` path: deeper-gather parsing, sibling-body ordinal collision, weave-label divert qualification, mid-line divert+glue | 11 → 15 |
+
+**Status:** native plays 15 of 80 oracle lines along the script; 0 surviving unresolved dotted refs; full suite 334 green; all fixes inside `Compiler/` (no runtime change); DES integrity 3/3. Next blocker = oracle index 15 (post-`lift_up_cup` gather, ink ~line 148).
+
+**Trajectory note:** ~3–4 matched lines per increment; ~65 lines remain → on the order of a dozen-plus more increments to full equivalence. Each increment is a substantial dispatch. The method is sound and regression-free; the open question is appetite for the remaining climb vs. the documented subset-cap fallback.
