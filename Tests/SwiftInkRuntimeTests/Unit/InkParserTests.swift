@@ -59,6 +59,34 @@ struct InkParserTests {
         }
     }
 
+    // Step 03-01 (parser bug #1) — a level-1 gather whose body is a divert
+    // (`- -> target`) must parse as ONE gather marker (level 1) whose outcome is
+    // `-> target`. The `-` of the `->` arrow is NOT a second gather marker, so the
+    // gather level is 1 and the outcome retains the full `-> target` divert form.
+    @Test func `parses a gather whose body is a divert as a single-level gather`() throws {
+        let statements = try InkParser.parse("- -> left_alone")
+        guard case let .gather(level, label, outcome) = statements[0].kind else {
+            Issue.record("expected a gather, got \(statements[0].kind)")
+            return
+        }
+        #expect(level == 1)
+        #expect(label == nil)
+        #expect(outcome == "-> left_alone")
+    }
+
+    // Step 03-01 (parser bug #1, regression guard) — a genuine level-2 gather
+    // (`- - outcome`) still consumes both `-` markers (the second `-` is followed
+    // by a space, not `>`, so it is a real gather marker).
+    @Test func `parses a two-marker gather as a level-2 gather`() throws {
+        let statements = try InkParser.parse("- - keep going")
+        guard case let .gather(level, _, outcome) = statements[0].kind else {
+            Issue.record("expected a gather, got \(statements[0].kind)")
+            return
+        }
+        #expect(level == 2)
+        #expect(outcome == "keep going")
+    }
+
     @Test func `parses a plain text line and a trailing glue marker`() throws {
         let statements = try InkParser.parse("You step inside. <>")
         #expect(statements.count == 2)

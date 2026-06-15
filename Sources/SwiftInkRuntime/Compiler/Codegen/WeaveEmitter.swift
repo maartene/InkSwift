@@ -58,9 +58,14 @@ enum WeaveEmitter {
     /// absolute-qualified from root; nested weaves recurse with a deeper key prefix.
     static func lower(
         _ statements: [InkStatement],
-        lowerStatement: @escaping ([InkStatement]) -> [NodeKind]
+        keyPrefix: [String] = [],
+        lowerStatement: @escaping ([InkStatement]) -> [NodeKind],
+        lowerCondition: @escaping (InkExpression) -> [NodeKind] = { _ in [] }
     ) throws -> (children: [NodeKind], named: [String: ContainerNode]) {
-        let resolved = try lowerWithLabelPaths(statements, lowerStatement: lowerStatement)
+        let resolved = try lowerWithLabelPaths(
+            statements, keyPrefix: keyPrefix,
+            lowerStatement: lowerStatement, lowerCondition: lowerCondition
+        )
         return (resolved.children, resolved.named)
     }
 
@@ -68,13 +73,21 @@ enum WeaveEmitter {
     /// `WeaveResolver` writes at its keying site (criterion 3). The same arithmetic
     /// that keys the outcome/gather containers records the labelled-only path —
     /// never re-derived. Unlabelled `c-N`/`g-N` containers are not registered.
+    /// `lowerCondition` lowers a choice's `{guard}` expression to POSTFIX eval-stack
+    /// nodes (the `RuntimeObjectEmitter.lowerExpression` idiom, reused — not edited).
+    /// `keyPrefix` is the enclosing knot/stitch path: choicePoint divert targets and
+    /// loose-end diverts are absolute-qualified from root, so a weave nested in a
+    /// knot addresses its `c-N`/`g-N` containers as `knot.c-N` (the engine resolves
+    /// absolute named paths regardless of execution position).
     static func lowerWithLabelPaths(
         _ statements: [InkStatement],
-        lowerStatement: @escaping ([InkStatement]) -> [NodeKind]
+        keyPrefix: [String] = [],
+        lowerStatement: @escaping ([InkStatement]) -> [NodeKind],
+        lowerCondition: @escaping (InkExpression) -> [NodeKind] = { _ in [] }
     ) throws -> (children: [NodeKind], named: [String: ContainerNode], labelPaths: [String: [String]]) {
         let block = WeaveParser.parse(statements, atLevel: 1)
-        let resolver = WeaveResolver(lowerStatement: lowerStatement)
-        let resolved = try resolver.resolve(block, keyPrefix: [], fallThrough: .end)
+        let resolver = WeaveResolver(lowerStatement: lowerStatement, lowerCondition: lowerCondition)
+        let resolved = try resolver.resolve(block, keyPrefix: keyPrefix, fallThrough: .end)
         return (resolved.children, resolved.named, resolver.labelPaths)
     }
 
@@ -93,6 +106,27 @@ enum WeaveEmitter {
         WeaveDiscovery.recordLabelPaths(block, keyPrefix: [], into: &labelPaths)
         let referencedLabels = WeaveDiscovery.referencedLabels(block, knownLabels: Set(labelPaths.keys))
         return (labelPaths, referencedLabels)
+    }
+
+    /// Discover labelled weave-point paths inside a body nested under `keyPrefix`
+    /// (a knot or knot.stitch). Each label's absolute path is `keyPrefix + label`,
+    /// and the lookup key is the DOTTED source name (`knot.label`, `knot.stitch.label`)
+    /// the reference uses — so `{not start.delay}` resolves to `[start, delay]`.
+    static func discoverLabelPaths(
+        _ statements: [InkStatement],
+        keyPrefix: [String]
+    ) -> [String: [String]] {
+        guard containsWeave(statements) else { return [:] }
+        let block = WeaveParser.parse(statements, atLevel: 1)
+        var localPaths: [String: [String]] = [:]
+        WeaveDiscovery.recordLabelPaths(block, keyPrefix: keyPrefix, into: &localPaths)
+        // recordLabelPaths keys by bare label; re-key by the dotted source name so
+        // a knot-qualified reference (`knot.label`) resolves to the absolute path.
+        var qualified: [String: [String]] = [:]
+        for path in localPaths.values {
+            qualified[path.joined(separator: ".")] = path
+        }
+        return qualified
     }
 }
 
@@ -361,7 +395,10 @@ private enum WeaveParser {
         }
         var body: [InkStatement] = []
         if outcome.isEmpty == false {
-            body.append(InkStatement(kind: .text(outcome), position: header.position))
+            // A gather whose outcome is a divert (`- -> target`, parser bug #1)
+            // lowers via the shared inline-body helper so the leading `->` becomes
+            // a real divert, not literal text. Plain prose still lowers to `.text`.
+            body.append(contentsOf: inlineBodyStatements(outcome, at: header.position))
         }
         while cursor < statements.count {
             let statement = statements[cursor]
@@ -449,14 +486,22 @@ private enum FallThrough {
 private final class WeaveResolver {
 
     let lowerStatement: ([InkStatement]) -> [NodeKind]
+    /// Lowers a choice's `{guard}` expression to POSTFIX eval-stack nodes, reusing
+    /// the `RuntimeObjectEmitter.lowerExpression` idiom (composes with 02-03's dotted
+    /// read-count operands). The resolver wraps the result in an `ev … /ev` block.
+    let lowerCondition: (InkExpression) -> [NodeKind]
 
     /// The `label -> absolute compiled path` table written at the keying site as
     /// containers resolve (criterion 3): the same `keyPrefix + key` the container
     /// is addressed by, recorded for the labelled-only entries — never re-derived.
     private(set) var labelPaths: [String: [String]] = [:]
 
-    init(lowerStatement: @escaping ([InkStatement]) -> [NodeKind]) {
+    init(
+        lowerStatement: @escaping ([InkStatement]) -> [NodeKind],
+        lowerCondition: @escaping (InkExpression) -> [NodeKind] = { _ in [] }
+    ) {
         self.lowerStatement = lowerStatement
+        self.lowerCondition = lowerCondition
     }
 
     func resolve(
@@ -467,6 +512,19 @@ private final class WeaveResolver {
         let gathers = gatherKeys(block, keyPrefix: keyPrefix)
         var children = lowerStatement(block.lead)
         var named: [String: ContainerNode] = [:]
+
+        // A block that LEADS with a gather (content above the first `*`, e.g. an
+        // intro line) is reached by sequential flow, not a loose-end divert: after
+        // the lead, flow diverts into that first gather, whose body + nested choices
+        // and own loose-end carry the rest of the weave. Without this entry divert a
+        // leading gather only lands in `named` and is never entered (start.children
+        // would be just `done`). A block that leads with a CHOICE keeps offering the
+        // choicePoints inline (the existing path below).
+        if case .gather? = block.items.first, let firstGather = gathers.first {
+            children.append(.divert(
+                target: firstGather.path.joined(separator: "."), isConditional: false, isVariable: false
+            ))
+        }
 
         var choiceOrdinal = 0
         var gatherOrdinal = 0
@@ -523,10 +581,19 @@ private final class WeaveResolver {
     // MARK: Choice lowering
 
     private func choicePointNodes(_ choice: WeaveChoice, target: [String]) -> [NodeKind] {
+        // Choice-text eval block first (leaves the menu string on the eval stack),
+        // then — for a `{guard}`-carrying choice — the guard eval block (leaves a
+        // boolean on top). The runtime pops the condition bool first, then the
+        // choice-text string, so this order matches inklecate (criterion 3).
         var nodes: [NodeKind] = [
             .controlCommand("ev"), .controlCommand("str"), .text(choice.label),
             .controlCommand("/str"), .controlCommand("/ev"),
         ]
+        if let condition = choice.condition {
+            nodes.append(.controlCommand("ev"))
+            nodes.append(contentsOf: lowerCondition(condition))
+            nodes.append(.controlCommand("/ev"))
+        }
         nodes.append(.choicePoint(target: target.joined(separator: "."), flags: flags(for: choice)))
         return nodes
     }
@@ -535,6 +602,9 @@ private final class WeaveResolver {
         var flags = choice.echoesLabel ? ChoiceFlagTemplate.plain : ChoiceFlagTemplate.bracketed
         // Sticky choices clear the once-only bit so they remain selectable on repeat.
         if choice.isSticky { flags.remove(.isOnceOnly) }
+        // A `{guard}`-carrying choice sets hasCondition so the runtime pops the
+        // boolean the guard eval block left and skips the choice when false.
+        if choice.condition != nil { flags.insert(.hasCondition) }
         return flags
     }
 

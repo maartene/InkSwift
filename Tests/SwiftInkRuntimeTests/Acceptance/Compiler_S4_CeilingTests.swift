@@ -57,7 +57,7 @@ struct Compiler_S4_CeilingTests {
     //      DESCOPE to the `native-ink-compiler` feature (2026-06-15).
     // Trait stays `.disabled` until native-ink-compiler lands weave-label
     // read-count addressing; the AT genuinely fails and must NOT be weakened.
-    @Test(.disabled("DEFERRED to native-ink-compiler (user-approved descope 2026-06-15): TheIntercept native compile needs weave-label read-count addressing. not-unary was delivered here (05-01); only the weave-label subsystem remains. The AT genuinely fails and is not weakened."))
+    @Test(.disabled("DEFERRED (native-ink-compiler weave-label slice, user decision 2026-06-15 'cut losses; alternative approach'): read-count addressing + CountVisits flagging + {condition} lowering + the gather-divert/empty-bracket parser fixes ALL landed and are oracle-green in isolation. The full TheIntercept e2e additionally needs variable-text {|...|} at a gather-lead position to thread back into the gather's nested choices (VariableTextEmitter + gather-lead continuation threading) plus likely further blockers past line 86 — a multi-subsystem effort to be designed as a follow-up, not chased per-blocker. The AT genuinely fails and is NOT weakened."))
     func `The Intercept compiles natively and plays identical to the inklecate oracle`() throws {
         let oracleJSON = try CompilerOracle.oracleJSON("TheIntercept")
         let interceptScript = [0, 2, 1, 0, 0, 1, 2, 0, 1, 0]
@@ -209,6 +209,118 @@ struct Compiler_S4_CeilingTests {
         let blueprint = try InkCompiler.compile(source: source)
         #expect(variableReferenceNames(in: blueprint.root).contains("ship.engine"))
     }
+
+    // 03-01 enabler — COUNTVISITS FLAG (criteria 1 + 2): a read-count-referenced
+    // weave label gets the 0x1 CountVisits flag on its outcome container, while an
+    // unreferenced sibling label keeps flags = 0 (no over-flagging). Without the
+    // flag the runtime never tracks the container's visits, so a resolved read-count
+    // would always evaluate 0 and the playback diverges from the oracle.
+    @Test func `the count-visits flag is set only on read-count-referenced weave labels`() throws {
+        let source = """
+        + (door) Open the door.
+        {door: It is already open.}
+        + (window) Open the window.
+        -> END
+        """
+        let blueprint = try InkCompiler.compile(source: source)
+        // `door` is referenced by `{door: …}` → flagged; `window` never referenced.
+        #expect(flagsForLabel("door", in: blueprint.root) == 0x1,
+                "referenced weave label `door` must carry the 0x1 CountVisits flag")
+        #expect(flagsForLabel("window", in: blueprint.root) == 0,
+                "unreferenced weave label `window` must keep flags = 0 (no over-flagging)")
+    }
+
+    // 03-01 enabler — COUNTVISITS FLAG on knot/stitch (criteria 1 + 2): a dotted
+    // read-count reference to a knot.stitch flags exactly that stitch container,
+    // while an unreferenced stitch in the same knot keeps flags = 0.
+    @Test func `the count-visits flag is set only on read-count-referenced stitches`() throws {
+        let source = """
+        -> waiting
+        === waiting ===
+        = guard_post
+        The corridor is empty.
+        {waiting.guard_post: He has been here before.}
+        -> idle
+        = idle
+        Nothing happens.
+        -> END
+        """
+        let blueprint = try InkCompiler.compile(source: source)
+        let waiting = blueprint.root.namedContent["waiting"]
+        #expect(waiting?.namedContent["guard_post"]?.flags == 0x1,
+                "referenced stitch `waiting.guard_post` must carry the 0x1 CountVisits flag")
+        #expect(waiting?.namedContent["idle"]?.flags == 0,
+                "unreferenced stitch `waiting.idle` must keep flags = 0")
+    }
+
+    // 03-01 enabler — {condition}-GUARDED CHOICE (criterion 3): a choice carrying a
+    // `{condition}` guard lowers its guard expression onto the eval stack BEFORE its
+    // choicePoint, and the choicePoint carries the hasCondition (0x1) flag so the
+    // runtime pops the boolean to gate the choice. The guard eval block sits AFTER
+    // the choice-text eval block (the runtime pops the condition bool first, then
+    // the choice-text string).
+    @Test func `a guarded choice lowers its condition before the choicePoint with the hasCondition flag`() throws {
+        let source = """
+        VAR ready = true
+        + {ready} Proceed.
+        -> END
+        """
+        let blueprint = try InkCompiler.compile(source: source)
+        let (flags, conditionBeforeChoicePoint) = guardedChoiceLowering(in: blueprint.root, label: "Proceed.")
+        #expect(flags?.contains(.hasCondition) == true,
+                "a guarded choicePoint must carry the hasCondition flag")
+        #expect(conditionBeforeChoicePoint,
+                "the guard condition must be lowered onto the eval stack before the choicePoint")
+    }
+}
+
+/// The flags of the namedContent outcome container keyed by a weave `label`,
+/// searched anywhere in the tree (root or nested), or nil when not found.
+private func flagsForLabel(_ label: String, in container: ContainerNode) -> Int? {
+    if let found = container.namedContent[label] { return found.flags }
+    for child in container.children {
+        if case .container(let nested) = child, let found = flagsForLabel(label, in: nested) {
+            return found
+        }
+    }
+    for nested in container.namedContent.values {
+        if let found = flagsForLabel(label, in: nested) { return found }
+    }
+    return nil
+}
+
+/// Find the choicePoint whose preceding choice text matches `label` and report
+/// (its flags, whether a condition eval block was lowered between the choice-text
+/// eval block and the choicePoint). Used to assert guarded-choice lowering order.
+private func guardedChoiceLowering(
+    in container: ContainerNode, label: String
+) -> (flags: ChoiceFlags?, conditionBeforeChoicePoint: Bool) {
+    let children = container.children
+    for (index, child) in children.enumerated() {
+        guard case .choicePoint(_, let flags) = child else { continue }
+        guard precedingChoiceText(children, before: index) == label else { continue }
+        // A condition eval block lowered before the choicePoint means there is a
+        // second `/ev` between the choice-text `/ev` and the choicePoint.
+        let evCloseCount = children[..<index].filter { node in
+            if case .controlCommand("/ev") = node { return true }
+            return false
+        }.count
+        return (flags, evCloseCount >= 2)
+    }
+    for nested in container.namedContent.values {
+        let result = guardedChoiceLowering(in: nested, label: label)
+        if result.flags != nil { return result }
+    }
+    return (nil, false)
+}
+
+/// The choice-text string pushed by the `str ^text /str` group immediately
+/// preceding the choicePoint at `index` (scans backwards for the nearest text node).
+private func precedingChoiceText(_ children: [NodeKind], before index: Int) -> String? {
+    for node in children[..<index].reversed() {
+        if case .text(let value) = node { return value }
+    }
+    return nil
 }
 
 /// Collect every `.variableReference` name anywhere in the container tree so the

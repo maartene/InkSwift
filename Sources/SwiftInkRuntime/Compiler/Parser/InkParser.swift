@@ -411,8 +411,16 @@ public enum InkParser {
         while index < trimmed.endIndex {
             let character = trimmed[index]
             if character == marker {
+                // A `-` immediately followed by `>` opens a `->` divert, not another
+                // gather marker — stop so `- -> target` parses as a level-1 gather
+                // whose body is the divert (parser bug #1, step 03-01). Choices
+                // (`*`/`+`) are unaffected: this guard only fires for `marker == "-"`.
+                let next = trimmed.index(after: index)
+                if marker == "-", next < trimmed.endIndex, trimmed[next] == ">" {
+                    break
+                }
                 level += 1
-                index = trimmed.index(after: index)
+                index = next
                 continue
             }
             if character == " " || character == "\t" {
@@ -425,11 +433,29 @@ public enum InkParser {
         return (level, rest)
     }
 
-    /// Split a `[choice-only] body` remainder into the bracketed choice-only
-    /// label and the outcome body. With no brackets the whole remainder is body.
+    /// Split a `prefix[choiceOnly]suffix` remainder into the choice menu text and
+    /// the taken-outcome body. Ink choice-text semantics: the menu shows
+    /// `prefix + choiceOnly`; the taken outcome is `prefix + suffix` (the prefix is
+    /// shared, the bracket span is menu-only, the suffix is outcome-only). With no
+    /// bracket the whole remainder is the outcome body and the label is `nil`
+    /// (the plain-choice case — the body is echoed as the menu text downstream).
+    ///
+    /// The bracket may be preceded by a non-empty `prefix` (parser bug #2, step
+    /// 03-01): the earlier helper only split a bracket at the very start, so
+    /// `Hut 14[]. …` was left as literal text including the `[]`. Modelled within
+    /// the existing AST fields: `label` carries the menu text (`prefix + choiceOnly`)
+    /// and `body` carries the glued outcome (`prefix + suffix`).
     private static func splitChoiceOnlyLabel(_ remainder: String) -> (label: String?, body: String) {
-        let split = splitBracketedLabel(remainder, open: "[", close: "]")
-        return (split.label, split.rest)
+        guard let openIndex = remainder.firstIndex(of: "["),
+              let closeIndex = remainder[remainder.index(after: openIndex)...].firstIndex(of: "]") else {
+            return (nil, remainder)
+        }
+        let prefix = String(remainder[..<openIndex])
+        let choiceOnly = String(remainder[remainder.index(after: openIndex)..<closeIndex])
+        let suffix = String(remainder[remainder.index(after: closeIndex)...])
+        let menuText = (prefix + choiceOnly).trimmingCharacters(in: .whitespaces)
+        let outcome = (prefix + suffix).trimmingCharacters(in: .whitespaces)
+        return (menuText, outcome)
     }
 
     /// Split a `(name) outcome` remainder into the optional gather label and the

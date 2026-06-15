@@ -36,8 +36,14 @@ enum RuntimeObjectEmitter {
         let (rootBody, knots, functionDefinitions) = partitionTopLevel(statements)
         // Discovery pre-pass (ADR-011 EXTEND #3): record the labelled weave-point
         // paths before lowering so read-count references resolve order-independently.
-        // Write-only at this slice — populated, not yet consumed (02-03 emits CNT?).
-        let weaveLabelPaths = WeaveEmitter.discover(rootBody).labelPaths
+        // Weave labels live in the root body AND inside knot/stitch bodies (e.g.
+        // TheIntercept's `(delay)` under `start`, `(tellme)` under `start.waited`);
+        // each is keyed by its enclosing knot/stitch prefix so a dotted read-count
+        // (`start.delay`) resolves to the absolute container path.
+        var weaveLabelPaths = WeaveEmitter.discover(rootBody).labelPaths
+        for knot in knots {
+            mergeWeaveLabelPaths(of: knot, into: &weaveLabelPaths)
+        }
         // Knot/stitch read-count addressing (ADR-011 EXTEND #2): record every
         // knot's and stitch's already-built namedContent path so a dotted
         // read-count subject (`knot.stitch`) resolves to its container path,
@@ -53,7 +59,7 @@ enum RuntimeObjectEmitter {
         let rootChildren = try lowerRootBody(rootBody, context: context, named: &namedContent)
 
         for knot in knots {
-            namedContent[knot.name] = emitKnot(knot, context: context)
+            namedContent[knot.name] = try emitKnot(knot, context: context)
         }
         for function in functionDefinitions {
             namedContent[function.name] = emitFunction(function, context: context)
@@ -61,8 +67,62 @@ enum RuntimeObjectEmitter {
         if let globalDecl = emitGlobalDecl(statements, context: context) {
             namedContent[globalDeclKey] = globalDecl
         }
-        return ContainerNode(children: rootChildren, namedContent: namedContent, flags: 0, name: nil)
+        let root = ContainerNode(children: rootChildren, namedContent: namedContent, flags: 0, name: nil)
+        // CountVisits flagging (ADR-011 EXTEND, generalised WL-D4): set the runtime's
+        // 0x1 CountVisits flag on EXACTLY the read-count-referenced targets — labelled
+        // weave containers AND referenced knots/stitches. The set of referenced
+        // absolute paths is the SET of `.readCount` keys already emitted into the tree
+        // (02-03 resolved each referenced target to its container path; the keys are
+        // the single source of path truth, never re-derived). Flagging only those
+        // matches inklecate (VariableReference.cs:101 flags a container only when a
+        // reference resolves to it; countAllVisits is OFF) — no over-flagging.
+        return flaggingCountVisits(root, atPaths: referencedReadCountPaths(in: root))
     }
+
+    // MARK: - CountVisits flagging
+
+    /// Collect the absolute namedContent path (dot-joined) of every `.readCount`
+    /// node anywhere in the tree — the exact set of read-count-referenced targets.
+    /// Each `.readCount` key is the resolved container path emitted at 02-03.
+    private static func referencedReadCountPaths(in container: ContainerNode) -> Set<String> {
+        var paths: Set<String> = []
+        collectReadCountPaths(container, into: &paths)
+        return paths
+    }
+
+    private static func collectReadCountPaths(_ container: ContainerNode, into paths: inout Set<String>) {
+        for child in container.children {
+            if case .readCount(let key) = child { paths.insert(key) }
+            if case .container(let nested) = child { collectReadCountPaths(nested, into: &paths) }
+        }
+        for nested in container.namedContent.values {
+            collectReadCountPaths(nested, into: &paths)
+        }
+    }
+
+    /// Rebuild the tree setting the 0x1 CountVisits flag on every container whose
+    /// absolute namedContent path is in `flaggedPaths`. Children numeric-indexed
+    /// containers are never named read-count targets, so only namedContent entries
+    /// extend the path; the root carries no path of its own.
+    private static func flaggingCountVisits(
+        _ container: ContainerNode,
+        atPaths flaggedPaths: Set<String>,
+        prefix: [String] = []
+    ) -> ContainerNode {
+        var rebuiltNamed: [String: ContainerNode] = [:]
+        for (key, child) in container.namedContent {
+            rebuiltNamed[key] = flaggingCountVisits(child, atPaths: flaggedPaths, prefix: prefix + [key])
+        }
+        let path = prefix.joined(separator: ".")
+        let flags = flaggedPaths.contains(path) ? container.flags | countVisitsFlag : container.flags
+        return ContainerNode(
+            children: container.children, namedContent: rebuiltNamed, flags: flags, name: container.name
+        )
+    }
+
+    /// The runtime's `#f` bit 0 — tracks a flagged container's visits into
+    /// `state.visitCounts`, which a `.readCount(absolutePath)` node reads back.
+    private static let countVisitsFlag = 0x1
 
     /// Codegen-wide lowering inputs threaded through the lowerers: the CONST
     /// inlining table and the function-signature table (so a `ref` argument can
@@ -107,6 +167,23 @@ enum RuntimeObjectEmitter {
         }
     }
 
+    /// Register the labelled weave points inside a knot's body and each of its
+    /// stitch bodies, keyed by their dotted source name (`knot.label`,
+    /// `knot.stitch.label`) so a knot-qualified read-count reference resolves to the
+    /// absolute container path. Reuses the same key arithmetic the weave resolver
+    /// addresses the containers by — never re-derived.
+    private static func mergeWeaveLabelPaths(of knot: KnotGroup, into table: inout [String: [String]]) {
+        for (key, path) in WeaveEmitter.discoverLabelPaths(knot.body, keyPrefix: [knot.name]) {
+            table[key] = path
+        }
+        for stitch in knot.stitches {
+            let prefix = [knot.name, stitch.name]
+            for (key, path) in WeaveEmitter.discoverLabelPaths(stitch.body, keyPrefix: prefix) {
+                table[key] = path
+            }
+        }
+    }
+
     /// Build the knot/stitch read-count path table (ADR-011 EXTEND #2). A knot is
     /// addressed by `[knot.name]`; a stitch nested under it by `[knot.name,
     /// stitch.name]` — the same namedContent path `emitKnot`/`emitStitch` key their
@@ -144,20 +221,91 @@ enum RuntimeObjectEmitter {
         context: LoweringContext,
         named: inout [String: ContainerNode]
     ) throws -> [NodeKind] {
-        guard WeaveEmitter.containsWeave(rootBody) else {
-            return lowerBody(rootBody, context: context, keyPrefix: [], named: &named)
-                + [.controlCommand("done")]
+        try lowerBodyRoutingWeave(rootBody, context: context, keyPrefix: [], named: &named)
+    }
+
+    /// Lower a body, routing through the `WeaveEmitter` when it contains choices
+    /// (the weave resolver emits the per-choice choicePoints, contributes the
+    /// `c-N`/`g-N` outcome/gather containers under `keyPrefix` into `named`, lowers
+    /// each `{guard}` via `lowerExpression`, and appends its own `done`); otherwise
+    /// lowers flatly and terminates in `done`. Shared by the root body and every
+    /// knot/stitch/function body so weaves nested inside knots compile identically.
+    private static func lowerBodyRoutingWeave(
+        _ body: [InkStatement],
+        context: LoweringContext,
+        keyPrefix: [String],
+        named: inout [String: ContainerNode],
+        terminateFlatBodyWithDone: Bool = true
+    ) throws -> [NodeKind] {
+        // Route through the weave resolver ONLY when the body LEADS with weave
+        // content (a choice/gather before any variable-text or block conditional).
+        // When a variable-text / conditional line comes first, `lowerBody` folds the
+        // trailing choices into that line's continuation (the established S3 path) —
+        // routing the whole body through the resolver would instead emit those
+        // choicePoints unreachable after the variable-text divert (loop never
+        // advances). Bodies with no leading weave keep the flat `lowerBody` path.
+        guard leadsWithWeave(body) else {
+            let flat = lowerBody(body, context: context, keyPrefix: keyPrefix, named: &named)
+            return terminateFlatBodyWithDone ? flat + [.controlCommand("done")] : flat
         }
-        // Weave choice/gather bodies in the supported set do not themselves open
-        // block conditionals (S3 scope), so they lower with a private collector.
-        let weave = try WeaveEmitter.lower(rootBody) { statements in
-            var weaveNamed: [String: ContainerNode] = [:]
-            return lowerBody(statements, context: context, keyPrefix: [], named: &weaveNamed)
-        }
+        // A weave lead / choice / gather body can itself emit named containers
+        // (variable-text `seq*-d`/`seq*-end`, inline-conditional `cond*-b*` arms).
+        // The weave resolver invokes `lowerStatement` per body with a fresh local
+        // collector, so those containers must be promoted here or the diverts that
+        // target them (e.g. `divert(seq0-d)`) would not resolve. Accumulate them in
+        // a reference collector the closure shares, then merge into `named`.
+        let bodyNamed = NamedContentCollector()
+        let weave = try WeaveEmitter.lower(
+            body,
+            keyPrefix: keyPrefix,
+            lowerStatement: { statements in
+                var weaveNamed: [String: ContainerNode] = [:]
+                let children = lowerBody(statements, context: context, keyPrefix: keyPrefix, named: &weaveNamed)
+                bodyNamed.merge(weaveNamed)
+                return children
+            },
+            lowerCondition: { expression in lowerExpression(expression, context: context) }
+        )
         for (key, container) in weave.named {
             named[key] = container
         }
+        for (key, container) in bodyNamed.contents {
+            named[key] = container
+        }
         return weave.children
+    }
+
+    /// True when the body's first flow-controlling statement is a weave item
+    /// (choice/gather) rather than a variable-text or block-conditional line. A
+    /// leading weave must route through the resolver; a leading variable-text /
+    /// conditional owns its trailing choices via its continuation (so the flat
+    /// `lowerBody` path handles them and the resolver must not pre-empt it).
+    private static func leadsWithWeave(_ body: [InkStatement]) -> Bool {
+        for statement in body {
+            switch statement.kind {
+            case .choice, .gather:
+                return true
+            case .conditionalBlock:
+                return false
+            case .content(let segments)
+                where segments.contains(where: isConditionalSegment)
+                   || segments.contains(where: isVariableTextSegment):
+                return false
+            default:
+                continue
+            }
+        }
+        return false
+    }
+
+    /// A reference-type accumulator letting the weave `lowerStatement` closure (which
+    /// cannot capture an `inout` parameter) collect the named containers each body
+    /// emits, so they can be promoted into the enclosing container's namedContent.
+    private final class NamedContentCollector {
+        private(set) var contents: [String: ContainerNode] = [:]
+        func merge(_ other: [String: ContainerNode]) {
+            for (key, value) in other { contents[key] = value }
+        }
     }
 
     // MARK: - Declarations
@@ -437,21 +585,23 @@ enum RuntimeObjectEmitter {
 
     // MARK: - Lowering
 
-    private static func emitKnot(_ knot: KnotGroup, context: LoweringContext) -> ContainerNode {
+    private static func emitKnot(_ knot: KnotGroup, context: LoweringContext) throws -> ContainerNode {
         var named: [String: ContainerNode] = [:]
         for stitch in knot.stitches {
             var stitchNamed: [String: ContainerNode] = [:]
-            let children = lowerBody(
+            let children = try lowerBodyRoutingWeave(
                 stitch.body, context: context,
-                keyPrefix: [knot.name, stitch.name], named: &stitchNamed
+                keyPrefix: [knot.name, stitch.name], named: &stitchNamed,
+                terminateFlatBodyWithDone: false
             )
             named[stitch.name] = ContainerNode(
                 children: children, namedContent: stitchNamed, flags: 0, name: stitch.name
             )
         }
         var knotNamed = named
-        let children = lowerBody(
-            knot.body, context: context, keyPrefix: [knot.name], named: &knotNamed
+        let children = try lowerBodyRoutingWeave(
+            knot.body, context: context, keyPrefix: [knot.name], named: &knotNamed,
+            terminateFlatBodyWithDone: false
         )
         return ContainerNode(children: children, namedContent: knotNamed, flags: 0, name: knot.name)
     }

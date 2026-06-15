@@ -87,6 +87,29 @@ struct InkParserChoiceLabelConditionTests {
         #expect(choice.condition == nil)
     }
 
+    // Step 03-01 (parser bug #2) — a `prefix[]suffix` empty-bracket choice. The
+    // `[]` is the suppress-output bracket with no choice-only text: the menu shows
+    // the printed `prefix`, and the taken outcome is `prefix` glued to `suffix`.
+    // So the menu label is the prefix and the body is `prefix` + `suffix` (the
+    // bracket is consumed, never echoed literally). Modelled within the existing
+    // fields: `choiceOnlyLabel` carries the menu text (prefix + bracket span),
+    // `body` carries the glued outcome (prefix + suffix).
+    @Test func `splits a prefix[]suffix empty-bracket choice into menu text and glued outcome`() throws {
+        let choice = try firstChoice("* Hut 14[]. The door was locked.")
+        #expect(choice.choiceOnlyLabel == "Hut 14")
+        #expect(choice.body == "Hut 14. The door was locked.")
+        #expect(choice.weaveLabel == nil)
+        #expect(choice.condition == nil)
+    }
+
+    // Step 03-01 (parser bug #2) — a non-empty `prefix[choiceOnly]suffix`: the menu
+    // shows `prefix + choiceOnly`; the taken outcome is `prefix + suffix`.
+    @Test func `splits a prefix[choiceOnly]suffix choice into menu text and glued outcome`() throws {
+        let choice = try firstChoice("* I say \"hello[\"]\" and wave.")
+        #expect(choice.choiceOnlyLabel == "I say \"hello\"")
+        #expect(choice.body == "I say \"hello\" and wave.")
+    }
+
     // Criterion 4 — the choice `(label)` is parsed by the SAME generic
     // `splitBracketedLabel` helper that gathers use: a `(label)` on a choice yields
     // the same captured-label / trimmed-rest shape as the identical `(label)` on a
