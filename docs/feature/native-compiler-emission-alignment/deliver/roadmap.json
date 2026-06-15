@@ -1,37 +1,57 @@
 {
   "roadmap": {
     "project_id": "native-compiler-emission-alignment",
-    "created_at": "2026-06-15T22:27:02Z",
-    "total_steps": 1
+    "created_at": "2026-06-16T08:00:00Z",
+    "total_steps": 2
   },
   "phases": [
     {
       "id": "01",
-      "name": "Choice-label read-count resolution (#4b)",
-      "description": "Resolve dotted read-count references to a nested choice label (in a guard or inline conditional) to .readCount(path), so they stop surviving as unresolvable .variableReference. Extends the prior weave-label resolution to nested choice labels. Compiler/ only; no runtime change.",
+      "name": "TheIntercept real-fixing (probe-driven)",
+      "description": "Pursue the TheIntercept e2e against the REAL story (playback probe as the gate), one real blocker at a time. Step 01-01 clears the line-4 dead-end at the real opts gather. Compiler/ only; no runtime change.",
       "default_agent": "nw-software-crafter",
       "default_deps_strategy": "sequential",
       "steps": [
         {
           "id": "01-01",
-          "name": "Resolve nested choice-label read-count references",
+          "name": "Advance native TheIntercept past the real opts gather",
           "criteria": [
-            "A dotted read-count ref to a nested choice label resolves to .readCount in both a guard ({not knot.label}) and an inline conditional ({knot.label: text}).",
-            "The newly-resolved target containers carry the 0x1 CountVisits flag (via the existing auto-flag reconciliation) so the read count evaluates at runtime.",
-            "A dotted name resolving to no known label/knot/stitch still falls through to .variableReference (not an error).",
-            "The rc-choicelabel-guard and rc-choicelabel-inline ATs pass (native==oracle) and their .disabled traits are removed.",
-            "No regression in the existing weave / read-count / variable-text corpus."
+            "Native TheIntercept no longer dead-ends at the real opts gather; it plays strictly more than 4 oracle-matching lines, reaching at least the waited stitch (oracle index 4).",
+            "A ratchet AT pins the achieved floor: native[0..<N] == oracle[0..<N] with N strictly greater than the prior 4.",
+            "The real opts gather is handled: a labelled gather with a variable-text lead, multiple nested choices including level-2 choices, and a -> opts loop-back.",
+            "No regression in the full suite (incl. the Phase-3 variable-text-threading and #4b choice-label ATs, both TheIntercept playthroughs)."
           ],
           "agent": "nw-software-crafter",
           "deps": [],
-          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_ChoiceLabelReadCountTests.swift",
-          "scenario_name": "read-count of a nested choice label used in a guard suppresses the guarded choice, matching the oracle",
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_TheInterceptProgressTests.swift",
+          "scenario_name": "TheIntercept native plays past the opts gather, matching the oracle prefix",
           "files_to_modify": [
             "Sources/SwiftInkRuntime/Compiler/Codegen/WeaveEmitter.swift",
             "Sources/SwiftInkRuntime/Compiler/Codegen/RuntimeObjectEmitter.swift",
-            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_ChoiceLabelReadCountTests.swift"
+            "Sources/SwiftInkRuntime/Compiler/Parser/InkParser.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_TheInterceptProgressTests.swift"
           ],
-          "implementation_notes": "TEST PARADIGM: example-based Swift Testing oracle execution-equivalence (compileAndPlay) per CLAUDE.md (OOP; PBT N/A). Backtick function-name style MANDATORY; @Test(\"string\") FORBIDDEN. CONTEXT: the playback probe (DIAG_INTERCEPT2) shows native TheIntercept dead-ends at output line 4 because two dotted refs to nested CHOICE LABELS survive unresolved as .variableReference: start.delay (in a guard {not start.delay}) and harris_demands_component.cant_talk_right (inline {..: helplessly}). The prior weave-label slice resolves a simpler shape (the green RED-pin: a root/stitch label in a plain condition) but NOT a choice label nested in a knot referenced from a guard/inline. INVESTIGATE in RED: why the discovery pre-pass / weaveLabelPaths registration + lowerExpression resolution miss these (likely the pre-pass does not register nested choice labels, or registers them under a path that does not match the dotted source name knot.label). FIX: extend the discovery pre-pass (WeaveEmitter) to register nested choice labels' absolute paths under their source-dotted name (reuse the resolver's already-computed keyPrefix; never re-derive), and ensure lowerExpression resolves them (RuntimeObjectEmitter); the existing post-emission auto-flag reconciliation then flags the resolved .readCount targets. Boundary: Compiler/ only; no Engine/ import (R1); no JSONSerialization (R5); no runtime/Decoder change. Do NOT re-enable the TheIntercept e2e (needs #4a too)."
+          "implementation_notes": "TEST PARADIGM: example-based Swift Testing oracle execution-equivalence per CLAUDE.md (OOP; PBT N/A). Backtick function-name style MANDATORY; @Test(\"string\") FORBIDDEN. PROBE-DRIVEN REAL-FIXING (user decision 2026-06-16): synthetic minimal fixtures false-greened (see feature-delta #4b re-diagnosis), so drive against the REAL story. The driver/diagnostic is DIAG_INTERCEPT2 (Tests/.../Diagnostics/TheInterceptPlaybackProbe.swift): native currently dead-ends at output line 4 entering the real opts gather (start knot, source ~line 85): a LABELLED gather '- (opts)' with a variable-text lead {|I rattle...|}, nested choices (think)/(plan)/[Wait] where (plan) has its own level-2 choices (cooperate/dissemble/delay), and a '-> opts' loop-back; the gather closes '- -> waited'. Phase 3 fixed only a shallow miniature; this is the real shape. RED: author an ENABLED ratchet AT in a NEW suite Compiler_TheInterceptProgressTests.swift asserting native plays >=N oracle-matching lines (compile TheIntercept, play along [0,2,1,0,0,1,2,0,1,0], assert native.count>=N && native[0..<N]==oracle[0..<N]); set the RED target N just past the opts gather (>=5, the waited line). It must fail now (native has 4 lines). GREEN: fix the real opts emission in Compiler/ (do NOT change the runtime); after GREEN run DIAG_INTERCEPT2 and set N to the ACTUAL achieved matching-line count (maximize the ratchet up to the next real blocker). Investigate with a throwaway dump (remove before commit). If a fix needs a file beyond files_to_modify or a runtime change, STOP and escalate. Do NOT re-enable the TheIntercept e2e (full equivalence not yet reached). Boundary: no Engine/ import (R1); no JSONSerialization (R5); no runtime/Decoder change. DONE (commit 4686262): stitch-local divert qualification; native 4->9 played, matched floor N=6."
+        },
+        {
+          "id": "01-02",
+          "name": "Resolve the real deeply-nested start.delay read-count guard",
+          "criteria": [
+            "The real start.delay dotted read-count (a choice label nested 3 levels deep: start -> opts -> plan -> delay) resolves to .readCount, so the {not start.delay} guard on the tellme choice in start.waited evaluates correctly.",
+            "harris_demands_component.cant_talk_right likewise resolves (same deep-nesting class).",
+            "The DIAG_INTERCEPT2 surviving-dotted count drops toward 0 and native advances past oracle index 6; the ratchet AT N is bumped to the new achieved floor.",
+            "No regression in the full suite."
+          ],
+          "agent": "nw-software-crafter",
+          "deps": ["01-01"],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_TheInterceptProgressTests.swift",
+          "scenario_name": "native TheIntercept plays past the opts gather, matching the oracle prefix",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Compiler/Codegen/WeaveEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/RuntimeObjectEmitter.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_TheInterceptProgressTests.swift"
+          ],
+          "implementation_notes": "PROBE-DRIVEN. After 01-01 the probe's next blocker is oracle index 6: the {not start.delay} guard on the tellme choice in start.waited. start.delay is a surviving unresolved dotted variableReference: (delay) is a choice label nested 3 levels deep (start -> opts gather -> plan choice -> delay choice), referenced FLAT as start.delay. inklecate resolves by NAME in the knot's flat namespace regardless of physical depth; native's discovery pre-pass registers by physical path so the flat ref misses (the shallow #4b fixture passed but the deep real ref does not). FIX (Compiler/ only): extend the discovery pre-pass (WeaveEmitter) so a labelled weave point nested at ANY depth in a knot is ALSO addressable by knot.label (name in the knot's flat namespace), keyed to its already-computed absolute path (reuse keyPrefix; never re-derive); ensure lowerExpression resolves it (RuntimeObjectEmitter) and the auto-flag reconciliation flags the target. RED: bump the ratchet AT N to just past oracle index 6 (the tellme path). GREEN: fix; re-run DIAG_INTERCEPT2; set N to the actual achieved floor. Throwaway dump ok (remove before commit). If blocked beyond Compiler/ or needs a runtime change, STOP and escalate. Do NOT re-enable the TheIntercept e2e. Boundary R1/R3/R5; no runtime/Decoder change."
         }
       ]
     }
@@ -47,8 +67,8 @@
   },
   "validation": {
     "status": "approved",
-    "reviewer": "orchestrator (gates + AT-mapping; derives from probe diagnosis + Accepted ADR-012 #4b + distilled ATs)",
+    "reviewer": "orchestrator (probe-driven phase; gates run before execution)",
     "approved_at": "2026-06-16",
-    "notes": "Single coherent fix: both #4b ATs (rc-choicelabel-guard, rc-choicelabel-inline) share one root cause (nested choice-label resolution not reached by the prior weave-label slice). des-roadmap validate + integrity --roadmap-only to be run before execution. Boundary R1/R3/R5 + no-runtime-change held."
+    "notes": "Probe-driven real-fixing per user decision 2026-06-16 (minimal fixtures false-greened). Single step clears the line-4 real-opts-gather dead-end, gated by the DIAG_INTERCEPT2 playback probe + a ratchet AT. Further blockers handled in subsequent steps as the probe reveals them."
   }
 }

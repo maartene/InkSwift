@@ -142,10 +142,21 @@ enum WeaveEmitter {
         let block = WeaveParser.parse(statements, atLevel: 1)
         var localPaths: [String: [String]] = [:]
         WeaveDiscovery.recordLabelPaths(block, keyPrefix: keyPrefix, into: &localPaths)
-        // recordLabelPaths keys by bare label; re-key by the dotted source name so
-        // a knot-qualified reference (`knot.label`) resolves to the absolute path.
+        // recordLabelPaths keys each label by its BARE name with the REAL absolute
+        // compiled path it resolves to. Re-key under TWO source-reference forms so a
+        // deeply-nested label resolves regardless of how the reference spells it:
+        //   1. the FLAT knot-namespace name `knot.label` (`start.delay`) — inklecate
+        //      resolves a dotted read-count by NAME in the knot's flat namespace
+        //      regardless of physical nesting depth, so `(delay)` nested 3 levels deep
+        //      under `start` is addressable as `start.delay` (criteria 1/2);
+        //   2. the PHYSICAL dotted path (`start.plan.delay`) — a reference that
+        //      already spells the full nested path still resolves.
+        // `keyPrefix` is the enclosing knot (or knot.stitch) the body hangs under —
+        // NOT the label's physical container path — so the flat name is the knot's
+        // namespace plus the bare label, never re-derived from the container path.
         var qualified: [String: [String]] = [:]
-        for path in localPaths.values {
+        for (label, path) in localPaths {
+            qualified[(keyPrefix + [label]).joined(separator: ".")] = path
             qualified[path.joined(separator: ".")] = path
         }
         return qualified
@@ -178,6 +189,7 @@ private enum WeaveDiscovery {
                 if let nested = choice.nested {
                     recordLabelPaths(nested, keyPrefix: keyPrefix + [key], into: &labelPaths)
                 }
+                recordFoldedLabelPaths(choice.body, keyPrefix: keyPrefix, into: &labelPaths)
                 choiceOrdinal += 1
             case .gather(let gather):
                 let key = gather.label ?? "g-\(gatherOrdinal)"
@@ -185,9 +197,30 @@ private enum WeaveDiscovery {
                 if let nested = gather.nested {
                     recordLabelPaths(nested, keyPrefix: keyPrefix + [key], into: &labelPaths)
                 }
+                recordFoldedLabelPaths(gather.body, keyPrefix: keyPrefix, into: &labelPaths)
                 gatherOrdinal += 1
             }
         }
+    }
+
+    /// Record labels of choices FOLDED into a flat body. A gather/choice that LEADS
+    /// with a variable-text / inline-conditional line (`{|…|}`, `{c:…}`) folds its
+    /// trailing choices into its flat `body` (WeaveParser §3b layer 1) with
+    /// `nested == nil`, so `recordLabelPaths`' nested walk misses them. Those folded
+    /// choices compile under the ENCLOSING (knot) scope — not under the gather's own
+    /// `g-N`/label segment — so the engine resolves a flat `knot.label` read-count to
+    /// them. Re-parse the folded body and recurse at the SAME `keyPrefix` to register
+    /// each folded labelled point at its real absolute path (criteria 1/2: a label
+    /// nested at any depth becomes addressable by the knot's flat namespace).
+    private static func recordFoldedLabelPaths(
+        _ body: [InkStatement],
+        keyPrefix: [String],
+        into labelPaths: inout [String: [String]]
+    ) {
+        guard WeaveEmitter.containsWeave(body) else { return }
+        let folded = WeaveParser.parse(body, atLevel: 1)
+        guard folded.items.isEmpty == false else { return }
+        recordLabelPaths(folded, keyPrefix: keyPrefix, into: &labelPaths)
     }
 
     private static func registerIfLabelled(
