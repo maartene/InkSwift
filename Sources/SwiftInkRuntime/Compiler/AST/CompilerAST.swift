@@ -78,13 +78,24 @@ public enum InkStatementKind: Equatable {
     case temporaryVariable(name: String, value: InkExpression)
     /// A `~ name = expr` reassignment of an existing variable.
     case assignment(name: String, value: InkExpression)
-    /// A weave choice line: `* [label] body` (bracketed, choice-only) or
-    /// `* body` (plain, label echoes). `level` is the weave nesting depth
-    /// (number of leading `*`/`+` markers). `isSticky` distinguishes `+`
-    /// (sticky) from `*` (once-only). `choiceOnlyLabel` is the bracketed
-    /// `[…]` span when present (the choice text shown but not echoed into the
-    /// body); `body` is the outcome text that runs after the choice is taken.
-    case choice(level: Int, isSticky: Bool, choiceOnlyLabel: String?, body: String)
+    /// A weave choice line: `* (label) {condition} [choiceOnly] body`. `level` is
+    /// the weave nesting depth (number of leading `*`/`+` markers). `isSticky`
+    /// distinguishes `+` (sticky) from `*` (once-only). `choiceOnlyLabel` is the
+    /// bracketed `[…]` span when present (the choice text shown but not echoed into
+    /// the body); `body` is the outcome text that runs after the choice is taken.
+    /// `weaveLabel` is the optional leading `(name)` weave label — symmetric with
+    /// the gather case's `label`, captured for read-count addressing (ADR-011) and
+    /// not echoed into content. `condition` is the optional `{…}` guard expression
+    /// captured separately from content; the choice is offered only when it is
+    /// truthy.
+    case choice(
+        level: Int,
+        isSticky: Bool,
+        choiceOnlyLabel: String?,
+        body: String,
+        weaveLabel: String?,
+        condition: InkExpression?
+    )
     /// A weave gather line: `- outcome` (or `- - outcome` at deeper levels).
     /// `level` is the gather depth (number of leading `-` markers). `label`
     /// is the optional `(name)` gather label. `outcome` is the gather's text.

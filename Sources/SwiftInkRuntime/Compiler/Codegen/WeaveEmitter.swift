@@ -136,12 +136,12 @@ private enum WeaveParser {
         while cursor < statements.count {
             let statement = statements[cursor]
             switch statement.kind {
-            case .choice(let choiceLevel, _, _, _) where choiceLevel < level,
+            case .choice(let choiceLevel, _, _, _, _, _) where choiceLevel < level,
                  .gather(let choiceLevel, _, _) where choiceLevel < level:
                 return WeaveBlock(lead: lead, items: items)
             case .gather(let gatherLevel, _, _) where gatherLevel == level && stopAtSameLevelGather:
                 return WeaveBlock(lead: lead, items: items)
-            case .choice(let choiceLevel, _, _, _) where choiceLevel == level:
+            case .choice(let choiceLevel, _, _, _, _, _) where choiceLevel == level:
                 cursor += 1
                 items.append(.choice(parseChoice(statement, statements, cursor: &cursor, atLevel: level)))
                 sawItem = true
@@ -169,7 +169,7 @@ private enum WeaveParser {
         cursor: inout Int,
         atLevel level: Int
     ) -> WeaveChoice {
-        guard case .choice(_, let isSticky, let choiceOnlyLabel, let body) = header.kind else {
+        guard case .choice(_, let isSticky, let choiceOnlyLabel, let body, _, _) = header.kind else {
             fatalError("parseChoice requires a choice statement")
         }
         var bodyStatements: [InkStatement] = []
@@ -269,7 +269,7 @@ private enum WeaveParser {
     }
 
     private static func isDeeperChoice(_ statement: InkStatement, than level: Int) -> Bool {
-        if case .choice(let choiceLevel, _, _, _) = statement.kind { return choiceLevel > level }
+        if case .choice(let choiceLevel, _, _, _, _, _) = statement.kind { return choiceLevel > level }
         return false
     }
 
@@ -279,7 +279,7 @@ private enum WeaveParser {
     }
 
     private static func isSameOrShallowerItem(_ statement: InkStatement, level: Int) -> Bool {
-        if case .choice(let choiceLevel, _, _, _) = statement.kind { return choiceLevel <= level }
+        if case .choice(let choiceLevel, _, _, _, _, _) = statement.kind { return choiceLevel <= level }
         if case .gather(let gatherLevel, _, _) = statement.kind { return gatherLevel <= level }
         return false
     }

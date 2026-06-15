@@ -345,18 +345,54 @@ public enum InkParser {
         return nil
     }
 
-    /// Parse a choice line `* [label] body` / `+ body`. The leading run of the
-    /// same marker is the weave level; `[…]` (when present) is the choice-only
-    /// label that is shown but not echoed into the outcome body.
+    /// Parse a choice line `* (label) {condition} [choiceOnly] body` / `+ body`.
+    /// The leading run of the same marker is the weave level. A leading `(name)`
+    /// is the weave label (read-count addressing, ADR-011), parsed by REUSING the
+    /// generic `splitBracketedLabel` helper with `(`/`)` — exactly as gathers do.
+    /// A following `{…}` is the guard condition, captured separately from content.
+    /// `[…]` (when present) is the choice-only label shown but not echoed into the
+    /// outcome body.
     private static func choiceKind(of trimmed: String, marker: Character) -> InkStatementKind {
         let (level, remainder) = consumeMarkers(trimmed, marker: marker)
-        let (choiceOnlyLabel, body) = splitChoiceOnlyLabel(remainder)
+        let (weaveLabel, afterLabel) = splitWeaveLabel(remainder)
+        let (condition, afterCondition) = splitChoiceCondition(afterLabel)
+        let (choiceOnlyLabel, body) = splitChoiceOnlyLabel(afterCondition)
         return .choice(
             level: level,
             isSticky: marker == "+",
             choiceOnlyLabel: choiceOnlyLabel,
-            body: body
+            body: body,
+            weaveLabel: weaveLabel,
+            condition: condition
         )
+    }
+
+    /// Split a leading `(name)` weave label off a choice remainder, REUSING the
+    /// generic `splitBracketedLabel` helper with `(`/`)` (the same helper gathers
+    /// use — no new parsing helper is added). With no leading parenthesised label
+    /// the whole remainder is returned unchanged and the label is `nil`.
+    private static func splitWeaveLabel(_ remainder: String) -> (label: String?, rest: String) {
+        splitBracketedLabel(remainder, open: "(", close: ")")
+    }
+
+    /// Split a leading `{condition}` guard off a choice remainder into the parsed
+    /// guard expression and the trimmed text after it. With no leading `{…}` the
+    /// whole remainder is returned unchanged and the condition is `nil`. A `{` that
+    /// is not a leading guard (e.g. inline-printed content) is left for the content
+    /// pass — only a `{` at the very start of the remainder is treated as a guard.
+    private static func splitChoiceCondition(_ remainder: String) -> (condition: InkExpression?, rest: String) {
+        guard remainder.first == "{",
+              let closeIndex = remainder.firstIndex(of: "}") else {
+            return (nil, remainder)
+        }
+        let conditionText = String(remainder[remainder.index(after: remainder.startIndex)..<closeIndex])
+            .trimmingCharacters(in: .whitespaces)
+        let rest = String(remainder[remainder.index(after: closeIndex)...])
+            .trimmingCharacters(in: .whitespaces)
+        guard let condition = try? InkExpressionParser.parse(conditionText) else {
+            return (nil, remainder)
+        }
+        return (condition, rest)
     }
 
     /// Parse a gather line `- outcome` / `- - outcome` / `- (name) outcome`.
