@@ -572,8 +572,57 @@ public enum InkParser {
         if let colonIndex = topLevelColonIndex(in: body) {
             return (try inlineConditionalSegment(body, colonIndex: colonIndex), next)
         }
+        if topLevelBarIndex(in: body) != nil {
+            return (variableTextSegment(body), next)
+        }
         let expression = try InkExpressionParser.parse(body.trimmingCharacters(in: .whitespaces))
         return (.expression(expression), next)
+    }
+
+    /// Build a variable-text segment from a `{a|b|c}` / `{&a|b}` / `{!a|b}` body
+    /// (it has a top-level `|` but no top-level `:`). The leading marker selects
+    /// the mode — `&` cycle, `!` once, none sequence — and is stripped before the
+    /// body is top-level-`|`-split into raw stage texts. A leading `\` escape means
+    /// the first character is literal, so the form is a plain sequence. Shuffle
+    /// `{~a|b}` never reaches here: `UnsupportedConstructDetector` rejects it first.
+    private static func variableTextSegment(_ body: String) -> ContentSegment {
+        let (mode, content) = modeAndContent(of: body)
+        let stages = topLevelBarSplit(content)
+        return .variableText(mode: mode, stages: stages)
+    }
+
+    /// Read the leading mode marker of a variable-text body and return the mode
+    /// plus the body with that marker stripped. A leading `\` escape yields a
+    /// sequence over the body minus the escape character.
+    private static func modeAndContent(of body: String) -> (VariableTextMode, String) {
+        if body.first == "\\" {
+            return (.sequence, String(body.dropFirst()))
+        }
+        switch body.first {
+        case "&": return (.cycle, String(body.dropFirst()))
+        case "!": return (.once, String(body.dropFirst()))
+        default: return (.sequence, body)
+        }
+    }
+
+    /// Split a variable-text body at every top-level `|` into stage texts,
+    /// ignoring `|` nested inside `{…}` groups.
+    private static func topLevelBarSplit(_ body: String) -> [String] {
+        var stages: [String] = []
+        var current = ""
+        var depth = 0
+        for character in body {
+            if character == "{" { depth += 1 }
+            if character == "}" { depth -= 1 }
+            if character == "|" && depth == 0 {
+                stages.append(current)
+                current = ""
+                continue
+            }
+            current.append(character)
+        }
+        stages.append(current)
+        return stages
     }
 
     /// Build an inline-conditional segment from a `{ cond: a|b }` body, split at

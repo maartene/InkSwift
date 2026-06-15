@@ -133,60 +133,27 @@ enum UnsupportedConstructDetector {
     }
 
     /// Name the variable-text construct of a brace-group body, or `nil` when the
-    /// body is a supported interpolation/conditional rather than an alternative.
+    /// body is a SUPPORTED form (sequence / cycle / once, all lowered by
+    /// VariableTextEmitter as of slice-01) or a supported interpolation/conditional.
+    /// Only shuffle `{~a|b}` remains unsupported — the gate is now shuffle-only
+    /// (DDD-5 / DISTILL U-2): deterministic alternatives compile.
     private static func variableTextConstruct(of body: String) -> String? {
         let trimmed = body.trimmingCharacters(in: .whitespaces)
-        if let marker = leadingMarker(of: trimmed) {
-            return marker
-        }
-        if hasTopLevelAlternation(trimmed) && hasTopLevelColon(trimmed) == false {
-            return "sequence"
-        }
-        return nil
+        return leadingMarker(of: trimmed)
     }
 
-    /// Map a leading `&`/`!`/`~` marker (a leading `\` escape is skipped) to its
-    /// construct name. Returns `nil` when the body starts with no such marker.
+    /// Map a leading `~` marker (a leading `\` escape is skipped) to "shuffle".
+    /// Returns `nil` for every other leading character — `&` cycle, `!` once, and
+    /// the no-marker sequence form are now SUPPORTED and lowered by the compiler,
+    /// so only shuffle short-circuits here.
     private static func leadingMarker(of trimmed: String) -> String? {
         var characters = Substring(trimmed)
         if characters.first == "\\" {
             characters = characters.dropFirst()
         }
         switch characters.first {
-        case "&": return "cycle"
-        case "!": return "once"
         case "~": return "shuffle"
         default: return nil
         }
-    }
-
-    /// True when the body has a `|` at brace-nesting depth 0 (an alternation
-    /// separator), ignoring `|` inside any nested `{…}`.
-    private static func hasTopLevelAlternation(_ body: String) -> Bool {
-        topLevel(body, contains: "|")
-    }
-
-    /// True when the body has a `:` at brace-nesting depth 0 (the inline
-    /// conditional discriminator), ignoring `:` inside any nested `{…}`.
-    private static func hasTopLevelColon(_ body: String) -> Bool {
-        topLevel(body, contains: ":")
-    }
-
-    private static func topLevel(_ body: String, contains target: Character) -> Bool {
-        var depth = 0
-        for character in body {
-            if character == "{" {
-                depth += 1
-                continue
-            }
-            if character == "}" {
-                depth -= 1
-                continue
-            }
-            if character == target && depth == 0 {
-                return true
-            }
-        }
-        return false
     }
 }

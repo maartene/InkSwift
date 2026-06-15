@@ -15,22 +15,22 @@ never emits a blueprint for a construct the runtime cannot execute; conversely e
 construct the compiler accepts is playable line-for-line, choice-for-choice against
 the inklecate oracle.
 
-One deliberate, documented caveat applies: the **variable-text forms**
-(sequence / cycle / once) are **MUST-REJECT** here even though the runtime *can*
-play the visit-count switch that inklecate lowers them into. This is a
-compiler-side parity gap, not a runtime limitation — see
+As of slice-01 the **deterministic variable-text forms** (sequence / cycle / once)
+**MUST-COMPILE**: the compiler now lowers them onto the visit-count switch the
+runtime already plays. Only the **shuffle** form `{~a|b}` remains MUST-REJECT among
+the variable-text constructs, because it additionally needs RANDOM — see
 [Known gaps / future work](#known-gaps--future-work).
 
 A construct documented MUST-COMPILE below provably compiles, and a construct
 documented MUST-REJECT provably rejects with a located `.unsupportedConstruct`
 error. This consistency is enforced executably by
 `Tests/SwiftInkRuntimeTests/Acceptance/Compiler_S5_FeatureReferenceConsistencyTests.swift`
-(5 supported-compile + 8 unsupported-reject checks). If this table and that suite
+(8 supported-compile + 5 unsupported-reject checks). If this table and that suite
 ever disagree, the suite is the source of truth and this document is the bug.
 
 ## MUST-COMPILE
 
-These constructs compile to a playable blueprint. (Matrix rows 1–24, 29–35.)
+These constructs compile to a playable blueprint. (Matrix rows 1–27, 29–35.)
 
 | # | Construct | Example | Reason |
 |---|-----------|---------|--------|
@@ -58,6 +58,9 @@ These constructs compile to a playable blueprint. (Matrix rows 1–24, 29–35.)
 | 22 | Inline conditionals (`{c: a\|b}`) | `{alive: alive\|dead}` | Inline branch on a boolean/numeric guard. |
 | 23 | Block conditionals (if / else if) | `{ hp > 0:\n  alive\n- else:\n  dead\n}` | Multi-line conditional block with else branch. |
 | 24 | Switch-style conditionals | `{ kind:\n- 1: red\n- 2: blue\n}` | Per-case dispatch via `==` + conditional diverts. |
+| 25 | Variable text: sequences (`{a\|b\|c}`) | `{red\|green\|blue}` | Lowered to a visit-count switch that clamps at the last stage (`MIN`). |
+| 26 | Variable text: cycles (`{&a\|b}`) | `{&one\|two}` | Lowered to a visit-count switch that wraps modulo the stage count (`%`). |
+| 27 | Variable text: once-only (`{!a\|b}`) | `{!first time\|}` | Lowered to a visit-count switch that advances once per stage then blanks. |
 | 29 | Functions (`=== f(params) ===`) | `=== function raise(x) ===` | Callable knot with parameters and a return frame. |
 | 30 | Inline function calls `{f()}` | `{double(5)}` | Function invocation whose return value is emitted. |
 | 31 | String interpolation | `Score: {score}` | `str`/`/str` interpolation of expression results. |
@@ -69,13 +72,10 @@ These constructs compile to a playable blueprint. (Matrix rows 1–24, 29–35.)
 ## MUST-REJECT
 
 These constructs are rejected by the compiler with a located
-`.unsupportedConstruct` error. (Matrix rows 25–28, 36–39.)
+`.unsupportedConstruct` error. (Matrix rows 28, 36–39.)
 
 | # | Construct | Example | Reason |
 |---|-----------|---------|--------|
-| 25 | Variable text: sequences (`{a\|b\|c}`) | `{red\|green\|blue}` | Compiler does not yet lower the visit-count switch (parity gap). |
-| 26 | Variable text: cycles (`{&a\|b}`) | `{&one\|two}` | Compiler does not yet lower the cycling visit-count switch (parity gap). |
-| 27 | Variable text: once-only (`{!a\|b}`) | `{!first time\|}` | Compiler does not yet lower the once-only visit-count switch (parity gap). |
 | 28 | Variable text: shuffle (`{~a\|b}`) | `{~heads\|tails}` | Requires RANDOM, which the runtime genuinely lacks. |
 | 36 | Threads (`<-`) | `<- conversation` | Concurrent flow weaving is unimplemented in the runtime. |
 | 37 | LIST declarations | `LIST colors = red, green` | List value type and operators are unimplemented. |
@@ -87,32 +87,30 @@ These constructs are rejected by the compiler with a located
 The MUST-REJECT list above is honest about *why* each construct is rejected, because
 the reasons are not uniform:
 
-- **Deterministic variable-text (sequence / cycle / once — rows 25–27)** is a
-  **compiler/runtime parity gap**, not a runtime limitation. inklecate compiles
-  `{a|b|c}` and its `&`/`!` variants into a read-count-driven visit-count switch
-  (`read-count + MIN + ==` + conditional diverts), and the `SwiftInkRuntime` engine
-  *already executes that lowered shape*. The native compiler simply does not lower
-  these source forms yet. They are the prime candidates for **future compiler
-  support** — landing them requires only a new lowering pass, no runtime change.
+- **Deterministic variable-text (sequence / cycle / once — rows 25–27)** is now
+  **supported** (slice-01). inklecate compiles `{a|b|c}` and its `&`/`!` variants
+  into a read-count-driven visit-count switch (`visit + MIN`/`%` + `==` + conditional
+  diverts), and the native compiler lowers these source forms onto exactly that shape
+  via `VariableTextEmitter` — no runtime change was needed.
 
-- **Shuffle (`{~...}` — row 28)** additionally depends on RANDOM, which the runtime
-  does not provide. It therefore stays unsupported until RANDOM lands, independent
-  of the lowering work above.
+- **Shuffle (`{~...}` — row 28)** depends on RANDOM, which the runtime does not
+  provide. It therefore stays unsupported until RANDOM lands — it is the only
+  variable-text form still rejected.
 
 - **Threads, LIST, RANDOM/SEED_RANDOM, EXTERNAL (rows 36–39)** are
   **runtime-unsupported**: the engine has no execution model for them today. These
   are lower priority (the BEYOND tier) and out of scope for the current ceiling.
 
-### Concrete example of the parity gap
+### Variable-text lowering, by example
 
-The comprehensive end-to-end fixture `Tests/InkSwiftTests/TheIntercept.ink` is **not**
-natively compilable today *precisely because* of this gap. Line 86 uses a once-only
-variable-text form:
+The comprehensive end-to-end fixture `Tests/InkSwiftTests/TheIntercept.ink` uses a
+once-only variable-text form on line 86:
 
 ```ink
 {|I rattle my fingers on the field table.|}
 ```
 
-The runtime can play `TheIntercept.ink` via the JS-bridge oracle, but the native
-compiler rejects it at this line with `.unsupportedConstruct`. Closing the
-sequence/cycle/once lowering gap would make `TheIntercept.ink` natively compilable.
+This bare once-only spelling is a plain sequence (`["", "I rattle…", ""]`): the text
+appears on the second visit, then the form falls silent. As of slice-01 the native
+compiler lowers it directly — closing the last variable-text gap that blocked native
+compilation of this fixture (shuffle aside).

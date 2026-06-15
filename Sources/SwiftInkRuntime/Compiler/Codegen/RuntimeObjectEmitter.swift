@@ -455,6 +455,14 @@ enum RuntimeObjectEmitter {
                 ))
                 return children
             }
+            if case .content(let segments) = statement.kind,
+               let variableTextIndex = segments.firstIndex(where: isVariableTextSegment) {
+                children.append(contentsOf: lowerVariableTextLine(
+                    segments, variableTextIndex: variableTextIndex, restOfBody: rest,
+                    context: context, keyPrefix: keyPrefix, named: &named
+                ))
+                return children
+            }
             let nextIsGlue = isGlue(statements, at: offset + 1)
             children.append(contentsOf: lower(
                 statement, gluedToNext: nextIsGlue, context: context
@@ -476,6 +484,64 @@ enum RuntimeObjectEmitter {
     private static func isConditionalSegment(_ segment: ContentSegment) -> Bool {
         if case .conditional = segment { return true }
         return false
+    }
+
+    private static func isVariableTextSegment(_ segment: ContentSegment) -> Bool {
+        if case .variableText = segment { return true }
+        return false
+    }
+
+    /// Lower a content line carrying a variable-text alternative `{a|b}` / `{&a|b}`
+    /// / `{!a|b}`. Segments before it render first; the alternative dispatches to a
+    /// visited stage container via VariableTextEmitter; the stages rejoin a
+    /// continuation container holding the line's trailing segments (newline + any
+    /// tag) and the rest of the enclosing body (mirrors lowerInlineConditionalLine).
+    private static func lowerVariableTextLine(
+        _ segments: [ContentSegment],
+        variableTextIndex: Int,
+        restOfBody: [InkStatement],
+        context: LoweringContext,
+        keyPrefix: [String],
+        named: inout [String: ContainerNode]
+    ) -> [NodeKind] {
+        guard case .variableText(let mode, let stages) = segments[variableTextIndex] else {
+            return []
+        }
+        let prefixSegments = Array(segments[..<variableTextIndex])
+        let suffixSegments = Array(segments[(variableTextIndex + 1)...])
+        var children = lowerContentSegments(prefixSegments, context: context)
+
+        let continuation = inlineContinuationStatements(suffixSegments, restOfBody: restOfBody)
+
+        children.append(contentsOf: VariableTextEmitter.lower(
+            mode: mode, stages: stages, continuation: continuation,
+            keyPrefix: keyPrefix, named: &named,
+            lowerContinuation: continuationLowerer(context: context)
+        ))
+        return children
+    }
+
+    /// A continuation lowerer for the variable-text emitter: when the rejoin body
+    /// opens a weave (choices that follow the alternative on the same line/knot),
+    /// route it through the WeaveEmitter so the choices become real choicePoints +
+    /// `c-N`/`g-N` outcome containers (promoted into the caller's collector so they
+    /// resolve from the enclosing scope); otherwise lower it flatly.
+    private static func continuationLowerer(
+        context: LoweringContext
+    ) -> (_ body: [InkStatement], _ prefix: [String], _ named: inout [String: ContainerNode]) -> [NodeKind] {
+        return { body, prefix, collected in
+            guard WeaveEmitter.containsWeave(body),
+                  let weave = try? WeaveEmitter.lower(body, lowerStatement: { statements in
+                      var weaveNamed: [String: ContainerNode] = [:]
+                      return lowerBody(statements, context: context, keyPrefix: prefix, named: &weaveNamed)
+                  }) else {
+                return lowerBody(body, context: context, keyPrefix: prefix, named: &collected)
+            }
+            for (key, container) in weave.named {
+                collected[key] = container
+            }
+            return weave.children
+        }
     }
 
     /// Lower a content line carrying an inline conditional `{ c: a|b }`. Segments
@@ -630,6 +696,9 @@ enum RuntimeObjectEmitter {
                 nodes.append(contentsOf: [.tagOpen, .text(tag), .tagClose])
             case .conditional:
                 // Inline conditionals are handled by lowerInlineConditionalLine.
+                break
+            case .variableText:
+                // Variable-text alternatives are handled by lowerVariableTextLine.
                 break
             }
         }

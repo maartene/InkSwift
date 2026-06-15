@@ -29,9 +29,25 @@ public enum ContentSegment: Equatable {
     /// texts are raw content rendered when the condition is truthy/falsy. A
     /// missing `|` (i.e. `{ cond: text }`) yields an empty false branch.
     case conditional(condition: InkExpression, ifTrue: String, ifFalse: String)
+    /// A deterministic variable-text alternative `{a|b|c}` / `{&a|b}` / `{!a|b}`
+    /// (ADR-010). `mode` selects the dispatch arithmetic (sequence clamps at the
+    /// last stage, cycle wraps modulo the stage count, once advances then blanks);
+    /// `stages` are the raw `|`-split alternative texts. Shuffle `{~a|b}` is NOT
+    /// represented here — it is rejected upstream by `UnsupportedConstructDetector`.
+    case variableText(mode: VariableTextMode, stages: [String])
     /// A tag `#tag` attached to the line. The runtime surfaces it as a tag, not
     /// as output text.
     case tag(String)
+}
+
+/// The dispatch arithmetic of a variable-text alternative (ADR-010). All forms
+/// lower to a visit-indexed dispatch container; the mode selects how the visit
+/// index maps onto the stages: `sequence` clamps at the last stage, `cycle` wraps
+/// modulo the stage count, `once` advances through each stage once then blanks.
+public enum VariableTextMode: Equatable {
+    case sequence
+    case cycle
+    case once
 }
 
 /// The kind of a parsed Ink statement. Each construct the S1 core flow needs is

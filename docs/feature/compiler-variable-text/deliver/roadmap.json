@@ -1,0 +1,96 @@
+{
+  "roadmap": {
+    "project_id": "compiler-variable-text",
+    "created_at": "2026-06-15T08:00:00Z",
+    "total_steps": 1,
+    "phases": 1,
+    "slice": "slice-01-once-only"
+  },
+  "phases": [
+    {
+      "id": "01",
+      "name": "Variable-text lowering (slice 01 — once-only)",
+      "steps": [
+        {
+          "id": "01-01",
+          "step_id": "01-01",
+          "name": "Lower the deterministic variable-text forms and narrow the unsupported gate to shuffle-only",
+          "description": "Land the variable-text lowering mechanism (ADR-010) and flip matrix rows 25-27 from reject to compile, GREENing the VT1 once-only acceptance scenarios (vt-once-sticky, vt-once-bare). Implement: (1) ContentSegment.variableText(mode:stages:) AST case + VariableTextMode enum {sequence,cycle,once}; (2) a variable-text parse rule in InkParser.scanBraceSegment recognising a brace body with a top-level '|' and no top-level ':', reading the leading marker (&->cycle, !->once, none->sequence), stripping it, and '|'-splitting the body into stages; (3) a new stateless VariableTextEmitter (Compiler/Codegen/) with ONE parametrized routine over (op, bound, appendEmptyStage) emitting the #f:5 dispatch container + named seqN-sI stage containers + shared seqN-end rejoin, mirroring ConditionalEmitter's named-container/-end-rejoin pattern; (4) a .variableText dispatch branch in RuntimeObjectEmitter.lowerBody parallel to the inline-conditional branch, threading line suffix + rest-of-body as the continuation; (5) narrow UnsupportedConstructDetector.variableTextConstruct to return a construct ONLY for the '~' shuffle marker (sequence/cycle/once return nil), preserving the inline-conditional ':' discriminator and all statement-level rejects. Then reconcile the two existing reject suites that RED on the gate change and the feature-reference prose. Per DISTILL upstream-issues U-2 (authoritative) and DESIGN DDD-5, the gate flips to shuffle-only in this slice, so sequence and cycle ALSO compile here; their BOUNDARY verification scenarios (clamp-at-last, modulo-wrap, mixed) remain slices 02/03 and stay .disabled.",
+          "acceptance_criteria": [
+            "VT1: vt-once-sticky compiles natively and plays ['The lock clicks open.'] (emitted exactly once), line-for-line identical to the committed inklecate oracle",
+            "VT1: vt-once-bare compiles natively and plays ['The corridor falls quiet.'] (bare form lowers as a plain sequence with a leading empty stage; text emits on the second visit), identical to the oracle",
+            "VT0 shuffle regression guard stays GREEN: a '{~a|b}' shuffle still rejects with a located, construct-named .unsupportedConstruct error and produces no story",
+            "S6 UnsupportedRejection: reject-seq, reject-cycle, reject-once are removed from rejectCorpus; reject-shuffle plus the statement-level constructs (thread/list/random/external) still reject",
+            "S5 FeatureReferenceConsistency: the three variable-text rows move from documentedUnsupported to documentedSupported (point them at the vt-once-sticky / vt-seq-three / vt-cycle-two family, which carry committed oracles and compile); shuffle/thread/list/random/external stay documentedUnsupported",
+            "docs/product/ink-feature-reference.md rows 25-27 change MUST-REJECT -> MUST-COMPILE and the surrounding prose is updated to match (S5 suite is the SSOT the prose mirrors)",
+            "Both VT1 ATs have their .disabled trait removed (zero .disabled VT1 ATs remain for slice 01)",
+            "The full pre-existing suite stays GREEN (288 baseline at DISTILL hand-off, now +2 enabled VT1 scenarios); no regression in any Compiler_S* suite",
+            "Compiler-only diff: no change under Engine/, Decoder/, or Facade/; SwiftLint --strict R1/R3/R5 boundary rules pass (Compiler/ imports no Engine/, calls no JSONSerialization)"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_VT1_OnceOnlyTests.swift",
+          "criteria": "Both VT1 OnceOnly ATs pass GREEN with their .disabled removed; VT0 shuffle guard, S5 and S6 suites pass GREEN after their slice-01 edits; the full swift test suite is GREEN; SwiftLint --strict passes; no Engine/Decoder/Facade file is modified.",
+          "scenario_name": "US-01 — Compile and play a once-only variable-text form ({!a|b} / {|x|})",
+          "quality_gates": [
+            "Both VT1 OnceOnly acceptance tests pass (native == oracle)",
+            "VT0 shuffle reject guard remains GREEN",
+            "Compiler_S5 and Compiler_S6 suites pass after their reject->supported reconciliation",
+            "Full swift test suite GREEN (no regressions)",
+            "SwiftLint --strict --no-cache passes (architecture-boundary R1/R3/R5)"
+          ],
+          "implementation_notes": [
+            "Lowering spec (DESIGN ground truth, verified vs inklecate): per form (OP, BOUND, append-empty): sequence = (MIN, S-1, no); cycle = (%, S, no); once = (MIN, S [new last index after appending], yes-1). Dispatch body: `ev visit BOUND OP /ev`, then per stage `ev du I == /ev {\"->\":\"seqN-sI\",\"c\":true}`, then `nop`. Stage container seqN-sI = [pop, <^text if non-empty>, {\"->\":\"seqN-end\"}]; an empty stage omits the ^text node. seqN-end holds the continuation (line suffix + rest-of-body).",
+            "Worked examples: {!The lock clicks open.|} -> strip '!' -> '|'-split ['The lock clicks open.', ''] -> append empty -> ['The lock clicks open.','',''], visit 2 MIN (emits stage0 on visit0, blank after). Bare {|The corridor falls quiet.|} -> no marker -> sequence -> '|'-split ['','The corridor falls quiet.',''], visit 2 MIN (emits on visit1).",
+            "Mirror ConditionalEmitter exactly for boundary mechanics: nextOrdinal-style stable keys, key()/path() helpers, BranchLowerer/ExpressionLowerer typealiases, registering containers into the inout named collector, #f flag = 5 on the dispatch container (Visits | CountStartOnly so `visit` yields the 0-based own read count).",
+            "Use a DISTINCT key prefix (seq{N}-*) from the conditional prefix (cond{N}-*) so a body mixing variable-text and conditionals cannot collide (DESIGN OQ-3, proven by construction; verified by the vt-mixed scenario in slice 02).",
+            "In lowerBody, detect a .variableText segment in a .content line parallel to the existing inline-conditional detection (firstIndex(where:)); reuse inlineContinuationStatements + branchLowerer for the continuation, exactly like lowerInlineConditionalLine.",
+            "Gate: in UnsupportedConstructDetector, leadingMarker maps ONLY '~' -> 'shuffle'; '&' and '!' now return nil; the no-marker top-level-'|' path returns nil (was 'sequence'). Keep checkStatement (thread/list/random/external) and the conditional ':' discriminator untouched. The shuffle path must still throw a located, NAMED error (VT0 + S6 depend on it).",
+            "S5 reconciliation: reuse the existing committed vt-* oracle fixtures for documentedSupported rather than re-pointing the escaped reject-once (which is a latent \\! sequence per U-3); the S5 supported test only compiles + builds Story (no oracle play), so any compilable variable-text fixture satisfies it.",
+            "Per ADR-025 trunk-based: RED (enable VT1, watch it fail for MISSING_FUNCTIONALITY per distill/red-classification.md) -> GREEN -> COMMIT directly to main. The pre-commit gate (.githooks/pre-commit: swiftlint --strict + swift test) must pass for the commit; do NOT --no-verify.",
+            "Confirm genuine RED before GREEN: with the gate unchanged and VT1 enabled, compileAndPlay throws CompileError (.unsupportedConstruct) — the correct MISSING_FUNCTIONALITY red, not a fixture/setup defect."
+          ],
+          "dependencies": [],
+          "estimated_hours": 1.0,
+          "deliverables": [
+            "Sources/SwiftInkRuntime/Compiler/Codegen/VariableTextEmitter.swift (NEW)",
+            "Sources/SwiftInkRuntime/Compiler/AST/CompilerAST.swift (.variableText case + VariableTextMode)",
+            "Sources/SwiftInkRuntime/Compiler/Parser/InkParser.swift (variable-text parse rule)",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/RuntimeObjectEmitter.swift (.variableText lowerBody dispatch)",
+            "Sources/SwiftInkRuntime/Compiler/Parser/UnsupportedConstructDetector.swift (gate narrowed to shuffle-only)",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_VT1_OnceOnlyTests.swift (.disabled removed)",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_S5_FeatureReferenceConsistencyTests.swift (reconciled)",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_S6_UnsupportedRejectionTests.swift (reconciled)",
+            "docs/product/ink-feature-reference.md (rows 25-27 MUST-COMPILE)"
+          ],
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Compiler/AST/CompilerAST.swift",
+            "Sources/SwiftInkRuntime/Compiler/Parser/InkParser.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/VariableTextEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/RuntimeObjectEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Parser/UnsupportedConstructDetector.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_VT1_OnceOnlyTests.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_S5_FeatureReferenceConsistencyTests.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_S6_UnsupportedRejectionTests.swift",
+            "docs/product/ink-feature-reference.md"
+          ]
+        }
+      ]
+    }
+  ],
+  "implementation_scope": {
+    "source_directories": [
+      "Sources/SwiftInkRuntime/Compiler/"
+    ],
+    "test_directories": [
+      "Tests/SwiftInkRuntimeTests/"
+    ],
+    "excluded_patterns": [
+      "*.ink",
+      "*.ink.json"
+    ]
+  },
+  "validation": {
+    "status": "approved",
+    "reviewer": "nw-deliver-orchestrator",
+    "approved_at": "2026-06-15"
+  }
+}

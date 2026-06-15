@@ -26,11 +26,16 @@ struct Compiler_S5_FeatureReferenceConsistencyTests {
         "compile-variables",            // VAR/CONST/temp/operators/interpolation
         "compile-weave-flat",           // choices + gather
         "compile-ceiling",              // conditionals/functions/tunnels/ref/tags
+        "vt-seq-three",                 // variable-text sequence (matrix row 25)
+        "vt-cycle-two",                 // variable-text cycle (matrix row 26)
+        "vt-once-sticky",               // variable-text once (matrix row 27)
     ]
 
-    // The reference's MUST-REJECT half (matrix rows 25-28, 36-39).
+    // The reference's MUST-REJECT half (matrix rows 28, 36-39). The deterministic
+    // variable-text forms (rows 25-27) moved to `documentedSupported` in slice-01;
+    // only shuffle (row 28) remains an unsupported variable-text form.
     private static let documentedUnsupported: [String] = [
-        "reject-seq", "reject-cycle", "reject-once", "reject-shuffle",
+        "reject-shuffle",
         "reject-thread", "reject-list", "reject-random", "reject-external",
     ]
 

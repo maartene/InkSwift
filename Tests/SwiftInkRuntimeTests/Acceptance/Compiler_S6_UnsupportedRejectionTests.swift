@@ -15,10 +15,11 @@ import Foundation
 @testable import SwiftInkRuntime
 
 // fixture name → the construct word the located error must name (case-insensitive).
+// Variable-text rejection is now shuffle-ONLY (slice-01, DDD-5 / DISTILL U-2):
+// the deterministic sequence/cycle/once forms COMPILE via VariableTextEmitter, so
+// `reject-seq`/`reject-cycle`/`reject-once` left this corpus. Shuffle stays
+// unsupported (no deterministic lowering), as do the statement-level constructs.
 private let rejectCorpus: [(fixture: String, construct: String)] = [
-    ("reject-seq", "sequence"),
-    ("reject-cycle", "cycle"),
-    ("reject-once", "once"),
     ("reject-shuffle", "shuffle"),
     ("reject-thread", "thread"),
     ("reject-list", "list"),
