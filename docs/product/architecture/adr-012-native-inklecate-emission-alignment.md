@@ -2,10 +2,24 @@
 
 ## Status
 
-**Proposed** (DESIGN — native-compiler-emission-alignment feature, 2026-06-15).
+**Accepted** (DESIGN — native-compiler-emission-alignment feature, 2026-06-15; reviewed
+2026-06-15 by `nw-solution-architect-reviewer` — **APPROVED**, 0 blockers). Was Proposed.
 Supersedes the *scope* of ADR-011 (weave-label read-count addressing): ADR-011 solved one
 read-count shape (named-weave-label); this ADR reframes the whole native ↔ inklecate gap and
 decides, per divergence class, whether to align emission shape or assert execution-equivalence.
+
+**Review notes (2026-06-15).** The load-bearing demand-flag claim (the 447-vs-7 container-flag
+gap is not a defect) was independently verified against the runtime: visit-count increment is
+gated on `flags & 0x1` (`InkEngine.swift:80-83, 919-921, 1043-1046`); `visitCounts` is consumed
+only by `.readCount` (`InkEngine.swift:237-240`, `TreeWalker.swift:86-90`) **and** the `#v`
+visit-index control command (`TreeWalker.swift:184-186`) — both flag-gated, so the conclusion
+holds; once-only/sticky run on `ChoiceFlags`, not container flags
+(`InkEngine.swift:369-376, 1003-1012`, `StoryState.swift:191`). Refinement: `#v` is a second
+flag-gated consumer of `visitCounts` (alongside `.readCount`) — the Phase-2/#4a read-count-coverage
+work must register/flag any container whose visit index is read via `#v`, not only `.readCount`
+targets. Advisory (non-blocking): run an early feasibility spike on Phase 3 (`opts` gather-lead /
+`VariableTextEmitter`↔`WeaveResolver` splice) before committing the approach, with the
+documented subset-cap (Option C) as the fallback if intractable.
 
 Primary evidence: `docs/analysis/theintercept-native-divergence-2026-06-15.md` (structural
 tree-diff census + four systemic root causes). Instrument:
