@@ -1152,3 +1152,75 @@ DISTILL VT2 ATs + committed `vt-seq-three`/`vt-seq-two`/`vt-mixed` oracle fixtur
 Specification (sequence = `MIN`, `S−1`, no-append) + OQ-3 key-namespace guarantee (ADR-010); slice-01
 (step 01-01) which landed the parametrized `VariableTextEmitter` + shuffle-only gate this slice
 verifies. No new fixtures, no runtime change.
+
+---
+
+# Feature Delta: compiler-variable-text (DELIVER wave — slice 03)
+
+**Wave**: DELIVER | **Density**: lean (Tier-1 [REF]) | **Slice**: slice-03-cycle
+**Date**: 2026-06-15 | **Status**: slice 03 DELIVERED (slice 04 pending) | **Orchestrator**: nw-deliver
+
+---
+
+## Wave: DELIVER / [REF] Implementation Summary (slice 03)
+
+Verified the **cycle** form `{&a|b}` (matrix row 26 — advance one stage per visit, **wrap via modulo**
+over the stage count, cycling forever) end-to-end, **completing the deterministic variable-text family**
+(once / sequence / cycle). This slice is **test-enablement only — zero production change.** Slice-01 had
+already landed the full parametrized cycle path: `VariableTextEmitter.indexNodes` branches
+`mode == .cycle ? (OP="%", BOUND=stageCount) : (OP="MIN", BOUND=stageCount−1)` with no appended stage,
+`InkParser.modeAndContent` maps a leading `&` → `.cycle`, and `UnsupportedConstructDetector.leadingMarker`
+returns nil for `&` (only `~` shuffle rejects). Consequently both VT3 acceptance scenarios passed
+**green-on-enable** — legitimate boundary verification of shipped code (confirmed not testing-theater by
+adversarial review: the ATs run port-to-port through `InkCompiler.compile` via
+`CompilerOracle.compileAndPlay` against committed inklecate oracles, asserting `native == oracle` plus
+exact stage sequences). This **disproves the slice-03 learning hypothesis' null**: cycle differs from
+sequence *only* in the switch's wrap-vs-clamp terminal rule (`%`/`BOUND=S` vs `MIN`/`BOUND=S−1`) — the
+same read-count dispatch, one parameter changed — so the three deterministic forms are confirmed as one
+lowering family. The 4-stage `vt-cycle-four` fixture exercises the **modulo wrap over >2 stages** (OQ-1),
+proving no off-by-one at the cycle boundary.
+
+## Wave: DELIVER / [REF] Files Modified (slice 03)
+
+**Production:** none (no Engine/Decoder/Facade/Compiler change; no new `NodeKind`; no `Package.swift` change).
+
+**Tests:**
+- `Acceptance/Compiler_VT3_CycleTests.swift` — `.disabled` removed from both ATs (now GREEN): 2-stage wrap (`vt-cycle-two`), 4-stage modulo-wrap boundary / OQ-1 (`vt-cycle-four`).
+
+**Docs:** `ink-feature-reference.md` row 26 already MUST-COMPILE (cycle, `%`) from slice-01 — no SSOT change; slice-03's boundary ATs now prove the documented wrap behaviour.
+
+## Wave: DELIVER / [REF] Scenarios Green (slice 03)
+
+**2 of 2** slice-03 acceptance scenarios GREEN (2026-06-15) — these double as the US-03 demo evidence
+(library feature; the "sees" is observable playback output, asserted exactly):
+- VT3 — `{&heads|tails}` × 4 plays `["heads","tails","heads","tails"]`, native == oracle (2-stage modulo wrap).
+- VT3 — `{&Spring|Summer|Autumn|Winter}` × 5 plays `["Spring","Summer","Autumn","Winter","Spring"]`, native == oracle (>2-stage modulo wrap, no off-by-one at the boundary — OQ-1).
+
+Still `.disabled` (pending slice 04): S4 ×1 (TheIntercept e2e — re-pointed native compile). VT0 shuffle guard ENABLED + GREEN.
+
+## Wave: DELIVER / [REF] DoD Check (slice 03)
+
+- [x] Both VT3 cycle ATs GREEN (native == oracle == exact expected lines; modulo wrap verified for 2 and >2 stages).
+- [x] VT0 shuffle regression guard GREEN.
+- [x] Full `swift test` GREEN — 288 tests, 0 failures (independently re-run by the crafter; orchestrator verified via integrity + git).
+- [x] SwiftLint `--strict` — 0 violations (R1/R3/R5 boundary gates; pre-commit gate passed, no `--no-verify`).
+- [x] Compiler-only / test-only diff (no Engine/Decoder/Facade; no production change at all).
+- [x] Zero `.disabled` VT3 ATs remain (slice-03 finalize invariant for its scenarios). The one remaining repo `.disabled` is the slice-04 S4 `TheIntercept` AT — correctly out of scope.
+- [x] Slice-04 `Compiler_S4_CeilingTests.swift` edit left untouched and UNSTAGED (not in commit `45f5594`).
+
+## Wave: DELIVER / [REF] Quality Gates (slice 03)
+
+- **Roadmap integrity** (`des-verify-integrity --roadmap-only`) — exit 0 after extending roadmap with phase 03 / step 03-01.
+- **TDD 3-phase canon** (ADR-025) — RED→GREEN→COMMIT logged EXECUTED/PASS. Honest RED note: slice-01 pre-satisfied the cycle lowering, so both ATs were green-on-enable (boundary verification), not a fresh MISSING_FUNCTIONALITY RED; recorded transparently rather than fabricating a red.
+- **Pre-commit gate** — swiftlint `--strict` + `swift test` both passed; committed to trunk (`45f5594`) with `Step-Id: 03-01` + `Task-Id: compiler-variable-text` trailers (no `--no-verify`).
+- **Refactoring (L1–L6)** — N/A (test-enablement only; no production code in the diff to refactor).
+- **Adversarial review** (`nw-software-crafter-reviewer`) — APPROVED; Testing-Theater 7-pattern scan CLEAN (port-to-port confirmed via `CompilerOracleSupport`, exact `native == oracle` + sequence assertions, genuine committed cycle oracles, no hidden production change).
+- **Mutation testing** — SKIPPED (disabled project-wide per CLAUDE.md; oracle execution-equivalence is the test-quality gate).
+- **Deliver integrity** (`des-verify-integrity`) — exit 0, "All 3 steps have complete DES traces".
+
+## Wave: DELIVER / [REF] Pre-requisites (slice 03)
+
+DISTILL VT3 ATs + committed `vt-cycle-two`/`vt-cycle-four` oracle fixtures; DESIGN Lowering
+Specification (cycle = `%`, `BOUND=S`, no-append) + OQ-1 wrap-boundary fixtures (ADR-010); slice-01
+(step 01-01) which landed the parametrized `VariableTextEmitter` cycle path + `&`→cycle parser marker +
+shuffle-only gate this slice verifies. No new fixtures, no runtime change.

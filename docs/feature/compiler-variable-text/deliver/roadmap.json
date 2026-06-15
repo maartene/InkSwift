@@ -2,9 +2,9 @@
   "roadmap": {
     "project_id": "compiler-variable-text",
     "created_at": "2026-06-15T08:00:00Z",
-    "total_steps": 2,
-    "phases": 2,
-    "slice": "slice-02-sequence"
+    "total_steps": 3,
+    "phases": 3,
+    "slice": "slice-03-cycle"
   },
   "phases": [
     {
@@ -115,6 +115,50 @@
           ],
           "files_to_modify": [
             "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_VT2_SequenceTests.swift"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "03",
+      "name": "Variable-text lowering (slice 03 — cycle modulo-wrap)",
+      "steps": [
+        {
+          "id": "03-01",
+          "step_id": "03-01",
+          "name": "Verify N-stage cycle modulo-wrap and complete the deterministic variable-text family (OQ-1 wrap boundary)",
+          "description": "Re-enable the two VT3 Cycle acceptance scenarios that DISTILL authored .disabled for slice-03 (2-stage wrap + 4-stage modulo-wrap boundary verification). The parametrized VariableTextEmitter cycle path (OP=%, BOUND=S stage count, no appended stage), the `&`->cycle parser marker, and the shuffle-only gate ALL already landed in slice-01 (step 01-01): VariableTextEmitter.indexNodes already branches `mode == .cycle ? (% , stageCount) : (MIN, stageCount-1)`, InkParser.modeAndContent already maps a leading `&` to .cycle, and UnsupportedConstructDetector.leadingMarker already returns nil for `&` (only `~` shuffle rejects). The two VT3 ATs are therefore boundary-verification of already-shipped code and are expected to go GREEN immediately on enable (mirroring slice-02's pure-sequence cases) — legitimate verification of the wrap-vs-clamp terminal rule across 2 stages and >2 stages (the modulo off-by-one risk at the wrap boundary, OQ-1), NOT testing-theater. Per CLAUDE.md trunk-based + the .disabled policy: confirm honest RED first (enable both ATs and run the suite BEFORE any code change; per distill/red-classification.md the expected RED mode is MISSING_FUNCTIONALITY — record if instead they are already GREEN on the slice-01 lowering), then — only if a genuine wrap/continuation defect surfaces — fix inside Compiler/Codegen (VariableTextEmitter / RuntimeObjectEmitter) only, then GREEN, then COMMIT directly to main. Do NOT modify Engine/Decoder/Facade. Do NOT touch the uncommitted Compiler_S4_CeilingTests.swift edit (belongs to slice-04, stays .disabled and unstaged). The full swift test suite + SwiftLint --strict pre-commit gate must pass; no --no-verify.",
+          "acceptance_criteria": [
+            "VT3: vt-cycle-two (`{&heads|tails}` behind a sticky choice, selected 4x) plays ['heads','tails','heads','tails'], native == committed inklecate oracle (2-stage modulo wrap)",
+            "VT3: vt-cycle-four (`{&Spring|Summer|Autumn|Winter}` re-entered 5x) plays ['Spring','Summer','Autumn','Winter','Spring'], native == oracle — the >2-stage modulo wrap with no off-by-one at the cycle boundary (OQ-1)",
+            "Both VT3 ATs have their `.disabled` trait removed (zero `.disabled` VT3 ATs remain for slice-03)",
+            "VT0 shuffle regression guard stays GREEN; the full pre-existing suite stays GREEN (no regression in any Compiler_S* or VT* suite)",
+            "Compiler-only diff (or test-only diff if the cycle path is already shipped): no change under Engine/, Decoder/, or Facade/; SwiftLint --strict R1/R3/R5 boundary rules pass"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_VT3_CycleTests.swift",
+          "criteria": "Both VT3 Cycle ATs pass GREEN with their `.disabled` removed; VT0 shuffle guard stays GREEN; the full swift test suite is GREEN; SwiftLint --strict passes; no Engine/Decoder/Facade file is modified; the slice-04 S4 edit stays unstaged.",
+          "scenario_name": "US-03 — Compile and play a cycle variable-text form ({&a|b}, modulo wrap)",
+          "quality_gates": [
+            "Both VT3 Cycle acceptance tests pass (native == oracle)",
+            "VT0 shuffle reject guard remains GREEN",
+            "Full swift test suite GREEN (no regressions)",
+            "SwiftLint --strict --no-cache passes (architecture-boundary R1/R3/R5)"
+          ],
+          "implementation_notes": [
+            "Slice-01 already landed the full cycle lowering: VariableTextEmitter.indexNodes computes `bound = mode == .cycle ? stageCount : stageCount - 1` and `op = mode == .cycle ? \"%\" : \"MIN\"`, with no appended stage for .cycle (stagesFor returns stages verbatim). Parser modeAndContent maps `&` -> .cycle; the gate's leadingMarker returns nil for `&`. So the cycle path is end-to-end wired and exercised by construction — expect both VT3 ATs GREEN immediately on enable.",
+            "Confirm RED honestly: enable both ATs and run the suite BEFORE any code change. Record which ATs are already GREEN (boundary verification of shipped code) vs any genuine MISSING_FUNCTIONALITY RED. Note in the commit/feature-delta that the cycle cases were satisfied by slice-01's parametrized emitter if so.",
+            "Fixtures vt-cycle-two.ink(.json) and vt-cycle-four.ink(.json) exist with committed inklecate oracles under Tests/SwiftInkRuntimeTests/Fixtures/. CompilerOracle.compileAndPlay(name, choiceScript:) is the same driving port used by the GREEN VT2 suite.",
+            "If a real modulo-wrap off-by-one or continuation-drop surfaces (only plausibly at the 4-stage wrap boundary), fix it inside Compiler/Codegen only (VariableTextEmitter.indexNodes / dispatchTest), mirroring the slice-01 weave-continuation pattern. Never touch Engine/Decoder/Facade.",
+            "Leave Compiler_S4_CeilingTests.swift untouched and UNSTAGED (its uncommitted re-pointing edit belongs to slice-04 and stays `.disabled`). Stage and commit ONLY Tests/SwiftInkRuntimeTests/Acceptance/Compiler_VT3_CycleTests.swift (plus any Compiler/Codegen file only if a genuine fix was needed).",
+            "Per ADR-025 trunk-based: RED -> GREEN -> COMMIT directly to main. The pre-commit gate (.githooks/pre-commit: swiftlint --strict + swift test) must pass; do NOT --no-verify. Commit trailers: Step-Id: 03-01 + Task-Id: compiler-variable-text."
+          ],
+          "dependencies": ["02-01"],
+          "estimated_hours": 0.5,
+          "deliverables": [
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_VT3_CycleTests.swift (.disabled removed from both ATs)"
+          ],
+          "files_to_modify": [
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_VT3_CycleTests.swift"
           ]
         }
       ]
