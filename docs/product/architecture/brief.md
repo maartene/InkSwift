@@ -1005,6 +1005,26 @@ or minimal EXTEND.
 > ref-params/tags. With this the native compiler covers the full supported ceiling (rows 1–35) and
 > rejects the unsupported set. **Still deferred:** `SourceReader` IO adapter (`compile(fileURL:)`) and
 > the `swift-tools-version` raise (C-7).
+>
+> **DESIGNED, in progress (weave-label read-count addressing slice — 2026-06-15, ADR-011):** the last
+> gap to the flagship `TheIntercept.ink` native-compile e2e is **dotted read-count addressing of named
+> weave labels** (`{knot.label: text}` → `.readCount(resolvedPath)`), descoped from `compiler-variable-text`
+> slice-04 (user-approved). This is a minimal **EXTEND** of the shipped pipeline — no new component —
+> built as **Option B (CHOSEN)**: an incremental label→path table via an extended `LoweringContext` + a
+> discovery pre-pass, **explicitly grounded in the original inkle/ink C# compiler** (governing heuristic:
+> *when in doubt, follow the original*). Option B maps one-to-one onto inklecate's three-phase weave-naming
+> algorithm — `Weave.ResolveWeavePointNaming` (`Weave.cs:81-100`, our discovery pre-pass; labelled-only) →
+> `GenerateRuntimeObject` (cached absolute paths) → `VariableReference.ResolveReferences`
+> (`VariableReference.cs:87-142`, which reads the cached `runtimePath` and never re-derives). Concretely:
+> `InkParser`/`CompilerAST` gain choice `(label)` + `{condition}` parsing; `WeaveEmitter` gains label-keyed
+> choice containers + the `0x1` CountVisits flag on the **read-count-referenced** labelled containers only
+> (the pre-pass SET, matching `VariableReference.cs:101`) + a labelled-only label→absolute-path registration;
+> `RuntimeObjectEmitter`/`LoweringContext` gain a `weaveLabelPaths` table + `.readCount(path)` emission in
+> `lowerExpression`. **No runtime/Engine/Decoder change** (the read-count / `CNT?` / CountVisits machinery is
+> already implemented; D3 §"Visit counts" holds). Correctness is Level-1 execution-equivalence (own resolved
+> path). DELIVER re-enables the two `.disabled` ATs (`Compiler_S4_CeilingTests`: TheIntercept e2e + dotted
+> read-count RED pin). See `docs/feature/native-ink-compiler/feature-delta.md` (DESIGN — weave-label slice)
+> and ADR-011.
 
 #### Decisions (recommended; ADR-backed)
 
@@ -1017,6 +1037,7 @@ or minimal EXTEND.
 | C-5 | D6 compile-time obligations (CONST inlining; choice-flag/invisible-default encoding) live in codegen; validated by S2/S3 oracle. | D6/ADR-008 |
 | C-6 | Secondary Ink-JSON emit (D4) is an optional codegen sink (`JSONEncoder`/string, not `JSONSerialization`); doubles as Level-2 oracle artifact. | ADR-006 |
 | C-7 | Swift tools 5.6 → 5.8+ when the compiler target lands (reconcile Package.swift with brief). | — |
+| C-8 | Weave-label read-count addressing (`{knot.label:…}` → `.readCount(path)`) is a minimal EXTEND of the shipped emitter pipeline (label-keyed choice containers, `0x1` CountVisits flag on read-count-referenced labelled containers only, labelled-only `weaveLabelPaths` table on `LoweringContext`); no new component, no runtime change. **Option B CHOSEN, grounded in inklecate's three-phase `ResolveWeavePointNaming` → `GenerateRuntimeObject` → `ResolveReferences`.** | ADR-011 |
 
 #### Module Folder Layout (additions)
 
@@ -1028,8 +1049,13 @@ Sources/
       Parser/StringParser.swift  ← combinator core (no JSONSerialization — R5)
       Parser/InkParser*.swift    ← statement rules + Pratt expressions
       AST/                       ← parsed Ink AST (positions, unresolved paths, weave)
-      Codegen/WeaveResolver.swift       ← spike-gated (ADR-008)
-      Codegen/RuntimeObjectEmitter.swift ← AST → ContainerNode/NodeKind; D6 obligations
+      Codegen/WeaveEmitter.swift        ← weave resolver (shipped S3; was "WeaveResolver", ADR-008);
+                                          EXTENDed for label-keyed choice containers + 0x1 CountVisits
+                                          flag + label→path registration (ADR-011)
+      Codegen/ConditionalEmitter.swift  ← inline/block/switch lowering (shipped S4)
+      Codegen/VariableTextEmitter.swift ← sequence/cycle/once lowering (compiler-variable-text)
+      Codegen/RuntimeObjectEmitter.swift ← AST → ContainerNode/NodeKind; D6 obligations;
+                                          weaveLabelPaths table + .readCount emission (ADR-011)
       Codegen/JSONEmitter.swift  ← optional secondary JSON sink (D4)
       Error/CompileError.swift   ← located, construct-named (ADR-009)
       IO/SourceReader.swift      ← source/INCLUDE read + probe() (Earned Trust)
@@ -1057,7 +1083,7 @@ C4Component
     Component(comment, "CommentEliminator", "Compiler/Lexer/", "Strips // and /* */ comments, string-aware.")
     Component(parser, "InkParser + StringParser core", "Compiler/Parser/", "Hand-rolled recursive-descent/combinator + Pratt expressions. Tracks line/col.")
     Component(ast, "Parsed AST", "Compiler/AST/", "Typed Ink AST: source positions, unresolved symbolic paths, weave structure.")
-    Component(weave, "WeaveResolver", "Compiler/Codegen/", "Indentation->hierarchy; loose-end propagation; gather stitching; sealed/open. Spike-gated.")
+    Component(weave, "WeaveEmitter", "Compiler/Codegen/", "Shipped weave resolver: indentation->hierarchy; loose-end propagation; gather/choice label keying; 0x1 CountVisits flag on read-count-referenced labelled containers only + labelled-only label->path registration (ADR-011, Option B, inklecate-grounded).")
     Component(codegen, "RuntimeObjectEmitter", "Compiler/Codegen/", "AST -> ContainerNode/NodeKind. CONST inlining + choice-flag/invisible-default encoding (D6). Reference resolution + flattening.")
     Component(jsonemit, "JSONEmitter", "Compiler/Codegen/", "Optional Ink-JSON string sink (D4); Level-2 oracle artifact.")
     Component(err, "CompileError + reporter", "Compiler/Error/", "Single located, construct-named error; reject-list for unsupported constructs.")

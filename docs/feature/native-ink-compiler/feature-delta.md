@@ -1425,3 +1425,164 @@ This is a library API (no CLI/HTTP adapter — DISTILL Driving-Adapter Coverage)
 - **Consequence — e2e descoped.** The TheIntercept native-compile end-to-end step was **descoped** (user-approved 2026-06-14); its S4 acceptance test is committed `.disabled`. The remaining S4 corpus exercises the full supported ceiling without it.
 - **Parity-gap finding (future-work candidate).** The *runtime* can already play `{|...|}`: inklecate lowers it to a visit-count switch (visit + MIN + `==` + conditional diverts), all of which the runtime executes — which is why the Milestone5b playthrough renders the first 100 lines (line 86 shows empty on first visit). So deterministic variable-text (sequence/cycle/once) is a documented **compiler/runtime parity gap** the compiler could close in future; shuffle additionally needs RANDOM (genuinely runtime-unsupported). **User decision (2026-06-14): keep sequences rejected as specced, descope the e2e, do not expand the supported set this pass.**
 - **Roadmap fold (D6 → S3).** The standalone choice-flag / invisible-default encoding step (D6) was **folded** into the weave-resolver step: the S3 oracle corpus validates the encoding per DDD-9 and was 4/4 GREEN once the resolver landed, so a separate step was redundant.
+
+---
+
+# Feature Delta: native-ink-compiler (DESIGN wave — weave-label read-count addressing slice)
+
+**Wave**: DESIGN | **Architect**: Morgan (nw-solution-architect) | **Scope**: application/component | **Mode**: propose | **Date**: 2026-06-15
+**Slice**: weave-label read-count addressing (descoped from `compiler-variable-text` slice-04, user-approved 2026-06-15)
+**ADR**: [ADR-011](../../product/architecture/adr-011-weave-label-read-count-addressing.md)
+**Re-enables**: the two `.disabled` ATs in `Tests/SwiftInkRuntimeTests/Acceptance/Compiler_S4_CeilingTests.swift` (TheIntercept e2e + dotted read-count RED pin).
+
+> Density: lean (Tier-1 [REF]). Builds on the existing native-ink-compiler DESIGN/DELIVER
+> sections above — does NOT overwrite them. This slice is a minimal EXTEND of the
+> already-shipped emitter pipeline; the "deferred WeaveResolver" it targets has in fact
+> already shipped as `WeaveEmitter` (see Reuse Analysis).
+
+## Wave: DESIGN / [REF] Prior-Wave Consultation Checklist
+
+- ✓ `docs/product/architecture/brief.md` — Application Architecture / native-ink-compiler component inventory; `WeaveResolver` note (now shipped as `WeaveEmitter`); `ChoiceFlags` REUSE row; module layout.
+- ✓ `docs/feature/native-ink-compiler/feature-delta.md` — DISCUSS scope (D1–D8), DELIVER S3–S6 component decomposition + ports, ADR index, weave-handling decisions.
+- ✓ `docs/feature/native-ink-compiler/design/wave-decisions.md` — pipeline component sequence (WeaveResolver → RuntimeObjectEmitter), DWD-6 weave-spike gate.
+- ✓ `docs/feature/native-ink-compiler/spike/findings.md` + `spike/wave-decisions.md` — weave container template (§2 c-N/g-N keying, §3 loose-end, §4 absolute-qualified addressing).
+- ✓ `docs/evolution/2026-06-15-compiler-variable-text.md` — slice-04 descope-premise falsification + the authoritative scope statement (the 4-item weave-label subsystem) + Deferred/Follow-Up table.
+- ✓ `docs/evolution/native-ink-compiler-evolution.md` — native compiler architecture; WeaveResolver deferral note (S3, ADR-008).
+- ✓ `Sources/SwiftInkRuntime/Compiler/Codegen/WeaveEmitter.swift` — owns `c-N`/`g-N`; **already keys gathers by `(label)`** (`gatherKey`); absolute-qualified paths; `flags: 0` on every container today.
+- ✓ `Sources/SwiftInkRuntime/Compiler/Codegen/RuntimeObjectEmitter.swift` — `lowerExpression` `.variableReference` case (the wrong-emission site); `LoweringContext` (CONST + function tables — the table-threading pattern); knot/stitch path building.
+- ✓ `Sources/SwiftInkRuntime/Compiler/Codegen/ConditionalEmitter.swift` — the `cond{N}-*` named-container + `nextOrdinal`/`key`/`path` template (parallel to WeaveEmitter).
+- ✓ `Sources/SwiftInkRuntime/Compiler/Parser/InkParser.swift` — `choiceKind`/`gatherKind`/`splitBracketedLabel` (gather `(label)` parsing exists; choice `(label)` + `{condition}` do NOT).
+- ✓ `Sources/SwiftInkRuntime/Compiler/AST/CompilerAST.swift` — `choice(level,isSticky,choiceOnlyLabel,body)` carries NO `(label)`/`{condition}`; `gather` already carries `label`.
+- ✓ `Sources/SwiftInkRuntime/Decoder/NodeKind.swift` — `.readCount(String)` exists; `.choicePoint`; `ContainerNode.flags`.
+- ✓ `Sources/SwiftInkRuntime/Decoder/InkDecoder.swift` — `CNT?` → `.readCount` decode; `#f` flag read.
+- ✓ `Sources/SwiftInkRuntime/Engine/InkEngine.swift` + `TreeWalker.swift` — **RUNTIME side fully implemented**: `containerFlagCountVisits=0x1` tracks flagged containers incl. choice bodies; `.readCount` resolves an absolute key against `visitCounts`. **No runtime change in scope.**
+
+**Contradiction check**: ⊘ none. The slice is purely additive within `Compiler/`; no DISCUSS requirement or SPIKE finding is contradicted. The DISCUSS Feature Coverage Matrix row 14 (read counts) is IMPLEMENTED in the runtime; this slice closes the compiler-side emission for the *named-weave-label* case only.
+
+## Wave: DESIGN / [REF] DDD List (design decisions)
+
+| ID | Decision | Verdict | Rationale |
+|---|---|---|---|
+| WL-D1 | Build as a minimal EXTEND of the existing emitter pipeline; **no new component**. | ACCEPTED | `WeaveEmitter` already owns weave structure, the c-N/g-N namespace, gather-label keying, and absolute-path construction (the "deferred WeaveResolver" shipped). A new resolver would duplicate that. (ADR-011) |
+| WL-D2 | Parse a leading choice `(label)` + a choice `{condition}` guard; add `weaveLabel`/`condition` to the AST `choice` case. | ACCEPTED | Mirrors the existing gather `(label)` + `splitBracketedLabel` helper; the AST `choice` case lacks both fields today. |
+| WL-D3 | Key a labelled choice outcome container by its `(label)`, else `c-N` (exactly as `gatherKey` does `label ?? "g-N"`). | ACCEPTED | The label becomes the addressable absolute-path segment; reuses the resolver's keying site. |
+| WL-D4 | Set container `flags = 0x1` (CountVisits) on exactly the labelled containers that are **read-count-referenced** (the SET collected by the discovery pre-pass), not eagerly on every labelled container. | ACCEPTED | Matches the original exactly — `VariableReference.cs:101` flags a container only when a reference resolves to it; the global `countAllVisits` is OFF for normal compiles, so the committed oracle carries the flag only on *referenced* labels. Referenced-targets-only is leaner and oracle-correct; over-flagging would alter unrelated read-count semantics and diverge from the oracle. |
+| WL-D5 | Build a `weaveLabelPaths: [String:[String]]` table incrementally during weave resolution, threaded through `LoweringContext`; populate via a discovery pre-pass before expression lowering. | **ACCEPTED — Option B CHOSEN** | Reuses the resolver's already-correct absolute paths (zero duplicated path arithmetic = lowest nested-container correctness risk); aligns with the established CONST/function `LoweringContext` pattern; pre-pass makes resolution order-independent (forward references). **Provenance: matches inklecate's three-phase `ResolveWeavePointNaming` (`Weave.cs:81-100`, the pre-pass) → `GenerateRuntimeObject` (path computation) → `ResolveReferences` (`VariableReference.cs:87-142`, reads the cached `runtimePath`, never re-derives).** |
+| WL-D6 | In `lowerExpression`'s `.variableReference` case, emit `.readCount(resolvedAbsolutePath)` when the (dotted) name resolves in `weaveLabelPaths`; else keep `.variableReference` (today's behaviour). | ACCEPTED | The single behavioural fix the RED pin asserts; a table miss is NOT an error — it falls through to a variable read, exactly as the original does (`VariableReference.cs:129-141` resolves a non-matching single-component name as a variable). |
+| WL-D7 | No runtime/Engine/Decoder change; correctness by Level-1 execution-equivalence (compiler emits its OWN resolved path). | ACCEPTED | Runtime read-count machinery is complete; R1/R3/R5 boundary forbids touching it; D5 grants path freedom (oracle path `…0.g-1.c-14` is informational). |
+| WL-D8 | Driving port unchanged (`InkCompiler.compile(source:)`); no new driven port. | ACCEPTED | All five changes are interior to the existing compile pipeline. |
+
+## Wave: DESIGN / [REF] Component Decomposition
+
+| Component | Path | Change | Responsibility added this slice |
+|---|---|---|---|
+| `InkParser` | `Compiler/Parser/InkParser.swift` | **EXTEND** | Parse choice `(label)` (reuse `splitBracketedLabel` with `(`/`)`) and a `{condition}` guard on choice lines. |
+| `CompilerAST` | `Compiler/AST/CompilerAST.swift` | **EXTEND** | `choice` case gains `weaveLabel: String?` + `condition: InkExpression?`. |
+| `WeaveEmitter` | `Compiler/Codegen/WeaveEmitter.swift` | **EXTEND** | Label-keyed choice containers (WL-D3); `0x1` CountVisits flag set on exactly the **read-count-referenced** labelled containers (the pre-pass SET), not eagerly on every labelled container (WL-D4); register **labelled-only** label→absolute-path entries into the `LoweringContext` table during `WeaveResolver.resolve` (WL-D5). |
+| `RuntimeObjectEmitter` (`LoweringContext`) | `Compiler/Codegen/RuntimeObjectEmitter.swift` | **EXTEND** | Add `weaveLabelPaths` (labelled-only) to `LoweringContext`; discovery pre-pass that records label→path AND collects the read-count-referenced label SET (= inklecate's `ResolveWeavePointNaming`); `.variableReference` → `.readCount(path)` resolution in `lowerExpression` (= inklecate's `ResolveReferences`) (WL-D6). |
+| `WeaveEmitter` choice condition lowering | `Compiler/Codegen/WeaveEmitter.swift` | **EXTEND** | A `{condition}`-guarded choice lowers its guard onto the eval stack before the `choicePoint` (reuses the existing `lowerExpression` closure threading). |
+
+No CREATE NEW. No file added.
+
+## Wave: DESIGN / [REF] Driving / Driven Ports
+
+- **Driving port (unchanged)**: `InkCompiler.compile(source:) -> StoryBlueprint`. No new inbound surface.
+- **Driven ports**: none new. The slice emits only `Decoder/` node types (`.readCount`, `.choicePoint`, flagged `ContainerNode`) via the existing `RuntimeObjectEmitter` path; the runtime is the unchanged downstream consumer.
+
+## Wave: DESIGN / [REF] Technology Choices
+
+- **Language**: Swift (existing). No new dependency, no `Package.swift` change, no new `NodeKind` case (reuses `.readCount`).
+- **Paradigm**: object-oriented/imperative (CLAUDE.md) — value-type `enum`/`struct` emitters with methods, matching `WeaveEmitter`/`ConditionalEmitter`.
+- **Enforcement**: SwiftLint `custom_rules` R1/R3/R5 (`--strict`, pre-commit + CI) — unchanged; this slice stays inside `Compiler/`.
+
+## Wave: DESIGN / [REF] Decisions Table
+
+| # | Decision | ADR |
+|---|---|---|
+| WL-D1 | Minimal EXTEND of the emitter pipeline; no new component. | ADR-011 |
+| WL-D2 | Parse choice `(label)` + `{condition}`; AST `choice` gains two fields. | ADR-011 |
+| WL-D3 | Label-keyed choice containers (`label ?? c-N`). | ADR-011 |
+| WL-D4 | `0x1` CountVisits flag on labelled containers only. | ADR-011 |
+| WL-D5 | Incremental `weaveLabelPaths` table on `LoweringContext` + discovery pre-pass. | ADR-011 |
+| WL-D6 | `.readCount(path)` emission on label-resolved dotted references. | ADR-011 |
+| WL-D7 | No runtime change; Level-1 execution-equivalence; own resolved path. | ADR-011 / D5 |
+
+## Wave: DESIGN / [REF] Reuse Analysis (HARD GATE)
+
+| Existing Component | File | Overlap | Decision | Justification |
+|---|---|---|---|---|
+| `WeaveEmitter` (the "deferred WeaveResolver", shipped DELIVER S3) | `Compiler/Codegen/WeaveEmitter.swift` | Weave structure, `c-N`/`g-N` namespace, **gather `(label)` keying**, absolute-path construction, loose-end resolution | **EXTEND** | The task framing's "deferred WeaveResolver" already shipped here (renamed). It already does label-keying for gathers (`gatherKey: label ?? "g-N"`) and builds absolute paths in `resolve`. Adding choice label-keying + a `0x1` flag + a table write at the existing keying site is ~tens of LOC; a new component would duplicate the `WeaveBlock`/`WeaveResolver` traversal. CREATE NEW is unjustified. |
+| `RuntimeObjectEmitter` / `LoweringContext` | `Compiler/Codegen/RuntimeObjectEmitter.swift` | Expression lowering (`.variableReference` case), `LoweringContext` table threading (CONST + functions) | **EXTEND** | The wrong emission is exactly the `.variableReference` case (line ~195); the fix is one branch. `LoweringContext` already threads two resolution tables — adding `weaveLabelPaths` follows the identical pattern. |
+| `InkParser` (`splitBracketedLabel`/`choiceKind`/`gatherKind`) | `Compiler/Parser/InkParser.swift` | Choice/gather line parsing; bracketed-label splitting | **EXTEND** | `splitBracketedLabel(open:close:)` is already generic over delimiters; applying it with `(`/`)` to choices reuses it verbatim. `{condition}` guard parsing extends `choiceKind`. |
+| `CompilerAST` `choice` case | `Compiler/AST/CompilerAST.swift` | Choice AST shape | **EXTEND** | Two added associated values (`weaveLabel`, `condition`); the `gather` case already carries `label` — symmetric, additive. |
+| `ConditionalEmitter` | `Compiler/Codegen/ConditionalEmitter.swift` | Guard-expression lowering onto the eval stack; named-container template | **REUSE (pattern) / no change** | Its `lowerExpression`/`guardNodes` idiom is the template a `{condition}`-guarded choice follows; no edit to ConditionalEmitter itself. |
+| `.readCount` NodeKind + runtime CNT?/CountVisits | `Decoder/NodeKind.swift`, `Engine/InkEngine.swift`, `TreeWalker.swift` | Read-count resolution + visit tracking | **REUSE AS-IS** | Fully implemented runtime-side (absolute-key resolution; choice-body visit tracking). Forbidden to change (R1/R3/R5). The slice produces inputs it already consumes. |
+| `ChoiceFlags` | `Engine/StoryState.swift` / `Decoder/NodeKind.swift` | Choice-flag bitfield | **REUSE AS-IS** | Choice lowering already emits these; the new `0x1` container flag is a separate `ContainerNode.flags` field, not a `ChoiceFlags` change. |
+| Existing divert target-path resolution | `WeaveEmitter` (`qualified`/`joined(separator:".")`), `RuntimeObjectEmitter` divert lowering | Absolute dotted path construction | **REUSE AS-IS** | The same absolute-qualified path the resolver builds for divert targets is the path the read-count table records — single source of path truth. |
+
+**Verdict: zero CREATE NEW.** Every overlapping component is EXTEND or REUSE; the headline reuse target (the deferred `WeaveResolver`) is built out in place as the already-shipped `WeaveEmitter`.
+
+### Contract-shape classification (principle 12)
+
+| Component | Contract shape | Universe | Assertion mechanism (crafter) |
+|---|---|---|---|
+| `WeaveEmitter.lower` / `WeaveResolver.resolve` | pure-function (return-only) — returns `(children, named)` + now writes label→path into an `inout` table | aggregate-bounded (the `LoweringContext` table + the returned named collector — same universe `ConditionalEmitter` honours) | oracle execution-equivalence on the re-enabled ATs; no I/O, no global mutation |
+| `RuntimeObjectEmitter.lowerExpression` | pure-function (return-only) — `(InkExpression, context) -> [NodeKind]` | none (reads the immutable `weaveLabelPaths` table) | the RED-pin AST assertion (no dotted `.variableReference` survives for a known label; a `.readCount` is emitted) |
+| discovery pre-pass | pure-function — `[InkStatement] -> [String:[String]]` | none (derives paths from parsed structure) | covered transitively by the e2e oracle |
+
+No component is unbounded-preservation; none performs effects. The `inout` table write is aggregate-bounded to `LoweringContext`, matching the existing emitter idiom.
+
+## Wave: DESIGN / [REF] C4 Component Diagram — weave-label addressing subsystem
+
+```mermaid
+C4Component
+  title Component Diagram — weave-label read-count addressing (inside Compiler/ layer)
+
+  Container_Boundary(comp, "SwiftInkRuntime :: Compiler/ layer") {
+    Component(parser, "InkParser", "Compiler/Parser/", "EXTEND: parses choice (label) and {condition} guard; emits AST choice with weaveLabel + condition.")
+    Component(ast, "CompilerAST", "Compiler/AST/", "EXTEND: choice case gains weaveLabel + condition.")
+    Component(weave, "WeaveEmitter / WeaveResolver", "Compiler/Codegen/", "EXTEND: label-keyed choice containers; 0x1 CountVisits flag on read-count-referenced labelled containers only (pre-pass SET); registers labelled-only label->absolute-path into the table.")
+    Component(emitter, "RuntimeObjectEmitter (+ LoweringContext)", "Compiler/Codegen/", "EXTEND: weaveLabelPaths table; discovery pre-pass; lowerExpression emits .readCount(path) on a label-resolved dotted reference.")
+    Component(cond, "ConditionalEmitter", "Compiler/Codegen/", "REUSE (pattern): guard-lowering idiom a {condition}-guarded choice follows.")
+  }
+
+  Container_Boundary(rt, "SwiftInkRuntime :: runtime (UNCHANGED — read-count already implemented)") {
+    Component(nodekind, ".readCount / ContainerNode.flags", "Decoder/", "REUSE AS-IS: read-count node + 0x1 CountVisits flag.")
+    Component(engine, "InkEngine / TreeWalker", "Engine/", "REUSE AS-IS: tracks flagged-container visits; resolves .readCount absolute key against visitCounts.")
+  }
+
+  Rel(parser, ast, "produces choice nodes with label + condition for")
+  Rel(emitter, weave, "delegates weave bodies to; receives (children, named) + table writes from")
+  Rel(weave, emitter, "registers label->absolute-path into LoweringContext table of")
+  Rel(emitter, cond, "follows guard-lowering pattern of")
+  Rel(emitter, nodekind, "emits .readCount(resolvedPath) + flagged ContainerNode into")
+  Rel(engine, nodekind, "tracks visits + resolves read counts over")
+```
+
+## Wave: DESIGN / [REF] Open Questions (deferred to DISTILL/DELIVER)
+
+| # | Question | Defer to | Note |
+|---|---|---|---|
+| WL-OQ1 | Does any `TheIntercept` dotted read-count reference a label nested under a *choice body* (vs a gather)? The oracle path `harris_demands_component.0.g-1.c-14` suggests a choice label inside the first stitch. | DELIVER (oracle-driven) | WL-D3/D4 cover both choice and gather labels uniformly, so either resolves; DELIVER confirms against the fixture. |
+| WL-OQ2 | Should a `{condition}`-guarded choice combine its guard with the dotted read-count in the same expression (e.g. `{a.b > 1}`)? | DELIVER | `lowerExpression` resolves the dotted operand to `.readCount` regardless of surrounding binary ops, so a guarded comparison composes; verify with a focused fixture. |
+| WL-OQ3 | ~~Label-vs-qualified-variable disambiguation~~ — **ANSWERED by the original.** A table miss falls through to `.variableReference`, which matches inklecate exactly: `VariableReference.cs:129-141` treats a non-resolving single-component name as a variable read (`ResolveVariableWithName`). WL-D6's fall-through is the original's behaviour, not a heuristic. | n/a (resolved) | DISTILL may still add a non-label dotted-name fixture to pin the fall-through, but no design question remains. |
+| WL-OQ4 | Naming collision: could a choice `(label)` collide with a sibling stitch/gather name in the same container's `namedContent`? | DELIVER | Ink forbids duplicate labels in a scope; WeaveEmitter already merges gather labels into the same map — DELIVER should assert no silent overwrite (a located compile error if it occurs). |
+
+## Wave: DESIGN / [WHY] Options Considered (propose mode)
+
+The one genuine design fork is **how to build the name→path resolution table and label-keyed container naming**. Three concrete options:
+
+**Option A — Post-lowering pass over the emitted `ContainerNode` tree.** Emit the whole tree, then walk it to discover labelled containers, build the table, and re-walk to rewrite `.variableReference(dotted)` → `.readCount(path)`.
+- Trade-offs: + fully decoupled, one isolated pass. − **re-derives absolute paths the resolver already computed** (duplicated path arithmetic — the *highest correctness risk on nested containers*, the actual `…c-0.g-1.c-14` case); requires mutating the immutable `ContainerNode` (rebuild-on-rewrite); needs a post-hoc heuristic to tell a read-count from a real dotted variable. Two extra traversals for data already in hand. Misaligned with the existing emitter idiom.
+
+**Option B — Incremental name→path registration during lowering via an extended `LoweringContext` (CHOSEN).** Register label→absolute-path entries as `WeaveResolver.resolve` keys each labelled container (it already holds the `keyPrefix`); read the table in `lowerExpression`. A discovery pre-pass over the parsed weave structure registers all labels before expression lowering, making resolution order-independent.
+- Trade-offs: + **reuses the resolver's already-correct absolute paths (zero duplicated path arithmetic → lowest nested-container correctness risk)**; + one dictionary write per labelled container; + aligns precisely with the established `LoweringContext` table-threading (CONST, functions) and the `WeaveEmitter`/`ConditionalEmitter` named-collector pattern; + no tree mutation; + highly testable (table is data). − a forward-reference ordering concern, fully mitigated by the discovery pre-pass (which reuses the existing `WeaveParser` level-partitioning).
+
+**Option C — A dedicated new `WeaveLabelResolver` component owning label discovery + path resolution.**
+- Trade-offs: + single-responsibility, independently testable. − `WeaveEmitter` already owns weave structure, the namespace, gather-label keying, and absolute-path construction; a separate resolver either duplicates that traversal (Option A's cost) or couples tightly to `WeaveEmitter`'s internal `WeaveBlock`/`WeaveResolver` types. Violates the EXTEND-by-default Reuse rule with no evidence that extending is impossible.
+
+### DECISION: Option B (CHOSEN)
+
+Option B is chosen because it **reuses the proven absolute-path arithmetic** the resolver already performs for divert targets and gather labels — eliminating the single largest correctness risk (path derivation on deeply nested containers, which is exactly the `TheIntercept` shape). It threads through the existing `LoweringContext` pattern that already carries two resolution tables, so it adds the least new structure and aligns with the `WeaveEmitter`/`ConditionalEmitter` named-collector idiom the crafter already maintains. Its only weakness — forward references — is cheaply and completely closed by a discovery pre-pass that reuses existing level-partitioning. Options A and C both re-introduce duplicate path arithmetic (A directly, C by re-traversal), which is the risk this design most needs to avoid.
+
+**Provenance: matches inklecate's three-phase `ResolveWeavePointNaming` → `GenerateRuntimeObject` → `ResolveReferences`** (governing heuristic: *when in doubt, follow the original*). The discovery pre-pass = phase 1 (`Weave.cs:81-100`): registers **only labelled** weave points (unlabelled `g-N`/`c-N` are not name-addressable) and collects the read-count-referenced label SET. The resolver's already-cached absolute path = phase 2 (`GenerateRuntimeObject`, with labelled containers also named by their label, `Gather.cs:21-24`). `lowerExpression` reading the table to emit `.readCount(path)` = phase 3 (`VariableReference.cs:87-142`), which **reads the cached `runtimePath` and never re-derives** (`VariableReference.cs:111`) and sets the `0x1` CountVisits flag only on the resolved target (`VariableReference.cs:101`). Option A is rejected precisely because re-deriving paths is *the one thing the original deliberately avoids*; Option C is rejected because the original fuses naming/path/keying into `Weave`/`Gather` rather than a standalone resolver, so a separate component would duplicate or tightly couple to that work.
