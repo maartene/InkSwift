@@ -149,13 +149,42 @@ enum RuntimeObjectEmitter {
         /// write-through path that makes a `ref` parameter mutate the caller's
         /// variable. Empty at knot/root scope (all assignments are global there).
         var localNames: Set<String> = []
+        /// The enclosing knot name of the body being lowered (empty at root). A bare
+        /// divert target `-> T` inside a knot resolves first to a SIBLING stitch
+        /// `knot.T` (ink scoping: current-knot stitch before root knot), but the
+        /// runtime resolves divert targets ABSOLUTELY from root — so a bare stitch
+        /// target dead-ends (no root-level `T`). The divert lowerer consults this to
+        /// qualify a bare target to `knot.T` when `knot.T` is a known stitch.
+        var knotScope: String = ""
 
         func bindingLocals(_ names: Set<String>) -> LoweringContext {
             LoweringContext(
                 constants: constants, functions: functions,
                 weaveLabelPaths: weaveLabelPaths, knotStitchPaths: knotStitchPaths,
-                localNames: names
+                localNames: names, knotScope: knotScope
             )
+        }
+
+        /// Bind the enclosing knot scope so bare stitch-local diverts qualify.
+        func inKnotScope(_ knotName: String) -> LoweringContext {
+            LoweringContext(
+                constants: constants, functions: functions,
+                weaveLabelPaths: weaveLabelPaths, knotStitchPaths: knotStitchPaths,
+                localNames: localNames, knotScope: knotName
+            )
+        }
+
+        /// Resolve a bare divert target against the current knot scope. A bare `T`
+        /// that names a sibling stitch (`knot.T` is a known stitch path) qualifies to
+        /// `knot.T` so the runtime's absolute-from-root resolution finds it; any other
+        /// target (already-dotted, root knot, weave label, relative `.^`) is returned
+        /// unchanged. Mirrors ink scoping (current-knot stitch before root knot).
+        func qualifiedDivertTarget(_ target: String) -> String {
+            guard knotScope.isEmpty == false,
+                  target.contains(".") == false,
+                  target.hasPrefix(".") == false else { return target }
+            let qualified = "\(knotScope).\(target)"
+            return knotStitchPaths[qualified] != nil ? qualified : target
         }
 
         /// Resolve a (possibly dotted) name to the absolute compiled path of a
@@ -598,11 +627,16 @@ enum RuntimeObjectEmitter {
     // MARK: - Lowering
 
     private static func emitKnot(_ knot: KnotGroup, context: LoweringContext) throws -> ContainerNode {
+        // Bind the enclosing knot scope so a bare stitch-local divert (`-> waited`)
+        // qualifies to its absolute `knot.stitch` path (the runtime resolves divert
+        // targets absolutely from root; an un-qualified sibling-stitch target would
+        // otherwise dead-end). Stitch and knot bodies share the same knot scope.
+        let knotContext = context.inKnotScope(knot.name)
         var named: [String: ContainerNode] = [:]
         for stitch in knot.stitches {
             var stitchNamed: [String: ContainerNode] = [:]
             let children = try lowerBodyRoutingWeave(
-                stitch.body, context: context,
+                stitch.body, context: knotContext,
                 keyPrefix: [knot.name, stitch.name], named: &stitchNamed,
                 terminateFlatBodyWithDone: false
             )
@@ -612,7 +646,7 @@ enum RuntimeObjectEmitter {
         }
         var knotNamed = named
         let children = try lowerBodyRoutingWeave(
-            knot.body, context: context, keyPrefix: [knot.name], named: &knotNamed,
+            knot.body, context: knotContext, keyPrefix: [knot.name], named: &knotNamed,
             terminateFlatBodyWithDone: false
         )
         return ContainerNode(children: children, namedContent: knotNamed, flags: 0, name: knot.name)
@@ -874,7 +908,10 @@ enum RuntimeObjectEmitter {
             let isGlobal = context.localNames.contains(name) == false
             return lowerAssignment(name: name, value: value, isGlobal: isGlobal, context: context)
         case .divert(let target):
-            return [.divert(target: target, isConditional: false, isVariable: false)]
+            return [.divert(
+                target: context.qualifiedDivertTarget(target),
+                isConditional: false, isVariable: false
+            )]
         case .tunnelDivert(let target):
             return [.tunnelDivert(target: target)]
         case .tunnelReturn:
