@@ -36,7 +36,7 @@ struct WeaveDiscoveryPrePassTests {
     /// resolver-written label->path table (criterion 3 surface).
     private func lowerLabelPaths(_ source: String) throws -> [String: [String]] {
         let statements = try InkParser.parse(source)
-        return try WeaveEmitter.lowerWithLabelPaths(statements) { _ in [] }.labelPaths
+        return try WeaveEmitter.lowerWithLabelPaths(statements) { _, _ in [] }.labelPaths
     }
 
     // Criterion 1 — the pre-pass records a labelled choice at its absolute path.

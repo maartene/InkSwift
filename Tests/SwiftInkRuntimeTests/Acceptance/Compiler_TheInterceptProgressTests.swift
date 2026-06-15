@@ -24,20 +24,28 @@ struct Compiler_TheInterceptProgressTests {
     private static let script = [0, 2, 1, 0, 0, 1, 2, 0, 1, 0]
 
     /// The achieved oracle-matching line floor for this step. Native must match the
-    /// oracle for at least the first `floor` lines. Step 01-02 resolves the real
-    /// deeply-nested `start.delay` read-count guard: `(delay)` is a choice label
-    /// nested 3 levels deep (`start` knot → `opts` gather → `plan` choice → `delay`
-    /// choice) but referenced FLAT as `start.delay` (line 113). The discovery
-    /// pre-pass now walks variable-text-FOLDED bodies and registers a deeply-nested
-    /// label under the knot's flat namespace (`start.delay` → real path
-    /// `start.plan.delay`), so `{not start.delay}` evaluates correctly and native
-    /// picks "Tell me what this is about." (oracle index 6) instead of "I say
-    /// nothing.". `harris_demands_component.cant_talk_right` resolves likewise.
-    /// Surviving-dotted count dropped 2 → 0; native advances 6 → 11 oracle-matching
-    /// lines. The NEXT blocker is at index 11: after the `(tellme)`/`[Deny]` path
-    /// native runs out where the oracle continues "Harris looks disapproving. He
-    /// pushes one mug halfway towards me…" (the `-> pushes_cup` divert) — next step.
-    private static let floor = 11
+    /// oracle for at least the first `floor` lines. Step 01-03 resolves the
+    /// `-> pushes_cup` divert from the `[Deny]` choice body (TheIntercept.ink ~121).
+    /// Four root causes, all in `Compiler/`:
+    ///   1. PARSE — a deeper gather (`- - (pushes_cup)`) inside a level-1 `*` choice
+    ///      now opens a NESTED weave inside that choice body (was swallowed as raw
+    ///      body text, so `pushes_cup` was never emitted as a container).
+    ///   2. KEYING — sibling choice/gather bodies' anonymous `cond{N}`/`seq{N}`
+    ///      containers shared one ordinal counter per body and collided when promoted
+    ///      to the enclosing scope; the `[Deny]` body's `{cooperate:…}` continuation
+    ///      (holding `-> pushes_cup`) was clobbered. The ordinal counter now spans
+    ///      sibling bodies (seeded from the shared collector), so each is unique.
+    ///   3. DIVERT — a bare weave-label divert (`-> pushes_cup`) now qualifies to the
+    ///      label's absolute physical path via the knot-namespace `weaveLabelPaths`
+    ///      key, mirroring inklecate's by-name weave-point resolution.
+    ///   4. PARSE — a plain prose line with a MID-line divert (`Harris looks
+    ///      disapproving. -> pushes_cup`) and a gather outcome ending in trailing glue
+    ///      (`… : <>`) now lower to text + glue + real divert instead of literal text.
+    /// Native advances 11 → 15 oracle-matching lines. The NEXT blocker is at index 15:
+    /// the oracle continues "Quite a difficult situation," he begins, sternly. …"
+    /// (the post-`lift_up_cup` gather `g-... "Quite a difficult situation"`, ink ~148)
+    /// where native runs out — next step.
+    private static let floor = 15
 
     @Test
     func `native TheIntercept plays past the opts gather, matching the oracle prefix`() throws {

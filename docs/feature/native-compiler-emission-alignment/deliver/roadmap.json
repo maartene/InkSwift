@@ -2,7 +2,7 @@
   "roadmap": {
     "project_id": "native-compiler-emission-alignment",
     "created_at": "2026-06-16T08:00:00Z",
-    "total_steps": 2
+    "total_steps": 3
   },
   "phases": [
     {
@@ -51,7 +51,27 @@
             "Sources/SwiftInkRuntime/Compiler/Codegen/RuntimeObjectEmitter.swift",
             "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_TheInterceptProgressTests.swift"
           ],
-          "implementation_notes": "PROBE-DRIVEN. After 01-01 the probe's next blocker is oracle index 6: the {not start.delay} guard on the tellme choice in start.waited. start.delay is a surviving unresolved dotted variableReference: (delay) is a choice label nested 3 levels deep (start -> opts gather -> plan choice -> delay choice), referenced FLAT as start.delay. inklecate resolves by NAME in the knot's flat namespace regardless of physical depth; native's discovery pre-pass registers by physical path so the flat ref misses (the shallow #4b fixture passed but the deep real ref does not). FIX (Compiler/ only): extend the discovery pre-pass (WeaveEmitter) so a labelled weave point nested at ANY depth in a knot is ALSO addressable by knot.label (name in the knot's flat namespace), keyed to its already-computed absolute path (reuse keyPrefix; never re-derive); ensure lowerExpression resolves it (RuntimeObjectEmitter) and the auto-flag reconciliation flags the target. RED: bump the ratchet AT N to just past oracle index 6 (the tellme path). GREEN: fix; re-run DIAG_INTERCEPT2; set N to the actual achieved floor. Throwaway dump ok (remove before commit). If blocked beyond Compiler/ or needs a runtime change, STOP and escalate. Do NOT re-enable the TheIntercept e2e. Boundary R1/R3/R5; no runtime/Decoder change."
+          "implementation_notes": "PROBE-DRIVEN. After 01-01 the probe's next blocker is oracle index 6: the {not start.delay} guard on the tellme choice in start.waited. start.delay is a surviving unresolved dotted variableReference: (delay) is a choice label nested 3 levels deep (start -> opts gather -> plan choice -> delay choice), referenced FLAT as start.delay. inklecate resolves by NAME in the knot's flat namespace regardless of physical depth; native's discovery pre-pass registers by physical path so the flat ref misses (the shallow #4b fixture passed but the deep real ref does not). FIX (Compiler/ only): extend the discovery pre-pass (WeaveEmitter) so a labelled weave point nested at ANY depth in a knot is ALSO addressable by knot.label (name in the knot's flat namespace), keyed to its already-computed absolute path (reuse keyPrefix; never re-derive); ensure lowerExpression resolves it (RuntimeObjectEmitter) and the auto-flag reconciliation flags the target. RED: bump the ratchet AT N to just past oracle index 6 (the tellme path). GREEN: fix; re-run DIAG_INTERCEPT2; set N to the actual achieved floor. Throwaway dump ok (remove before commit). If blocked beyond Compiler/ or needs a runtime change, STOP and escalate. Do NOT re-enable the TheIntercept e2e. Boundary R1/R3/R5; no runtime/Decoder change. DONE (commit 64aa56f): deep folded-label registration under flat knot-namespace; dotted refs 2->0; native matched 6->11."
+        },
+        {
+          "id": "01-03",
+          "name": "Advance native TheIntercept past the next blocker (probe-driven)",
+          "criteria": [
+            "Native advances past the current probe blocker at oracle index 11 (the -> pushes_cup divert from the [Deny] choice body, TheIntercept.ink ~line 121).",
+            "The ratchet AT N is bumped to the new achieved oracle-matching floor (> 11).",
+            "No regression in the full suite."
+          ],
+          "agent": "nw-software-crafter",
+          "deps": ["01-02"],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_TheInterceptProgressTests.swift",
+          "scenario_name": "native TheIntercept plays past the opts gather, matching the oracle prefix",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Compiler/Codegen/WeaveEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/RuntimeObjectEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Parser/InkParser.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_TheInterceptProgressTests.swift"
+          ],
+          "implementation_notes": "PROBE-DRIVEN (DIAG_INTERCEPT2). After 01-02 native matches 11 oracle lines then runs out at index 11: oracle continues 'Harris looks disapproving. He pushes one mug halfway towards me...' = the -> pushes_cup divert from the [Deny] choice body (TheIntercept.ink ~line 121). INVESTIGATE the real cause with a throwaway dump (remove before commit) — likely a divert-target qualification or choice-body-divert emission issue analogous to 01-01's stitch-local divert fix, but confirm against the real structure. FIX in Compiler/ only (no runtime change). RED: bump ratchet AT N past index 11. GREEN: fix; re-run DIAG_INTERCEPT2; set N to the actual achieved floor; full suite green. COMMIT with Step-Id + Task-Id trailers; in the body state achieved N + the next blocker. Prefer committing the COMMIT-phase log entry WITH the code (avoid a separate --no-verify chore commit). If blocked beyond Compiler/ or needs a runtime change, STOP and escalate. Do NOT re-enable the e2e. Boundary R1/R3/R5."
         }
       ]
     }

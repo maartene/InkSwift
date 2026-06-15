@@ -25,7 +25,7 @@ struct WeaveEmitterChoiceKeyingTests {
         _ source: String
     ) throws -> (children: [NodeKind], named: [String: ContainerNode]) {
         let statements = try InkParser.parse(source)
-        return try WeaveEmitter.lower(statements) { _ in [] }
+        return try WeaveEmitter.lower(statements) { _, _ in [] }
     }
 
     /// The target of the first choicePoint emitted into `children`.

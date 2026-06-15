@@ -176,15 +176,22 @@ enum RuntimeObjectEmitter {
 
         /// Resolve a bare divert target against the current knot scope. A bare `T`
         /// that names a sibling stitch (`knot.T` is a known stitch path) qualifies to
-        /// `knot.T` so the runtime's absolute-from-root resolution finds it; any other
-        /// target (already-dotted, root knot, weave label, relative `.^`) is returned
-        /// unchanged. Mirrors ink scoping (current-knot stitch before root knot).
+        /// `knot.T` so the runtime's absolute-from-root resolution finds it. A bare `T`
+        /// that names a WEAVE LABEL anywhere in the current knot (`knot.T` is a known
+        /// weave-label name) qualifies to that label's ABSOLUTE physical container
+        /// path — a deeply-nested gather label (`-> pushes_cup` reaching a `- -`
+        /// gather inside a sibling choice body) resolves regardless of nesting depth,
+        /// mirroring inklecate's by-name weave-point resolution. Any other target
+        /// (already-dotted, root knot, relative `.^`) is returned unchanged. Mirrors
+        /// ink scoping (current-knot stitch / weave label before root knot).
         func qualifiedDivertTarget(_ target: String) -> String {
             guard knotScope.isEmpty == false,
                   target.contains(".") == false,
                   target.hasPrefix(".") == false else { return target }
             let qualified = "\(knotScope).\(target)"
-            return knotStitchPaths[qualified] != nil ? qualified : target
+            if knotStitchPaths[qualified] != nil { return qualified }
+            if let labelPath = weaveLabelPaths[qualified] { return labelPath.joined(separator: ".") }
+            return target
         }
 
         /// Resolve a (possibly dotted) name to the absolute compiled path of a
@@ -287,8 +294,17 @@ enum RuntimeObjectEmitter {
         let weave = try WeaveEmitter.lower(
             body,
             keyPrefix: keyPrefix,
-            lowerStatement: { statements in
-                var weaveNamed: [String: ContainerNode] = [:]
+            lowerStatement: { statements, _ in
+                // Seed the per-body collector with the SHARED accumulator so the
+                // anonymous `cond{N}`/`seq{N}` ordinal counter (`nextOrdinal(in:)`)
+                // keeps counting across sibling bodies instead of resetting to 0 —
+                // otherwise two sibling choice bodies' conditionals both key `cond0-*`
+                // at the promoted top-level scope and clobber each other's
+                // continuation (the `-> pushes_cup` loss, step 01-03). Containers
+                // stay promoted FLAT at the enclosing scope (the established design);
+                // only their ordinal is made body-unique. Diverts use the same flat
+                // `keyPrefix`, so target and storage agree.
+                var weaveNamed = bodyNamed.contents
                 let children = lowerBody(statements, context: context, keyPrefix: keyPrefix, named: &weaveNamed)
                 bodyNamed.merge(weaveNamed)
                 return children
@@ -296,8 +312,11 @@ enum RuntimeObjectEmitter {
             // Threads the gather/choice loose-end into a body that LEADS with a
             // variable-text line, so its folded trailing choices fall through to the
             // enclosing gather (not the hardcoded `.end`) — #3b layer 1+2.
-            lowerStatementWithFallThrough: { statements, looseEnd in
-                var weaveNamed: [String: ContainerNode] = [:]
+            lowerStatementWithFallThrough: { statements, looseEnd, _ in
+                // Same shared-ordinal seeding as `lowerStatement` so sibling bodies'
+                // anonymous conditional/sequence containers get unique ordinals and
+                // do not collide when promoted to the enclosing scope (step 01-03).
+                var weaveNamed = bodyNamed.contents
                 let children = lowerBody(
                     statements, context: context, keyPrefix: keyPrefix,
                     fallThrough: looseEnd, named: &weaveNamed
@@ -814,14 +833,14 @@ enum RuntimeObjectEmitter {
             guard leadsWithWeave(body),
                   let weave = try? WeaveEmitter.lower(
                       body, keyPrefix: enclosingKeyPrefix, fallThrough: fallThrough,
-                      lowerStatement: { statements in
+                      lowerStatement: { statements, bodyKeyPrefix in
                           var weaveNamed: [String: ContainerNode] = [:]
-                          return lowerBody(statements, context: context, keyPrefix: prefix, named: &weaveNamed)
+                          return lowerBody(statements, context: context, keyPrefix: bodyKeyPrefix, named: &weaveNamed)
                       },
-                      lowerStatementWithFallThrough: { statements, looseEnd in
+                      lowerStatementWithFallThrough: { statements, looseEnd, bodyKeyPrefix in
                           var weaveNamed: [String: ContainerNode] = [:]
                           return lowerBody(
-                              statements, context: context, keyPrefix: prefix,
+                              statements, context: context, keyPrefix: bodyKeyPrefix,
                               fallThrough: looseEnd, named: &weaveNamed
                           )
                       }) else {

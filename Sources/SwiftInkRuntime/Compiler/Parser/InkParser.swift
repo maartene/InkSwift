@@ -606,6 +606,27 @@ public enum InkParser {
             statements.append(InkStatement(kind: .content(segments), position: position))
             return
         }
+        // A plain prose line carrying a MID-line divert (`Harris looks disapproving.
+        // -> pushes_cup`) splits into the prose text, default divert glue (ink glues
+        // prose to its divert target), and the divert — so the arrow is a real
+        // control-flow divert, not echoed as literal text. A leading-`->` divert is
+        // already handled by the caller before reaching `appendContent`; here the
+        // prefix is non-empty (`range(of:)` finds the arrow past the start).
+        if let arrowRange = trimmed.range(of: divertMarker),
+           arrowRange.lowerBound != trimmed.startIndex {
+            let prose = String(trimmed[..<arrowRange.lowerBound]).trimmingCharacters(in: .whitespaces)
+            let target = String(trimmed[arrowRange.upperBound...]).trimmingCharacters(in: .whitespaces)
+            if prose.isEmpty == false, target.isEmpty == false, target.contains("->") == false {
+                statements.append(InkStatement(kind: .text(prose), position: position))
+                if target != "END" {
+                    statements.append(InkStatement(kind: .glue, position: position))
+                    statements.append(InkStatement(kind: .divert(target), position: position))
+                } else {
+                    statements.append(InkStatement(kind: .end, position: position))
+                }
+                return
+            }
+        }
         statements.append(InkStatement(kind: .text(trimmed), position: position))
     }
 
