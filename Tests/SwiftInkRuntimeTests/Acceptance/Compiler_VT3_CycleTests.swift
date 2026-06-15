@@ -24,8 +24,7 @@ import Foundation
 struct Compiler_VT3_CycleTests {
 
     // Scenario: A two-stage cycle wraps forever, matching the oracle.
-    @Test(.disabled("pending DELIVER slice-03: VariableTextEmitter cycle (modulo wrap) lowering"))
-    func `a two-stage cycle wraps forever, matching the oracle`() throws {
+    @Test func `a two-stage cycle wraps forever, matching the oracle`() throws {
         let result = try CompilerOracle.compileAndPlay("vt-cycle-two", choiceScript: [0])
 
         #expect(result.native == result.oracle)
@@ -34,8 +33,7 @@ struct Compiler_VT3_CycleTests {
 
     // Scenario: A four-stage cycle wraps via modulo over >2 stages, matching the
     // oracle (no off-by-one at the wrap boundary).
-    @Test(.disabled("pending DELIVER slice-03: four-stage modulo-wrap boundary"))
-    func `a four-stage cycle wraps via modulo with no off-by-one, matching the oracle`() throws {
+    @Test func `a four-stage cycle wraps via modulo with no off-by-one, matching the oracle`() throws {
         let result = try CompilerOracle.compileAndPlay("vt-cycle-four", choiceScript: [0])
 
         #expect(result.native == result.oracle)
