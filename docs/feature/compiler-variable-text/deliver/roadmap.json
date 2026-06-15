@@ -2,9 +2,9 @@
   "roadmap": {
     "project_id": "compiler-variable-text",
     "created_at": "2026-06-15T08:00:00Z",
-    "total_steps": 1,
-    "phases": 1,
-    "slice": "slice-01-once-only"
+    "total_steps": 2,
+    "phases": 2,
+    "slice": "slice-02-sequence"
   },
   "phases": [
     {
@@ -71,6 +71,50 @@
             "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_S5_FeatureReferenceConsistencyTests.swift",
             "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_S6_UnsupportedRejectionTests.swift",
             "docs/product/ink-feature-reference.md"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "02",
+      "name": "Variable-text lowering (slice 02 — sequence clamp-at-last + mixed)",
+      "steps": [
+        {
+          "id": "02-01",
+          "step_id": "02-01",
+          "name": "Verify N-stage sequence clamp-at-last and discharge the mixed variable-text + conditional key-collision AC (OQ-3)",
+          "description": "Re-enable the three VT2 Sequence acceptance scenarios that DISTILL authored .disabled for slice-02 (clamp-at-last boundary verification + the OQ-3 mixed-construct AC). The parametrized VariableTextEmitter sequence path (OP=MIN, BOUND=S-1, no appended stage) and the shuffle-only gate already landed in slice-01 (step 01-01), so the two pure-sequence ATs are boundary-verification of already-shipped code and are expected to go GREEN immediately on enable; the vt-mixed AT is the FIRST execution of a body mixing a variable-text group (`{red|green|blue}` sequence) and an inline conditional (`{seen: Back again.|First time.}`) — it executes (not merely asserts by construction) DESIGN OQ-3: the distinct `seq{N}-*` vs `cond{N}-*` key namespaces must not collide and must play oracle-identically. Per CLAUDE.md trunk-based + the .disabled policy: remove the three `.disabled` traits (RED), confirm each enabled AT either passes on the already-landed lowering OR — only for vt-mixed if a real key-collision/continuation defect surfaces — fails for MISSING_FUNCTIONALITY (genuine RED) and is fixed inside the Compiler codegen (VariableTextEmitter / RuntimeObjectEmitter), then GREEN, then COMMIT directly to main. Do NOT modify Engine/Decoder/Facade. The full swift test suite + SwiftLint --strict pre-commit gate must pass; no --no-verify.",
+          "acceptance_criteria": [
+            "VT2: vt-seq-three (`{red|green|blue}` behind a sticky choice, selected 4x) plays ['red','green','blue','blue'], native == committed inklecate oracle (clamp-at-last on a 3-stage sequence)",
+            "VT2: vt-seq-two (`{Day.|Night.}` re-entered 3x) plays ['Day.','Night.','Night.'], native == oracle — the 2-stage clamp boundary, distinct from the once-only form",
+            "VT2 (OQ-3): vt-mixed (`{seen: Back again.|First time.}` + `{red|green|blue}` in one body) plays ['First time. The sign glows red.','Back again. The sign glows green.','Back again. The sign glows blue.'], native == oracle, with NO stage-container key collision between the conditional and the sequence",
+            "All three VT2 ATs have their `.disabled` trait removed (zero `.disabled` VT2 ATs remain for slice-02)",
+            "VT0 shuffle regression guard stays GREEN; the full pre-existing suite stays GREEN (no regression in any Compiler_S* or VT* suite)",
+            "Compiler-only diff: no change under Engine/, Decoder/, or Facade/; SwiftLint --strict R1/R3/R5 boundary rules pass"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_VT2_SequenceTests.swift",
+          "criteria": "All three VT2 Sequence ATs pass GREEN with their `.disabled` removed; VT0 shuffle guard stays GREEN; the full swift test suite is GREEN; SwiftLint --strict passes; no Engine/Decoder/Facade file is modified.",
+          "scenario_name": "US-02 — Compile and play a sequence variable-text form ({a|b|c})",
+          "quality_gates": [
+            "All three VT2 Sequence acceptance tests pass (native == oracle)",
+            "VT0 shuffle reject guard remains GREEN",
+            "Full swift test suite GREEN (no regressions)",
+            "SwiftLint --strict --no-cache passes (architecture-boundary R1/R3/R5)"
+          ],
+          "implementation_notes": [
+            "Slice-01 already narrowed UnsupportedConstructDetector to shuffle-only AND landed the parametrized VariableTextEmitter sequence path; the `vt-once-bare` fixture that passed in slice-01 is itself a 3-stage plain sequence `['', text, '']`, so the (MIN, S-1, no-append) clamp path is already exercised. Expect the two pure-sequence VT2 ATs to be GREEN immediately on enable — this is legitimate boundary verification of shipped code, not testing-theater.",
+            "Confirm RED honestly: enable all three ATs and run the suite BEFORE any code change. Record which ATs are already GREEN (boundary verification) vs any genuine MISSING_FUNCTIONALITY RED (only plausibly vt-mixed). Per distill/red-classification.md the expected RED mode is MISSING_FUNCTIONALITY; note in the commit/feature-delta if the pure-sequence cases were already satisfied by slice-01.",
+            "vt-mixed is the OQ-3 discharge: `{seen: Back again.|First time.}` is an inline CONDITIONAL (top-level `:` → ConditionalEmitter, cond{N}-* keys) and `{red|green|blue}` is a SEQUENCE (top-level `|`, no `:` → VariableTextEmitter, seq{N}-* keys) in the SAME line/body. The distinct key prefixes make collision impossible by construction (DESIGN OQ-3) — this AT proves it by execution. If a real collision or continuation-drop surfaces, fix it inside Compiler/Codegen only (mirror the slice-01 seqN-end weave-continuation fix pattern).",
+            "Leave Compiler_S4_CeilingTests.swift untouched (its uncommitted re-pointing edit belongs to slice-04 and stays `.disabled`).",
+            "Per ADR-025 trunk-based: RED → GREEN → COMMIT directly to main. The pre-commit gate (.githooks/pre-commit: swiftlint --strict + swift test) must pass; do NOT --no-verify. Commit trailers: Step-Id: 02-01 + Task-Id: compiler-variable-text."
+          ],
+          "dependencies": ["01-01"],
+          "estimated_hours": 0.5,
+          "deliverables": [
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_VT2_SequenceTests.swift (.disabled removed from all three ATs)"
+          ],
+          "files_to_modify": [
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_VT2_SequenceTests.swift"
           ]
         }
       ]

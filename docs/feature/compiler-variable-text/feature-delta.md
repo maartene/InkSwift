@@ -1080,3 +1080,75 @@ Specification + Component Decomposition (ADR-010); the delivered `native-ink-com
 (`ConditionalEmitter` pattern template, `lowerBody` recursion, the engine `visit`/`du`/`MIN`/`%`/
 `pop`/`nop`/`==`/conditional-divert ops). Authoritative cross-slice call recorded in DISTILL
 upstream-issues U-2 (gate flips to shuffle-only in slice 01).
+
+---
+
+# Feature Delta: compiler-variable-text (DELIVER wave — slice 02)
+
+**Wave**: DELIVER | **Density**: lean (Tier-1 [REF]) | **Slice**: slice-02-sequence
+**Date**: 2026-06-15 | **Status**: slice 02 DELIVERED (slices 03–04 pending) | **Orchestrator**: nw-deliver
+
+---
+
+## Wave: DELIVER / [REF] Implementation Summary (slice 02)
+
+Verified the **general N-stage sequence** form `{a|b|c}` (matrix row 25 — advance one stage per
+visit, **clamp at the last**) end-to-end and **discharged DESIGN OQ-3 by execution** (a body mixing
+a variable-text group and an inline conditional produces no stage-container key collision). This
+slice is **test-enablement only — zero production change.** Slice-01 had already landed the
+parametrized `VariableTextEmitter` sequence path (`OP=MIN, BOUND=S−1, appendEmptyStage=no`) and
+narrowed the gate to shuffle-only; in fact the slice-01 `vt-once-bare` fixture is itself a 3-stage
+plain sequence, so the clamp-at-last code path was already exercised. Consequently all three VT2
+acceptance scenarios passed **green-on-enable** — legitimate boundary verification of shipped code
+(confirmed not testing-theater by adversarial review: the ATs run port-to-port through
+`InkCompiler.compile` via `CompilerOracle.compileAndPlay`, and the deletion litmus on the
+`.variableText` dispatch in `RuntimeObjectEmitter.lowerBody` would RED them). The `vt-mixed`
+scenario — `{seen: Back again.|First time.}` (inline conditional, `cond{N}-*` keys) + `{red|green|blue}`
+(sequence, `seq{N}-*` keys) in one body — is the **first execution** of OQ-3 and plays
+oracle-identically, proving the distinct key namespaces never collide.
+
+## Wave: DELIVER / [REF] Files Modified (slice 02)
+
+**Production:** none (no Engine/Decoder/Facade/Compiler change; no new `NodeKind`; no `Package.swift` change).
+
+**Tests:**
+- `Acceptance/Compiler_VT2_SequenceTests.swift` — `.disabled` removed from all three ATs (now GREEN): 3-stage clamp (`vt-seq-three`), 2-stage clamp boundary (`vt-seq-two`), mixed cond+seq OQ-3 (`vt-mixed`).
+
+**Docs:** `ink-feature-reference.md` row 25 already MUST-COMPILE (clamp-at-last, `MIN`) from slice-01 — no SSOT change; slice-02's boundary ATs now prove the documented behaviour.
+
+## Wave: DELIVER / [REF] Scenarios Green (slice 02)
+
+**3 of 3** slice-02 acceptance scenarios GREEN (2026-06-15) — these double as the US-02 demo evidence
+(library feature; the "sees" is observable playback output, asserted exactly):
+- VT2 — `{red|green|blue}` × 4 plays `["red","green","blue","blue"]`, native == oracle (3-stage clamp).
+- VT2 — `{Day.|Night.}` × 3 plays `["Day.","Night.","Night."]`, native == oracle (2-stage clamp, distinct from once-only).
+- VT2 (OQ-3) — mixed cond + `{red|green|blue}` plays `["First time. The sign glows red.","Back again. The sign glows green.","Back again. The sign glows blue."]`, native == oracle, no key collision.
+
+Still `.disabled` (pending slices 03–04): VT3 ×2 (cycle), S4 ×1 (TheIntercept e2e). VT0 shuffle guard ENABLED + GREEN.
+
+## Wave: DELIVER / [REF] DoD Check (slice 02)
+
+- [x] All three VT2 sequence ATs GREEN (native == oracle == exact expected lines; clamp-at-last verified for N stages).
+- [x] OQ-3 discharged by execution: `vt-mixed` plays oracle-identically with no `seq{N}-*`/`cond{N}-*` key collision.
+- [x] VT0 shuffle regression guard GREEN.
+- [x] Full `swift test` GREEN — 288 tests, 0 failures (independently re-run by orchestrator).
+- [x] SwiftLint `--strict` — 0 violations (R1/R3/R5 boundary gates).
+- [x] Compiler-only / test-only diff (no Engine/Decoder/Facade; no production change at all).
+- [x] Zero `.disabled` VT2 ATs remain (slice-02 finalize invariant for its scenarios).
+
+## Wave: DELIVER / [REF] Quality Gates (slice 02)
+
+- **Roadmap integrity** (`des-verify-integrity --roadmap-only`) — exit 0.
+- **TDD 3-phase canon** (ADR-025) — RED→GREEN→COMMIT logged EXECUTED/PASS. Honest RED note: slice-01 pre-satisfied the lowering, so all three ATs were green-on-enable (boundary verification), not a fresh MISSING_FUNCTIONALITY RED; recorded transparently rather than fabricating a red.
+- **Pre-commit gate** — swiftlint `--strict` + `swift test` both passed; committed to trunk (`cdfcf2e`) with `Step-Id: 02-01` + `Task-Id: compiler-variable-text` trailers (no `--no-verify`).
+- **Refactoring (L1–L6)** — N/A (test-enablement only; no production code in the diff to refactor).
+- **Adversarial review** (`nw-software-crafter-reviewer`) — APPROVED; Testing-Theater 7-pattern scan CLEAN (port-to-port confirmed, real exact assertions, OQ-3 fixture genuine, no hidden production change, style mandate honoured).
+- **Mutation testing** — SKIPPED (disabled project-wide per CLAUDE.md; oracle execution-equivalence is the test-quality gate).
+- **Deliver integrity** (`des-verify-integrity`) — exit 0, "All 2 steps have complete DES traces".
+
+## Wave: DELIVER / [REF] Pre-requisites (slice 02)
+
+DISTILL VT2 ATs + committed `vt-seq-three`/`vt-seq-two`/`vt-mixed` oracle fixtures; DESIGN Lowering
+Specification (sequence = `MIN`, `S−1`, no-append) + OQ-3 key-namespace guarantee (ADR-010); slice-01
+(step 01-01) which landed the parametrized `VariableTextEmitter` + shuffle-only gate this slice
+verifies. No new fixtures, no runtime change.
