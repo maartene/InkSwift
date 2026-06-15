@@ -65,6 +65,23 @@ public enum InkExpressionParser {
         guard let token = tokens.next() else {
             throw InkExpressionParseError.unexpectedEndOfInput
         }
+        // `not <operand>` is the logical-not unary prefix; it lowers to the
+        // runtime native function `!` (postfix). Recurse so `not not x` and
+        // `not (a == b)` lower correctly. The operand is itself a full operand
+        // (covering parenthesised expressions and nested prefixes).
+        if token.text == notKeyword {
+            return .unary(op: notNativeSymbol, operand: try parseOperand(from: &tokens))
+        }
+        // A bare `(` opens a parenthesised sub-expression (grouping) — parse a
+        // full expression up to the matching `)`. Needed so `not (a == b)` binds
+        // the whole comparison under the prefix `!`.
+        if token.text == "(" {
+            let grouped = try parseExpression(minimumPrecedence: comparisonPrecedence, from: &tokens)
+            guard let closing = tokens.next(), closing.text == ")" else {
+                throw InkExpressionParseError.unexpectedToken(")")
+            }
+            return grouped
+        }
         // An identifier directly followed by `(` is a function call `f(args)`;
         // its arguments are themselves expressions parsed up to the matching `)`.
         if isIdentifier(token.text), let next = tokens.peek(), next.text == "(" {
@@ -72,6 +89,11 @@ public enum InkExpressionParser {
         }
         return try operand(from: token)
     }
+
+    /// The source keyword for logical not, and the runtime native-function symbol
+    /// it lowers to (matching inklecate's postfix `!`).
+    private static let notKeyword = "not"
+    private static let notNativeSymbol = "!"
 
     /// Parse a function-call operand `f(arg, …)` — the opening `(` is the next
     /// token. Arguments are comma-separated expressions; a bare `f()` has none.

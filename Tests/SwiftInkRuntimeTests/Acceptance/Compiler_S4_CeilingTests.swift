@@ -73,4 +73,40 @@ struct Compiler_S4_CeilingTests {
 
         #expect(nativeLines == oracleLines)
     }
+
+    // GAP-1 enabler (step 05-01): the expression Pratt parser gains a `not`
+    // unary-prefix path that lowers to native postfix `!` — `not x` pushes the
+    // operand then emits `.nativeFunction("!")`, matching inklecate's shape
+    // (oracle fixture slice-bug-glue-after-choice: `{"VAR?":"tellme"},"!","/ev"`).
+    // This unblocks ~50 `{not …}` conditions in TheIntercept (the `.disabled` AT
+    // above stays disabled — GAP-2 dotted read-count addressing is still open).
+    //
+    // Authored crafter-side (no DISTILL AT covers this internal mechanism); the
+    // port-level AT is the TheIntercept e2e re-run at step 04-01.
+
+    @Test func `not unary operator lowers to native postfix bang after the operand`() throws {
+        let plain = try InkExpressionParser.parse("not x")
+        #expect(describeNotLowering(plain) == ["ev", "var:x", "fn:!", "out", "/ev"])
+
+        // Parenthesised operand: the whole comparison is lowered before `!`.
+        let parenthesised = try InkExpressionParser.parse("not (a == b)")
+        #expect(describeNotLowering(parenthesised) == ["ev", "var:a", "var:b", "fn:==", "fn:!", "out", "/ev"])
+
+        // Double `not` recurses: inner `!` then outer `!`.
+        let doubled = try InkExpressionParser.parse("not not x")
+        #expect(describeNotLowering(doubled) == ["ev", "var:x", "fn:!", "fn:!", "out", "/ev"])
+    }
+}
+
+/// Render a lowered expression's nodes into intention-revealing tokens so the
+/// postfix `not`→`!` order can be asserted (local to this enabler test).
+private func describeNotLowering(_ expression: InkExpression) -> [String] {
+    RuntimeObjectEmitter.lowerInlineExpression(expression).map { node in
+        switch node {
+        case .controlCommand(let command): return command
+        case .nativeFunction(let symbol): return "fn:\(symbol)"
+        case .variableReference(let name): return "var:\(name)"
+        default: return "other"
+        }
+    }
 }

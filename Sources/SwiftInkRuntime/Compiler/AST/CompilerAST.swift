@@ -166,6 +166,10 @@ public indirect enum InkExpression: Equatable {
     /// A binary operation `left OP right`, e.g. `3 * 4`. The operator is held
     /// as its runtime native-function symbol (`+ - * / %`).
     case binary(op: String, left: InkExpression, right: InkExpression)
+    /// A unary-prefix operation `OP operand`, e.g. `not x`. The operator is held
+    /// as its runtime native-function symbol (`!` for `not`). Codegen lowers the
+    /// operand then emits the postfix `.nativeFunction(op)`, matching inklecate.
+    case unary(op: String, operand: InkExpression)
     /// A function call `f(arg, …)`. Arguments preserve source order; codegen
     /// evaluates them onto the eval stack then emits the `f()` divert. A `ref`
     /// argument bound to a `ref` parameter lowers to a `variablePointer`.

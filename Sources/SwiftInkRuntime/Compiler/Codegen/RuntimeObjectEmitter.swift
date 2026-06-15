@@ -202,6 +202,10 @@ enum RuntimeObjectEmitter {
             nodes.append(contentsOf: lowerExpression(right, context: context))
             nodes.append(.nativeFunction(oper))
             return nodes
+        case .unary(let oper, let operand):
+            var nodes = lowerExpression(operand, context: context)
+            nodes.append(.nativeFunction(oper))
+            return nodes
         case .functionCall(let name, let arguments):
             return lowerFunctionCall(name: name, arguments: arguments, context: context)
         }

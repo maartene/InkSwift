@@ -64,6 +64,48 @@
       "s": "EXECUTED",
       "d": "PASS",
       "t": "2026-06-15T10:28:29Z"
+    },
+    {
+      "sid": "04-01",
+      "p": "RED",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-06-15T10:36:37Z"
+    },
+    {
+      "sid": "04-01",
+      "p": "GREEN",
+      "s": "SKIPPED",
+      "d": "BLOCKED_BY_DEPENDENCY: TheIntercept native compile requires out-of-scope compiler features (not-unary operator + dotted read-count addressing of named stitches) absent from this variable-text slice; descope premise (line-86 variable-text only) falsified by filesystem. Escalated to nw-acceptance-designer / architect. AT left .disabled; production reverted to last green.",
+      "t": "2026-06-15T10:39:55Z"
+    },
+    {
+      "sid": "04-01",
+      "p": "COMMIT",
+      "s": "SKIPPED",
+      "d": "BLOCKED_BY_DEPENDENCY: COMMIT not performed \u2014 GREEN gate unreachable within slice scope. TheIntercept native compile needs out-of-scope compiler features (not-unary operator + dotted read-count addressing of named stitches) absent from this variable-text slice; descope premise (line-86 variable-text only) falsified by filesystem. No commit made; production reverted to last green; AT left .disabled; suite green at 288 tests. Escalated to nw-solution-architect / nw-acceptance-designer.",
+      "t": "2026-06-15T10:40:44Z"
+    },
+    {
+      "sid": "04-01",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS: committed 9be123bf \u2014 DISTILL re-pointing + slice-04 RED blocker record on the US-04 AT (Step-Id/Task-Id trailers, pre-commit gate green: SwiftLint --strict 0 violations + swift test 288 green). AT remains .disabled (genuinely fails, NOT weakened) pending escalation to nw-solution-architect/nw-acceptance-designer for the two out-of-scope compiler gaps (not-unary + dotted read-count addressing).",
+      "t": "2026-06-15T10:41:57Z"
+    },
+    {
+      "sid": "05-01",
+      "p": "RED",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-06-15T11:47:32Z"
+    },
+    {
+      "sid": "05-01",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-06-15T11:48:46Z"
     }
   ]
 }
