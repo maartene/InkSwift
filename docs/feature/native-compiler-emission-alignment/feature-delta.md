@@ -251,3 +251,36 @@ Wave-Decision Reconciliation: 0 contradictions. The SPIKE (`## Wave: SPIKE`) doe
 **Diagnostic delta (DIAG_INTERCEPT):** the variable-text threading behavioral gap is closed (proven by the 6 execution-equivalence ATs incl. the `vt-gather-lead-empty-choice` TheIntercept opts/waited exemplar). Structural findings ROSE (~50→65) and containers fell slightly (450→440) — this is the fold renaming/renesting containers (native names `opts`/`seq0-d`/`seq0-end`/`think`/`plan`; inklecate nests anonymously), the **cosmetic D5-licensed #1/#3a class**, NOT a regression (full suite green confirms). `readCount` (8 vs 54) and `dottedVariableReference` (2) are UNCHANGED — those are Phases 1–2 (#4a/#4b), untouched as expected.
 
 **Remaining for full TheIntercept e2e (still `.disabled` by design):** Phase 1 (#4b dotted-ref tail), Phase 2 (#4a implicit read-count coverage). The e2e re-enables only after those land. The "zero `.disabled` at finalize" invariant applies at FEATURE completion, not this phase.
+
+---
+
+## Wave: DISTILL / [REF] #4b choice-label read-count (2026-06-16)
+
+Two granular execution-equivalence ATs pinning the **immediate TheIntercept blocker** the playback probe (2026-06-15) pinpointed: TheIntercept dead-ends at output line 4 because two dotted read-count references to a **named CHOICE LABEL nested in a knot** survive UNRESOLVED as `.variableReference` (should be `.readCount`). The existing green RED-pin AT (`Compiler_S4_CeilingTests.swift` → `a reference to a weave label lowers to a read-count node`) covers only the SIMPLER shape — a **root-level** label `(door)` in a **plain** inline conditional. The weave-label resolution does NOT reach a label nested in a knot referenced from a **guard** or an **inline conditional**. These two ATs pin exactly that gap.
+
+Asserted via execution-equivalence (`CompilerOracle.compileAndPlay`, native compile + play == committed inklecate oracle along the same choice script — D1/D5 Level-1, NOT structural identity). Driving port: `InkCompiler.compile(source:)` → `Story(blueprint:)` → `CompilerOracle.play`. Both ATs authored `.disabled` (CLAUDE.md DISTILL discipline) — re-enabled on green by the DELIVER Phase-1 (#4b) step.
+
+| AT (backtick scenario) | Fixture | Choice script | Real-TheIntercept shape | Pins |
+|---|---|---|---|---|
+| read-count of a nested choice label used in a **guard** suppresses the guarded choice, matching the oracle | `rc-choicelabel-guard` | `[0, 1]` | `start.delay` — `* {not start.delay} …` (CHOICE GUARD over a `(delay)` labelled choice in the `start` knot) | `knot.choicelabel` in a guard lowers to `.readCount` (not `.variableReference`); target flagged; the read-count observably suppresses the guarded choice on revisit |
+| read-count of a nested choice label used in an **inline conditional** renders the gated word, matching the oracle | `rc-choicelabel-inline` | `[0, 1]` | `harris_demands_component.cant_talk_right` — `{harris…cant_talk_right: helplessly}` (INLINE conditional over a `(cant_talk_right)` labelled choice in that knot) | `knot.choicelabel` in an inline conditional lowers to `.readCount`; the read-count gates the inline word |
+
+**Fixtures (2)** — minimal self-contained reproductions of the two real shapes, both `inklecate` exit 0, no rejected shapes, oracle `.ink.json` committed (CI never invokes inklecate, DDD-10). Sticky `+` choices loop the labelled choice so the read-count is observable across the script; the script then exits via index 1 (a once-only `*` "Give up" in the guard fixture / the sticky "Step back" in the inline fixture) to reach END deterministically.
+
+- `rc-choicelabel-guard.ink` — knot `start`; labelled `+ (delay) [Wait a moment.] You hesitate. -> start`; guarded `+ {not start.delay} [Press on.] … -> END`; once-only `* [Give up.] … -> END`. Oracle line sequence under `[0,1]`: `["You stand at the threshold.", "You hesitate. You stand at the threshold.", "You turn back."]`. Discriminating effect: initial 3 choices (delay count 0 → guard true → "Press on" offered); after visiting `(delay)` (count 1) the revisit offers only 2 choices ("Press on" **suppressed** by `{not start.delay}`).
+- `rc-choicelabel-inline.ink` — knot `harris`; labelled `+ (cant_talk_right) [Press him for answers.] … -> harris`; `+ [Step back.] You speak{harris.cant_talk_right: helplessly}. -> END`. Oracle line sequence under `[0,1]`: `["Harris looks up.", "He shakes his head. Harris looks up.", "You speak helplessly."]`. Discriminating effect: the inline word `helplessly` renders only after the `(cant_talk_right)` label was visited (count ≥ 1); the control path that skips it renders just `You speak.`.
+
+**Tier / paradigm**: Tier A only (config-shaped per-construct ATs, not a ≥3-chained-scenario journey). Example-based oracle execution-equivalence per project convention (PBT N/A; mutation disabled). No InMemory doubles — every AT is real-I/O against the production compiler + runtime; the inklecate oracle is a committed offline artifact.
+
+**Suite**: `Tests/SwiftInkRuntimeTests/Acceptance/Compiler_ChoiceLabelReadCountTests.swift` — beside the existing `Compiler_VariableTextThreadingTests.swift` in the `Acceptance/` compiler-equivalence band; reuses the `CompilerOracle` harness, `@Suite` + backtick-name + `.disabled("…")` trait conventions verbatim. Fixtures under `Tests/SwiftInkRuntimeTests/Fixtures/` (bundled via existing `.process("Fixtures")` — no Package.swift change).
+
+### AT → real-TheIntercept shape → DELIVER step
+
+| AT fixture | Real TheIntercept reference | DELIVER step that re-enables |
+|---|---|---|
+| `rc-choicelabel-guard` | `start.delay` in `* (tellme) {not start.delay} "Tell me…"` (guard over the `(delay)` label in `start`) | Phase 1 (#4b) |
+| `rc-choicelabel-inline` | `harris_demands_component.cant_talk_right` in `{harris_demands_component.cant_talk_right: helplessly}` (inline over the `(cant_talk_right)` label) | Phase 1 (#4b) |
+
+**Reconciliation**: 0 contradictions. This DISTILL slice extends the existing Phase-1 (#4b) scope from "dotted ref to a knot.stitch" (already RED-pinned) to "dotted ref to a nested choice-label referenced from a guard / inline conditional" — the diagnosed playback-probe blocker. No DISCUSS/DESIGN/DEVOPS `wave-decisions.md` files exist for this DESIGN-only feature; nothing to reconcile against. TheIntercept e2e stays `.disabled` (unchanged); no production code touched; no roadmap created.
+
+**Gate**: both ATs compile, report SKIPPED (`.disabled`), full suite **333 tests / 65 suites green** (incl. both TheIntercept playthroughs); swiftlint `--strict` + pre-commit hook pass without `--no-verify`.
