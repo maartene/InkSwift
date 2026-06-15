@@ -97,6 +97,31 @@ features:
       kpi-2: not yet measured (S6 unsupported-rejection corpus — future slice)
       kpi-3: not yet measured (S5 doc-vs-compiler consistency — future slice)
 
+    measured_baselines_compiler_variable_text:
+      # Recorded at GA of the compiler-variable-text feature (2026-06-15). Delta on top of
+      # the native-ink-compiler S0–S6 baselines above. Full swift test: 290 tests, 0 failures.
+      as_of: 2026-06-15
+      scope: deterministic variable-text lowering (matrix rows 25–27) + the `not` unary operator
+      kpi-1: >
+        The three deterministic variable-text forms — sequence {a|b|c} (row 25), cycle {&a|b} (26),
+        once-only {!a|b} / bare {|x|} (27) — now compile NATIVELY in-process and play line-for-line /
+        choice-for-choice identical to the committed inklecate .ink.json oracle (VariableTextEmitter,
+        #f:5 visit-switch; zero runtime change). The `not` unary operator also compiles (step 05-01).
+        HOWEVER the full TheIntercept.ink native-compile end-to-end (the north-star ceiling fixture)
+        is STILL NOT GREEN — it remains blocked, and its e2e oracle test is .disabled. The blocker is
+        no longer variable text (line 86 now compiles): an honest slice-04 RED falsified the
+        sole-blocker premise and surfaced a remaining gap — dotted read-count addressing of named
+        weave labels — which needs a weave-label addressing subsystem DEFERRED (user-approved) to the
+        native-ink-compiler feature. So: supported-corpus variable-text coverage is at 100% oracle
+        parity; TheIntercept full e2e north-star is NOT yet met, by the deferred weave-label gap.
+      kpi-2: >
+        variable-text shuffle {~a|b} (row 28) stays rejected with a named, located
+        .unsupportedConstruct error (UnsupportedConstructDetector narrowed to shuffle-only;
+        regression-guarded each slice). No silent wrong output. Rows 36–39 unchanged.
+      kpi-4: >
+        0 inklecate invocations — the variable-text lowering is a compiler-only diff; production
+        Compiler/ still references no Process/inklecate symbol and spawns no subprocess (holds).
+
     monitoring_model:
       runtime_telemetry: none           # library, not a service — no dashboards/alerts at runtime
       instrument_kind: ci-test-gate     # every KPI is a CI assertion

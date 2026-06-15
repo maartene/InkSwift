@@ -106,6 +106,34 @@
       "s": "EXECUTED",
       "d": "PASS",
       "t": "2026-06-15T11:48:46Z"
+    },
+    {
+      "sid": "05-01",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-06-15T11:49:30Z"
+    },
+    {
+      "sid": "06-01",
+      "p": "RED",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-06-15T11:54:38Z"
+    },
+    {
+      "sid": "06-01",
+      "p": "GREEN",
+      "s": "SKIPPED",
+      "d": "BLOCKED_BY_DEPENDENCY: dotted read-count addressing requires multiple missing weave subsystems (choice (label)+{condition} parsing, label-keyed choice containers, count-visits flagging, name->path table); dotted subject rejected at parse time; SCOPE-GUARD STOP, escalated",
+      "t": "2026-06-15T11:54:43Z"
+    },
+    {
+      "sid": "06-01",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-06-15T11:55:52Z"
     }
   ]
 }

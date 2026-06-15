@@ -226,14 +226,14 @@ Feature tiers follow inkle's own documentation structure:
 | 18 | Temp variables (`~ temp`) | STANDARD | Yes | **WORKS** | |
 | 19 | Variable assignment (`~ x =`) | STANDARD | Yes | **WORKS** | |
 | 20 | Variable read in output (`{x}`) | STANDARD | Yes | **WORKS** | |
-| 21 | Arithmetic / logic operators | STANDARD | Yes | **WORKS** | `+`,`-`,`*`,`/`,`%`,`==`,`!=`,`>`,`<`,`&&`,`||`,`!` |
+| 21 | Arithmetic / logic operators | STANDARD | Yes | **WORKS** | `+`,`-`,`*`,`/`,`%`,`==`,`!=`,`>`,`<`,`&&`,`||`,`!`. Native compiler also lowers the **`not` unary operator** (`not <operand>` → `.unary("!",…)` → native postfix `!`) — shipped in `compiler-variable-text` step 05-01 (commit `cd98c8c`) |
 | 22 | Inline conditionals (`{c: a\|b}`) | STANDARD | Yes (95+) | **IMPLEMENTED** | Slice C1 (`slice-c1-inline-conditionals`) + The Intercept non-trivial playthrough; reuses existing `isConditional` divert pathway, no new NodeKind cases (tier3-conditionals-and-tunnels D1) |
 | 23 | Block conditionals (if / else if) | STANDARD | Yes | **IMPLEMENTED** | Slice C2 (`slice-c2-block-conditionals`) + The Intercept; shares C1's `applyConditionalBranch` mechanism (tier3 D2). The 4-bug cascade behind the Intercept GREEN included a flush-defer fix for the multi-line `{cond: a - else: b}` + cluster pattern (`Bug_DeferFlushDuringChoiceClusterTests`) |
 | 24 | Switch-style conditionals | STANDARD | Yes (CONST dispatch) | **IMPLEMENTED** | Slice C2 + The Intercept; switch dispatch uses the existing `==` native function plus per-case conditional diverts (tier3 D2) |
-| 25 | Variable text: sequences (`{a\|b\|c}`) | STANDARD | No | **UNKNOWN** | `"seq"` command listed; no handler |
-| 26 | Variable text: cycles (`{&}`) | STANDARD | No | **UNKNOWN** | No handler |
-| 27 | Variable text: once-only (`{!}`) | STANDARD | No | **UNKNOWN** | No handler |
-| 28 | Variable text: shuffle (`{~}`) | STANDARD | No | **UNKNOWN** | No handler |
+| 25 | Variable text: sequences (`{a\|b\|c}`) | STANDARD | Yes | **IMPLEMENTED (native compile)** | `compiler-variable-text` slice 01 (commit `1954460`), N-stage clamp verified slice 02 (`cdfcf2e`). Lowers via `VariableTextEmitter` to a `#f:5` visit-switch (OP=`MIN`, BOUND=`S−1`, clamp); plays oracle-identical. Zero runtime change |
+| 26 | Variable text: cycles (`{&}`) | STANDARD | Yes | **IMPLEMENTED (native compile)** | `compiler-variable-text` slice 01 (`1954460`), modulo-wrap verified slice 03 (`45f5594`). `VariableTextEmitter` (OP=`%`, BOUND=`S`, modulo wrap); oracle-identical |
+| 27 | Variable text: once-only (`{!}`) / bare `{\|x\|}` | STANDARD | Yes | **IMPLEMENTED (native compile)** | `compiler-variable-text` slice 01 (`1954460`). `VariableTextEmitter` (OP=`MIN`, BOUND=`S`, +1 appended empty stage); once = sequence + one empty final stage; oracle-identical |
+| 28 | Variable text: shuffle (`{~}`) | STANDARD | No | **MUST-REJECT** | Stays rejected — additionally needs `RANDOM` (genuinely runtime-unsupported). `UnsupportedConstructDetector` reject set narrowed to shuffle-only in `compiler-variable-text` slice 01; throws a located, construct-named `.unsupportedConstruct` error (regression-guarded) |
 | 29 | Functions (`=== f(params) ===`) | STANDARD | Yes (2: `raise`, `lower`) | **IMPLEMENTED** | Slice C3 (`slice-c3-functions`) + The Intercept (raise/lower exercised through every Disagree/Lie/Evade body); `f():`-prefixed divert with `fnret:`-prefixed return address in `returnStack`; per-frame temp scope via `StoryState.callFrameVariables` (tier3 D3 + fix `36e3052`) |
 | 30 | Inline function calls `{f()}` | STANDARD | Yes | **IMPLEMENTED** | Slice C3 (`{double(5)}`, `{setSideEffect()}`) + The Intercept; `out` / `pop` control commands handle return-value emission vs. discard (`distill/upstream-issues.md` Issues 1 + 2) |
 | 31 | String interpolation | STANDARD | Yes | **WORKS** | `str`/`/str` handler correct in TreeWalker |
@@ -250,18 +250,27 @@ Feature tiers follow inkle's own documentation structure:
 > in-process compiler now **COMPILES** the full supported ceiling — text/diverts/glue (rows 1–5, 15),
 > choices/gathers/weave (rows 6–14), VAR/CONST/temp/arithmetic (rows 16–21), conditionals
 > (rows 22–24), functions/inline calls/interpolation/tags (rows 29–32), and tunnels/ref-params
-> (rows 34–35) — and **REJECTS** the unsupported set (variable-text rows 25–28; threads/LIST/RANDOM/
-> external rows 36–39) with a clear, located `.unsupportedConstruct` error. Correctness is oracle
-> execution-equivalence; full suite 280 tests GREEN.
+> (rows 34–35) — and **REJECTS** the unsupported set (threads/LIST/RANDOM/external rows 36–39, plus
+> variable-text shuffle row 28) with a clear, located `.unsupportedConstruct` error. Correctness is
+> oracle execution-equivalence; full suite 280 tests GREEN.
 >
-> **Correction:** the introductory claim that The Intercept exercises Parts 1–4 *"without using
-> sequences"* is **inaccurate** — `TheIntercept.ink` line 86 uses a variable-text sequence
-> `{|I rattle my fingers on the field table.|}`. The compiler therefore (correctly) rejects The
-> Intercept today, and the native-compile e2e was descoped (user-approved 2026-06-14).
-> **Parity gap / future work:** the *runtime already plays* this construct because inklecate lowers
-> `{|...|}` to a visit-count switch (visit + MIN + `==` + conditional diverts), all runtime-supported —
-> so deterministic variable-text (sequence/cycle/once) is a candidate the compiler could lower the
-> same way in future; only shuffle additionally needs RANDOM.
+> **Update (compiler-variable-text GA, 2026-06-15):** the documented parity gap is now **closed for
+> the deterministic variable-text forms** — sequence (row 25), cycle (row 26), and once-only / bare
+> `{|x|}` (row 27) now **COMPILE natively** via `VariableTextEmitter`, lowering to the visit-count
+> switch (visit + MIN/`%` + `==` + conditional diverts) the runtime already executes, with **zero
+> runtime change**. Only shuffle (row 28) remains rejected (needs `RANDOM`). See
+> `docs/evolution/2026-06-15-compiler-variable-text.md` and ADR-010.
+>
+> **`TheIntercept.ink` still does NOT fully native-compile**, and the native-compile e2e remains
+> `.disabled` — but the blocker is **no longer variable text**. The line-86 once-only form now
+> compiles; an honest slice-04 RED (2026-06-15) **falsified** the earlier "line 86 is the sole
+> blocker" premise and surfaced two further, unrelated gaps: (1) the **`not` unary operator** — now
+> shipped (step 05-01); and (2) **dotted read-count addressing of named weave labels**
+> (`{harris_demands_component.cant_talk_right: …}` → a `CNT?` node addressing a named label), which
+> needs a whole weave-label addressing subsystem. **(2) is DEFERRED (user-approved 2026-06-15) to the
+> `native-ink-compiler` feature** — see the Deferred / Known-Gap note below. The "no sequences"
+> introductory claim remains inaccurate (line 86 is a variable-text once-only form); it now compiles,
+> but TheIntercept's full native compile is blocked by the weave-label gap, not by it.
 
 #### Implementation Roadmap by Tier
 
@@ -1186,15 +1195,33 @@ One new source file is introduced (`Compiler/Codegen/VariableTextEmitter.swift`)
 new `ContentSegment` AST case and a parser rule. All other changes are EXTEND/REUSE.
 See ADR-010.
 
-> **Shipped (Component Inventory update — DELIVER slice 01, 2026-06-15):** the variable-text
+> **Shipped (Component Inventory update — DELIVER GA, 2026-06-15):** the variable-text
 > lowering pass landed as the stateless `Compiler/Codegen/VariableTextEmitter.swift` (parametrized
-> `#f:5` stage-dispatch over `(op, bound, appendEmptyStage)`), with `ContentSegment.variableText`
-> + `VariableTextMode` (AST), a top-level-`|` parse rule (`InkParser`), a `.variableText` dispatch
-> in `RuntimeObjectEmitter.lowerBody`, and the `UnsupportedConstructDetector` gate narrowed to
-> shuffle-only. The once-only forms (`{!a|b}` / bare `{|x|}`, row 27) are MUST-COMPILE and play
-> oracle-identical; the single gate flip also makes sequence (25) and cycle (26) compile, with
-> their boundary-verification scenarios deferred to slices 02–03 and the `TheIntercept.ink` e2e to
-> slice 04. Compiler-only diff; zero runtime/engine change (KPI #4 holds). Commit `19544602`.
+> `#f:5` stage-dispatch over `(op, bound, appendEmptyStage)`, owning the `seq{N}-s{I}` / `seq{N}-end`
+> named-container namespace), with `ContentSegment.variableText` + `VariableTextMode` (AST), a
+> top-level-`|` parse rule (`InkParser`), a `.variableText` dispatch in `RuntimeObjectEmitter.lowerBody`,
+> and the `UnsupportedConstructDetector` gate narrowed to shuffle-only. All three deterministic forms
+> — sequence (row 25), cycle (row 26), once-only / bare `{|x|}` (row 27) — are **MUST-COMPILE** and
+> play oracle-identical (slice 01 `1954460`; N-stage sequence clamp verified slice 02 `cdfcf2e`;
+> cycle modulo-wrap verified slice 03 `45f5594`). DESIGN **OQ-3 discharged** (slice 02): mixed
+> variable-text + conditional bodies do not collide because `seq{N}-*` and `cond{N}-*` use distinct
+> ordinal prefixes. The **`not` unary operator** also shipped (step 05-01, commit `cd98c8c`):
+> `InkParserExpressions` `not`-prefix + paren grouping → `CompilerAST.unary` → native postfix `!`.
+> Compiler-only diff; zero runtime/engine change (KPI #4 holds).
+>
+> **Deferred / Known gap (user-approved descope, 2026-06-15) — `TheIntercept.ink` does not yet
+> fully native-compile.** An honest slice-04 RED falsified the prior belief that line 86's
+> variable-text form was the sole e2e blocker. With variable text and `not` shipped, one gap
+> remains: **dotted read-count addressing of named weave labels**
+> (`{harris_demands_component.cant_talk_right: …}` → a `CNT?` node addressing a named weave label).
+> The step 06-01 investigation (commit `aa72e14`, RED-pinned + SCOPE-GUARD stop) found this needs a
+> whole **weave-label addressing subsystem** — choice `(label)` + `{condition}` parsing, label-keyed
+> choice containers, count-visits flagging, and a name→path resolution table. This is a
+> **`native-ink-compiler`** concern (not variable text) and is **DEFERRED there**. The
+> `TheIntercept.ink` native-compile e2e and the step 06-01 dotted-read-count RED test remain
+> `.disabled` (genuinely failing, honestly documented) as the explicit follow-up; the project's
+> "zero `.disabled` ATs at finalize" invariant is consciously **waived** for exactly these two ATs.
+> See `docs/evolution/2026-06-15-compiler-variable-text.md`.
 
 #### Lowering decisions (ground truth — verified against inklecate)
 

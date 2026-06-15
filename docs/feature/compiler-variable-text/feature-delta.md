@@ -1224,3 +1224,95 @@ DISTILL VT3 ATs + committed `vt-cycle-two`/`vt-cycle-four` oracle fixtures; DESI
 Specification (cycle = `%`, `BOUND=S`, no-append) + OQ-1 wrap-boundary fixtures (ADR-010); slice-01
 (step 01-01) which landed the parametrized `VariableTextEmitter` cycle path + `&`→cycle parser marker +
 shuffle-only gate this slice verifies. No new fixtures, no runtime change.
+
+---
+
+# Feature Delta: compiler-variable-text (DELIVER wave — slice 04 + FEATURE FINALIZE)
+
+**Wave**: DELIVER | **Density**: lean (Tier-1 [REF]) | **Slice**: slice-04-theintercept-e2e (extended, then descoped)
+**Date**: 2026-06-15 | **Status**: FEATURE COMPLETE (variable-text + not-unary shipped; TheIntercept e2e DEFERRED to native-ink-compiler) | **Orchestrator**: nw-deliver
+
+---
+
+## Wave: DELIVER / [WHY] Slice-04 Finding — Descope-Premise Falsification (Upstream Issue)
+
+Slice 04 set out to re-enable the descoped `TheIntercept.ink` native-compile end-to-end oracle test. The
+2026-06-14 descope rationale held that TheIntercept was blocked **solely** by its line-86 once-only
+variable-text form (matrix row 27), so once slices 01–03 lowered the deterministic forms the whole
+fixture would compile. **Honest RED-first (commit `9be123b`) falsified that premise**: removing the
+`.disabled` trait surfaced `unexpectedToken("think")` — TWO further compiler gaps, neither related to
+variable text, also block the full-fixture native compile:
+
+1. **`not` unary operator** in conditions (e.g. `{not think: …}`) — the Pratt expression parser had no
+   prefix path. **DELIVERED in this feature as step 05-01** (commit `cd98c8c`): `not <operand>` parses
+   to a new `.unary("!", operand)` AST node lowering to the runtime's native postfix `!`.
+2. **Dotted read-count addressing of named weave labels** (`{harris_demands_component.cant_talk_right: …}`
+   → a `CNT?` node addressing a named label). Step 06-01 investigation (commit `aa72e14`, RED-pinned +
+   SCOPE-GUARD stop) found this needs a whole **weave-label addressing subsystem**: choice `(label)` +
+   `{condition}`-on-choice parsing, label-keyed choice containers, count-visits flagging, and a
+   name→path resolution table. This is a `native-ink-compiler` concern, not variable-text.
+
+**User decision (2026-06-15): DESCOPE gap #2 to `native-ink-compiler` and finalize this feature now.**
+The variable-text lowering (slices 01–03) and the `not`-unary operator are delivered and GREEN; the
+TheIntercept e2e and the dotted-read-count RED test remain `.disabled` (genuinely failing, honestly
+documented) as the explicit native-ink-compiler follow-up. The "zero `.disabled` ATs" finalize invariant
+is **consciously waived** for these two user-approved descoped ATs. Durable record:
+`docs/evolution/2026-06-15-compiler-variable-text.md`; SSOT updated in `brief.md` (rows 25–28 + deferred-gap note).
+
+## Wave: DELIVER / [REF] Implementation Summary (slice 04 + not-unary 05-01)
+
+Delivered the **`not` unary operator** (step 05-01) needed by TheIntercept's conditions, and recorded the
+slice-04 descope-premise falsification (above). `not <operand>` lowers to the runtime's existing native
+`!` (operand pushed, then `.nativeFunction("!")`), via a new `InkExpression.unary(op:operand:)` AST node
+and a `.unary` lowering case in `RuntimeObjectEmitter`; the parser also gained parenthesised-grouping
+support (`not (a == b)`). The dotted read-count addressing capability (GAP 2) was investigated, RED-pinned,
+and **descoped to native-ink-compiler** by user decision. No runtime change; Compiler-only diff.
+
+## Wave: DELIVER / [REF] Files Modified (slice 04 + 05-01)
+
+**Production (step 05-01 — `not`-unary):**
+- `Compiler/Parser/InkParserExpressions.swift` — `not` prefix → `.unary("!",…)`; parenthesised `(expr)` grouping.
+- `Compiler/AST/CompilerAST.swift` — new `InkExpression.unary(op:operand:)` node.
+- `Compiler/Codegen/RuntimeObjectEmitter.swift` — `.unary` lowering case (operand then native function).
+
+**Tests:**
+- `Acceptance/Compiler_S4_CeilingTests.swift` — added a GREEN focused `not`-unary emission test (`not x`, `not (a == b)`, `not not x`); re-pointed + updated the TheIntercept e2e `.disabled` reason (now: not-unary delivered, weave-label read-count deferred to native-ink-compiler); added a `.disabled` RED-pin test documenting the GAP-2 dotted-read-count spec (commit `aa72e14`).
+
+**Docs/SSOT:** `docs/evolution/2026-06-15-compiler-variable-text.md` (NEW evolution archive); `docs/product/architecture/brief.md` (rows 25–27 SHIPPED, row 28 MUST-REJECT, `not`-unary added, weave-label gap deferred); `docs/product/kpi-contracts.yaml` (GA baselines).
+
+## Wave: DELIVER / [REF] Scenarios Green (slice 04 + feature total)
+
+**Step 05-01:** 1 of 1 focused `not`-unary emission test GREEN (postfix `!` after operand; parenthesised + doubled cases).
+
+**Feature total (all slices):** VT1 ×2 (once), VT2 ×3 (sequence + OQ-3 mixed), VT3 ×2 (cycle), S5/S6 reconciliations, VT0 shuffle guard, not-unary ×1 — all GREEN. Full suite **290 tests, 0 failures**.
+
+**`.disabled` (DEFERRED to native-ink-compiler, user-approved):** TheIntercept native-compile e2e ×1; dotted-read-count RED-pin ×1. Both in `Compiler_S4_CeilingTests.swift`, genuinely failing, honestly documented.
+
+## Wave: DELIVER / [REF] DoD Check (feature finalize)
+
+- [x] Deterministic variable-text forms (once/sequence/cycle, rows 25-27) lower and play oracle-identically; gate narrowed to shuffle-only.
+- [x] `not` unary operator delivered (lowers to native `!`); parenthesised grouping supported.
+- [x] OQ-3 discharged (mixed variable-text + conditional, no key collision).
+- [x] VT0 + S6 shuffle reject guards GREEN; statement-level constructs still reject.
+- [x] Full `swift test` GREEN — 290 tests, 0 failures.
+- [x] SwiftLint `--strict` — 0 violations (R1/R3/R5); Compiler-only diff, no Engine/Decoder/Facade/JS-bridge change.
+- [ ] ~~Zero `.disabled` ATs~~ — **consciously WAIVED**: 2 ATs deferred to native-ink-compiler (TheIntercept e2e + dotted-read-count), user-approved 2026-06-15. Both genuinely fail, are documented, and hide no regression in the shipped scope (confirmed by adversarial review).
+- [x] TheIntercept descope-premise falsification documented (evolution archive + SSOT + this feature-delta).
+
+## Wave: DELIVER / [REF] Quality Gates (feature finalize)
+
+- **Roadmap integrity** (`des-verify-integrity --roadmap-only`) — exit 0 (6 steps).
+- **TDD 3-phase canon** (ADR-025) — RED→GREEN→COMMIT logged per step. Honest records: slices 02/03 green-on-enable (boundary verification); 04-01 + 06-01 RED-then-GREEN-SKIPPED(BLOCKED_BY_DEPENDENCY) honestly recorded (descoped), not fabricated.
+- **Pre-commit gate** — swiftlint `--strict` + `swift test` passed for every commit on trunk; no `--no-verify`.
+- **Refactoring (L1–L6)** — ran over the 6 feature production files: **clean, no transformations needed** (code already minimal; VariableTextEmitter/ConditionalEmitter parallelism intentional per OQ-3).
+- **Adversarial review** (`nw-software-crafter-reviewer`, whole-feature) — **APPROVED, zero defects**; Testing-Theater 7-pattern scan CLEAN; deferred `.disabled` ATs confirmed honestly disabled (not weakened) and hiding no regression.
+- **Mutation testing** — SKIPPED (disabled project-wide per CLAUDE.md; oracle execution-equivalence is the test-quality gate).
+- **Deliver integrity** (`des-verify-integrity`) — exit 0, "All 6 steps have complete DES traces".
+
+## Wave: DELIVER / [REF] Pre-requisites (slice 04 + finalize)
+
+Slices 01–03 (deterministic variable-text lowering + shuffle-only gate); the Explore scoping of the two
+slice-04 compiler gaps (2026-06-15); committed `TheIntercept.ink` + `TheIntercept.ink.json` fixtures (the
+e2e oracle, still `.disabled` pending native-ink-compiler); the runtime's existing native `!` for the
+not-unary lowering. The weave-label read-count addressing subsystem (GAP 2) is the handoff to
+`native-ink-compiler` — see the evolution archive for the precise follow-up scope.

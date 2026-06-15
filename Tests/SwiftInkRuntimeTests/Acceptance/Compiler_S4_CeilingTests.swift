@@ -44,19 +44,20 @@ struct Compiler_S4_CeilingTests {
     // once-only form `{|...|}` that originally caused the descope now compiles.
     //
     // STILL BLOCKED (slice-04 RED finding, 2026-06-15): re-enabling the trait
-    // surfaces TWO compiler gaps unrelated to variable text and OUT OF SCOPE for
-    // this feature — the 2026-06-14 descope premise (line-86 variable-text only)
-    // was incomplete:
-    //   1. `not` unary operator in conditions (50 uses, e.g. `{not think:...}`) —
-    //      runtime already supports unary `!`; mechanical compiler-only fix.
+    // surfaced TWO compiler gaps unrelated to variable text — the 2026-06-14
+    // descope premise (line-86 variable-text only) was FALSIFIED:
+    //   1. `not` unary operator in conditions (e.g. `{not think:...}`) —
+    //      DELIVERED in this feature (step 05-01, lowers to native `!`).
     //   2. dotted read-count references in conditions, e.g.
-    //      `{harris_demands_component.cant_talk_right: ...}` → inklecate `CNT?`
-    //      addressing of a NAMED stitch — a substantial compiler capability that
-    //      belongs to native-ink-compiler, not this slice.
-    // Escalated to nw-solution-architect (re-scope) + nw-acceptance-designer
-    // (AT re-enable timing). Trait stays `.disabled` until those land; the AT
-    // genuinely fails and must NOT be weakened.
-    @Test(.disabled("BLOCKED slice-04: TheIntercept native compile needs out-of-scope compiler features (not-unary operator + dotted read-count addressing of named stitches); descope premise falsified. Escalated to architect/acceptance-designer."))
+    //      `{harris_demands_component.cant_talk_right: ...}` → a `CNT?` node
+    //      addressing a named WEAVE LABEL. Step 06-01 investigation found this
+    //      needs a weave-label addressing subsystem (choice `(label)` +
+    //      `{condition}` parsing, label-keyed containers, count-visits flagging,
+    //      a name→path table) — out of scope for variable-text. USER-APPROVED
+    //      DESCOPE to the `native-ink-compiler` feature (2026-06-15).
+    // Trait stays `.disabled` until native-ink-compiler lands weave-label
+    // read-count addressing; the AT genuinely fails and must NOT be weakened.
+    @Test(.disabled("DEFERRED to native-ink-compiler (user-approved descope 2026-06-15): TheIntercept native compile needs weave-label read-count addressing. not-unary was delivered here (05-01); only the weave-label subsystem remains. The AT genuinely fails and is not weakened."))
     func `The Intercept compiles natively and plays identical to the inklecate oracle`() throws {
         let oracleJSON = try CompilerOracle.oracleJSON("TheIntercept")
         let interceptScript = [0, 2, 1, 0, 0, 1, 2, 0, 1, 0]

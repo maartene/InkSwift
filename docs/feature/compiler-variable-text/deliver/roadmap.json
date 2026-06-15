@@ -2,9 +2,9 @@
   "roadmap": {
     "project_id": "compiler-variable-text",
     "created_at": "2026-06-15T08:00:00Z",
-    "total_steps": 3,
-    "phases": 3,
-    "slice": "slice-03-cycle"
+    "total_steps": 6,
+    "phases": 6,
+    "slice": "slice-04-theintercept-e2e (extended: not-unary + dotted read-count addressing)"
   },
   "phases": [
     {
@@ -159,6 +159,150 @@
           ],
           "files_to_modify": [
             "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_VT3_CycleTests.swift"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "04",
+      "name": "Variable-text lowering (slice 04 — TheIntercept native-compile e2e ceiling)",
+      "steps": [
+        {
+          "id": "04-01",
+          "step_id": "04-01",
+          "name": "Re-enable the descoped TheIntercept native-compile end-to-end oracle test and close the parity gap",
+          "description": "Re-enable the US-04 acceptance test that compiles the FULL `TheIntercept.ink` flagship fixture (28 knots, 47 stitches, 21 variables — including the line-86 once-only form `{|I rattle my fingers on the field table.|}`) natively in-process and plays it through the pure-Swift `Story` along the committed choice script [0,2,1,0,0,1,2,0,1,0], asserting line-for-line / choice-for-choice equality with the committed inklecate `.ink.json` oracle (hermetic — no inklecate binary, no JS bridge). TheIntercept was descoped (user-approved 2026-06-14) SOLELY because line 86 used a once-only variable-text form then outside the supported set; slices 01-03 lowered all three deterministic variable-text forms (rows 25-27), so the whole fixture should now compile natively. This step removes the `.disabled` trait from the `The Intercept compiles natively and plays identical to the inklecate oracle` AT in Compiler_S4_CeilingTests.swift (the working tree already carries the DISTILL re-pointing of that test's comment + .disabled reason from 'descoped parity gap' to 'pending DELIVER slice-04'; commit that re-pointing together with the trait removal). Per CLAUDE.md trunk-based + the .disabled policy: confirm honest RED first (remove .disabled, run the suite BEFORE any production change; per distill/red-classification.md the expected RED mode is MISSING_FUNCTIONALITY — the line-86 once-only blocked the whole-fixture native compile until slices 01-03 landed). Realistically, with rows 25-27 now lowering, the e2e is expected GREEN-on-enable (integration verification of the shipped lowering). ONLY if a genuine integration defect surfaces (some interaction of variable-text lowering with the full fixture's knots/tunnels/conditionals), fix it inside Compiler/ ONLY, then GREEN, then COMMIT directly to main. Do NOT modify Engine/Decoder/Facade or the frozen InkSwift JS-bridge module. The shuffle-still-rejects regression guard is already covered by the always-on VT0 + S6 suites (no new negative AT needed here). The full swift test suite + SwiftLint --strict pre-commit gate must pass; no --no-verify.",
+          "acceptance_criteria": [
+            "US-04: TheIntercept.ink compiles natively in-process (InkCompiler.compile) and plays along [0,2,1,0,0,1,2,0,1,0] line-for-line / choice-for-choice identical to the committed TheIntercept.ink.json inklecate oracle (maxLines 100)",
+            "The previously-descoped TheIntercept native-compile e2e AT executes and passes (its `.disabled` trait removed) — no longer skipped or descoped",
+            "No external inklecate binary and no JS bridge are invoked (hermetic by construction — committed `.ink.json` + pure-Swift Story)",
+            "VT0 shuffle + S6 reject guards stay GREEN: shuffle `{~a|b}` still rejects with a located, construct-named error and produces no story (regression guard for slice-04's Gherkin shuffle scenario)",
+            "Zero `.disabled` acceptance tests remain across Tests/SwiftInkRuntimeTests/Acceptance (FEATURE finalize invariant — this is the final slice)",
+            "The full pre-existing suite stays GREEN (no regression in any Compiler_S*/VT*/Milestone suite); Compiler-only / test-only diff: no change under Engine/, Decoder/, Facade/, or the InkSwift JS-bridge module; SwiftLint --strict R1/R3/R5 boundary rules pass"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_S4_CeilingTests.swift",
+          "criteria": "The TheIntercept native-compile e2e AT passes GREEN with its `.disabled` removed; VT0 + S6 shuffle reject guards stay GREEN; zero `.disabled` ATs remain in Acceptance; the full swift test suite is GREEN; SwiftLint --strict passes; no Engine/Decoder/Facade/JS-bridge file is modified.",
+          "scenario_name": "US-04 — Compile and play the full TheIntercept ceiling fixture natively, oracle-identical",
+          "quality_gates": [
+            "TheIntercept native-compile e2e acceptance test passes (native == oracle, hermetic)",
+            "VT0 + S6 shuffle reject guards remain GREEN",
+            "Zero `.disabled` ATs remain across the Acceptance suite (feature finalize invariant)",
+            "Full swift test suite GREEN (no regressions)",
+            "SwiftLint --strict --no-cache passes (architecture-boundary R1/R3/R5)"
+          ],
+          "implementation_notes": [
+            "Slices 01-03 already lowered all three deterministic variable-text forms (once/sequence/cycle, rows 25-27) and narrowed the gate to shuffle-only. TheIntercept's line-86 once-only form is therefore now compilable, which is the ONLY reason the fixture was descoped — so the whole-fixture native compile is expected to succeed and the e2e to be GREEN-on-enable (integration verification, mirroring the slices 02/03 boundary-verification pattern).",
+            "Confirm RED honestly: remove the `.disabled` trait and run the suite BEFORE any production change. Record whether the e2e is already GREEN (integration verification of shipped lowering) vs a genuine MISSING_FUNCTIONALITY/integration RED. Per distill/red-classification.md the catalogued expected RED mode is MISSING_FUNCTIONALITY (whole-fixture native compile blocked by line 86 until slices 01-03 land).",
+            "Fixtures exist and are committed: Tests/SwiftInkRuntimeTests/Fixtures/TheIntercept.ink (source) + TheIntercept.ink.json (inklecate oracle), resolved via Bundle.module by CompilerOracle.source / CompilerOracle.oracleJSON. The AT body is already written (oracle play vs native play along the same choice script); only the `.disabled` trait removal is required.",
+            "The working tree already contains the DISTILL re-pointing edit to Compiler_S4_CeilingTests.swift (comment + `.disabled` reason changed from the old 'Descoped … parity gap' wording to 'pending DELIVER slice-04'). Commit that re-pointing TOGETHER with the trait removal in this step's single commit — it is part of this AT's activation.",
+            "If a genuine integration defect surfaces (e.g. a variable-text group inside a knot/tunnel/conditional context in the full fixture mis-lowers), fix INSIDE Compiler/ only (VariableTextEmitter / RuntimeObjectEmitter / InkParser), mirroring the slice-01 weave-continuation pattern. Never touch Engine/Decoder/Facade or the frozen InkSwift JS-bridge module.",
+            "This is the FINAL slice of the feature: after GREEN, confirm `grep -rn \"\\.disabled(\" Tests/SwiftInkRuntimeTests/Acceptance` returns NOTHING (feature finalize invariant — zero disabled ATs).",
+            "Per ADR-025 trunk-based: RED -> GREEN -> COMMIT directly to main. The pre-commit gate (.githooks/pre-commit: swiftlint --strict + swift test) must pass; do NOT --no-verify. Commit trailers: Step-Id: 04-01 + Task-Id: compiler-variable-text."
+          ],
+          "dependencies": ["01-01", "02-01", "03-01", "05-01", "06-01"],
+          "estimated_hours": 0.5,
+          "deliverables": [
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_S4_CeilingTests.swift (.disabled removed from the TheIntercept e2e AT; DISTILL re-pointing committed)"
+          ],
+          "files_to_modify": [
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_S4_CeilingTests.swift"
+          ],
+          "notes": "RE-EXECUTED after 05-01 + 06-01 land. The initial 04-01 cycle (commit 9be123b) recorded an honest RED finding (descope premise falsified — `not`-unary + dotted read-count addressing were also blocking). User chose to extend scope (2026-06-15) and deliver both compiler gaps as steps 05-01 + 06-01; this step then drives the e2e to GREEN."
+        }
+      ]
+    },
+    {
+      "id": "05",
+      "name": "Compiler: `not` unary operator in conditions (TheIntercept enabler — GAP 1)",
+      "steps": [
+        {
+          "id": "05-01",
+          "step_id": "05-01",
+          "name": "Support the `not` unary prefix operator in compiler expressions (lower to native `!`)",
+          "description": "Add `not <operand>` support to the compiler's Pratt expression parser so conditions like `{not think: ...}` and `{not x}` compile. Discovered by the slice-04 RED finding (the descope premise was falsified): TheIntercept uses `not` in ~50 conditions and the expression parser throws `unexpectedToken` because it has no prefix-operator path. The runtime ALREADY supports unary logical-not as the native function `\"!\"`. Lowering (verified vs inklecate, fixture `slice-bug-glue-after-choice.ink.json`): `not x` pushes the operand then emits `.nativeFunction(\"!\")` (postfix). Minimal approach (per scoping): in `InkParserExpressions.parseOperand`, detect a leading `not` word token and parse it as `.functionCall(name: \"!\", arguments: [<operand>])`, reusing the existing function-call lowering in `RuntimeObjectEmitter.lowerFunctionCall` which already emits `.nativeFunction(oper)` — no AST change, no tokenizer change (`not` already lexes as a word). Per CLAUDE.md OOP + trunk-based: RED (author a focused failing test — a unit/integration test that compiles a `{not x}` / `{not flag: a|b}` condition and asserts the emitted runtime objects contain `.nativeFunction(\"!\")` after the operand, OR an execution test against an existing committed `not`-using fixture if one plays) → GREEN (minimal parser branch) → COMMIT to main. Do NOT modify Engine/Decoder/Facade. Confirm no regression: the `!` already-supported path and all conditional suites stay GREEN.",
+          "acceptance_criteria": [
+            "`{not x}` and `{not flag: text}` compile without throwing; the emitted runtime objects push the operand then emit `.nativeFunction(\"!\")` (matching inklecate's postfix-`!` shape verified in slice-bug-glue-after-choice.ink.json)",
+            "A focused failing test authored in RED (compiler-level: assert emitted nodes for `not x`, or execution-level if a committed `not` fixture exists) passes GREEN after the parser branch lands",
+            "`not (a == b)` (parenthesised / compound operand) and double `not not x` lower correctly via recursion (operand is itself parsed by parseOperand)",
+            "No regression: all existing conditional / expression suites (S3, S4 ceiling, Milestone5 tier-3) stay GREEN; the full swift test suite is GREEN",
+            "Compiler-only diff under Sources/SwiftInkRuntime/Compiler/ (+ its test); no Engine/Decoder/Facade change; SwiftLint --strict R1/R3/R5 passes"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_S4_CeilingTests.swift",
+          "criteria": "A focused `not`-unary test passes GREEN; emitted nodes match inklecate's push-operand-then-`!` shape; no regression in any conditional/expression suite; full swift test GREEN; SwiftLint --strict passes; no Engine/Decoder/Facade change.",
+          "scenario_name": "Compiler enabler — `not` unary operator (GAP 1 for TheIntercept e2e)",
+          "quality_gates": [
+            "Focused `not`-unary test passes (emitted `.nativeFunction(\"!\")` after operand)",
+            "No regression in conditional/expression suites",
+            "Full swift test suite GREEN",
+            "SwiftLint --strict --no-cache passes (R1/R3/R5)"
+          ],
+          "implementation_notes": [
+            "Scoping ground truth (Explore, 2026-06-15): root cause is `InkParserExpressions.parseOperand` (~lines 64-74) having no prefix path — `not` falls through to `operand()` and is mis-read as a variable reference, then the next token (`think`/`x`) has no binary operator and throws `unexpectedToken`. Fix: branch on a leading `not` word token, recursively parse the operand, return `.functionCall(name: \"!\", arguments: [operand])`.",
+            "Reuse: `RuntimeObjectEmitter.lowerFunctionCall` (~lines 214-231) already emits `.nativeFunction(oper)`; `not`→`!` needs no new codegen. Confirm the runtime's `!` handler exists (Decoder/InkDecoder.swift nativeFunctions set includes `!`).",
+            "Tokenizer needs NO change — `not` lexes as a word already; the `.` word-char rule (GAP 2) is separate.",
+            "Edge cases to cover: `not` immediately before a parenthesised expr, before a function call, before a dotted read-count operand (interacts with 06-01 — order: land 05-01 first, then 06-01 builds on the same operand path).",
+            "Author the RED test in Compiler_S4_CeilingTests.swift (or a focused new compiler test file under Acceptance/ if cleaner) — but if a NEW test file is created it must be listed here; prefer extending an existing compiler test. The crafter authors this focused test because no DISTILL AT exists for this internal mechanism (the port-level AT is the TheIntercept e2e, 04-01).",
+            "Per ADR-025 trunk-based: RED -> GREEN -> COMMIT to main; pre-commit gate (swiftlint --strict + swift test) must pass, no --no-verify. Trailers: Step-Id: 05-01 + Task-Id: compiler-variable-text."
+          ],
+          "dependencies": ["01-01", "02-01", "03-01"],
+          "estimated_hours": 2.0,
+          "deliverables": [
+            "Sources/SwiftInkRuntime/Compiler/Parser/InkParserExpressions.swift (`not` prefix branch)",
+            "A focused `not`-unary test (in Compiler_S4_CeilingTests.swift or a new focused compiler test)"
+          ],
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Compiler/Parser/InkParserExpressions.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_S4_CeilingTests.swift"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "06",
+      "name": "Compiler: dotted read-count addressing of named targets in conditions (TheIntercept enabler — GAP 2)",
+      "steps": [
+        {
+          "id": "06-01",
+          "step_id": "06-01",
+          "name": "Resolve dotted read-count references (knot.label / knot.stitch) to a runtime path and emit .readCount",
+          "description": "Add compiler support for read-count references that address a NAMED target via a dotted path inside a condition, e.g. `{harris_demands_component.cant_talk_right: helplessly}`. Discovered by the slice-04 RED finding. Today the compiler treats `a.b` as a single variable-reference identifier (the tokenizer includes `.` as a word char) and emits `.variableReference(\"a.b\")`, which the runtime cannot resolve — inklecate instead lowers it to a read-count node (`CNT?`) addressing the resolved container path. CRITICAL CORRECTNESS NOTE: the gate is hermetic EXECUTION-equivalence (native playback == committed inklecate oracle playback through the same pure-Swift `Story`), NOT byte-identical JSON — so the native compiler must emit a read-count node whose target path resolves, in the NATIVE compiler's OWN emitted container tree, to the correct named target's read count. It does NOT need to reproduce inklecate's literal path string (e.g. `harris_demands_component.0.g-1.c-14`); it needs semantic equivalence on playback. Approach (per scoping): in `RuntimeObjectEmitter.lowerExpression`'s `.variableReference` case, detect an identifier that names a container target (contains `.` and/or resolves to a knot/stitch/weave-label rather than a variable/constant), resolve it against the lowered knot/stitch/label structure to the native container path, and emit `.readCount(resolvedPath)` instead of `.variableReference`. Reuse the knot/stitch traversal already in `emitKnot`/`readKnot` and the existing divert-target path-resolution logic (diverts already resolve `-> knot.stitch`). FIRST sub-task for the crafter: determine whether the named target `cant_talk_right` is a stitch or a WEAVE LABEL `(cant_talk_right)`/gather label, and whether the compiler already parses + names weave labels; if weave-label naming is missing, that is part of this step's scope (extend the parser/emitter to register labelled gathers/choices in named content so they can be addressed). Per CLAUDE.md OOP + trunk-based: RED (author a focused failing test that compiles a small in-source `knot { = stitch ... }` or labelled-weave fixture using a dotted read-count condition and asserts emitted `.readCount` + correct playback, OR drive it via the TheIntercept compile getting past this construct) → GREEN (path resolver + emit) → COMMIT to main. Do NOT modify Engine/Decoder/Facade. If, during investigation, GAP 2 proves substantially larger than the M-L estimate (e.g. weave-label support is broadly missing across the compiler), STOP and report back to the orchestrator with the expanded scope rather than committing a partial/again-blocked state.",
+          "acceptance_criteria": [
+            "A condition using a dotted read-count reference to a named target (knot.stitch or knot.label), e.g. `{some_knot.some_label: text}`, compiles and emits a read-count node (`.readCount(path)`) whose path resolves in the native emitted tree to that target's read count — NOT a `.variableReference`",
+            "On playback, the native read-count value is semantically identical to the committed inklecate oracle for the same construct (execution-equivalence, not JSON-identity)",
+            "If weave-label addressing was missing, labelled gathers/choices are now registered in named content and addressable by read-count reference (scoped sub-capability)",
+            "A focused failing test authored in RED passes GREEN; single-name read-count references (e.g. `{knot: ...}`) are unaffected or also supported as needed",
+            "No regression: all existing suites stay GREEN; the full swift test suite is GREEN",
+            "Compiler-only diff under Sources/SwiftInkRuntime/Compiler/ (+ its test); no Engine/Decoder/Facade change; SwiftLint --strict R1/R3/R5 passes"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_S4_CeilingTests.swift",
+          "criteria": "A focused dotted-read-count test passes GREEN with correct emitted `.readCount` + playback-equivalent value; weave-label addressing supported if it was the gap; no regression; full swift test GREEN; SwiftLint --strict passes; no Engine/Decoder/Facade change.",
+          "scenario_name": "Compiler enabler — dotted read-count addressing of named targets (GAP 2 for TheIntercept e2e)",
+          "quality_gates": [
+            "Focused dotted-read-count test passes (emitted `.readCount`, playback-equivalent)",
+            "No regression in any suite",
+            "Full swift test suite GREEN",
+            "SwiftLint --strict --no-cache passes (R1/R3/R5)"
+          ],
+          "implementation_notes": [
+            "Scoping ground truth (Explore, 2026-06-15): the difficulty is RESOLUTION, not emission. `RuntimeObjectEmitter.lowerExpression` `.variableReference` case currently always emits `.variableReference`; it must instead recognise container-path targets and emit `.readCount(resolvedPath)` (NodeKind already has `.readCount(String)`). The oracle path `harris_demands_component.0.g-1.c-14` shows `cant_talk_right` resolves to a deeply nested labelled container (likely a weave label inside the knot's first stitch), so this is read-count addressing of a WEAVE LABEL, not a top-level stitch.",
+            "Reuse: knot/stitch traversal in `emitKnot` (~376-392) / `readKnot` (~305-334) builds the named-content tree; divert-target resolution already maps `knot.stitch` source names to paths (diverts carry the target verbatim and the runtime resolves) — but read-counts must be resolved AT COMPILE TIME. Extend `LoweringContext` (~57-70) to carry a name→path table built during lowering so `lowerExpression` can resolve.",
+            "Execution-equivalence freedom: emit the NATIVE compiler's own resolved path; do not chase inklecate's literal container IDs. The test asserts playback equality, so as long as the native runtime tree resolves the emitted path to the correct target's read count, byte differences in the path string are irrelevant.",
+            "FIRST: confirm whether the native compiler parses/names weave labels `(label)`. If not, that sub-capability is in scope here. If it balloons (labels needed broadly, multi-level nesting resolution), STOP and report expanded scope to the orchestrator before committing.",
+            "Order dependency: land AFTER 05-01 (`not`) since both touch the expression operand/lowering path; build on the same `lowerExpression` site.",
+            "The crafter authors the focused RED test (no DISTILL AT for this internal mechanism; the port-level AT is the TheIntercept e2e, 04-01). If a new compiler test file is created, list it in files_to_modify.",
+            "Per ADR-025 trunk-based: RED -> GREEN -> COMMIT to main; pre-commit gate (swiftlint --strict + swift test) must pass, no --no-verify. Trailers: Step-Id: 06-01 + Task-Id: compiler-variable-text."
+          ],
+          "dependencies": ["05-01"],
+          "estimated_hours": 8.0,
+          "deliverables": [
+            "Sources/SwiftInkRuntime/Compiler/Codegen/RuntimeObjectEmitter.swift (dotted read-count recognition + path resolver + LoweringContext extension)",
+            "Sources/SwiftInkRuntime/Compiler/Parser/InkParser.swift (weave-label naming, if it was the gap)",
+            "A focused dotted-read-count test"
+          ],
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Compiler/Codegen/RuntimeObjectEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Parser/InkParser.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_S4_CeilingTests.swift"
           ]
         }
       ]
