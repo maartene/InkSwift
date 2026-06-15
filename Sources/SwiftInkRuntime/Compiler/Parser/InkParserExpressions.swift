@@ -152,7 +152,19 @@ public enum InkExpressionParser {
         }
     }
 
+    /// True for a bare identifier OR a dotted qualified identifier (`a.b`,
+    /// `knot.stitch`). Each dot-separated segment must itself be a plain
+    /// identifier (leading letter/underscore, then letters/digits/underscores), so
+    /// a leading/trailing/double dot is rejected. A dotted name lowers to a
+    /// `.variableReference` atom; the emitter later resolves it to a read-count
+    /// when it names a known weave label or knot/stitch (ADR-011 EXTEND #1).
     private static func isIdentifier(_ text: String) -> Bool {
+        let segments = text.split(separator: ".", omittingEmptySubsequences: false)
+        guard segments.count >= 1 else { return false }
+        return segments.allSatisfy(isPlainIdentifierSegment)
+    }
+
+    private static func isPlainIdentifierSegment<S: StringProtocol>(_ text: S) -> Bool {
         guard let first = text.first, first.isLetter || first == "_" else {
             return false
         }

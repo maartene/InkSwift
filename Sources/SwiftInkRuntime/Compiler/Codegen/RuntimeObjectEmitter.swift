@@ -38,8 +38,15 @@ enum RuntimeObjectEmitter {
         // paths before lowering so read-count references resolve order-independently.
         // Write-only at this slice — populated, not yet consumed (02-03 emits CNT?).
         let weaveLabelPaths = WeaveEmitter.discover(rootBody).labelPaths
+        // Knot/stitch read-count addressing (ADR-011 EXTEND #2): record every
+        // knot's and stitch's already-built namedContent path so a dotted
+        // read-count subject (`knot.stitch`) resolves to its container path,
+        // reusing the SAME path arithmetic emitKnot/emitStitch address by — never
+        // re-derived. The runtime resolves the dotted key as-is against visitCounts.
+        let knotStitchPaths = collectKnotStitchPaths(knots)
         let context = LoweringContext(
-            constants: constants, functions: functions, weaveLabelPaths: weaveLabelPaths
+            constants: constants, functions: functions,
+            weaveLabelPaths: weaveLabelPaths, knotStitchPaths: knotStitchPaths
         )
 
         var namedContent: [String: ContainerNode] = [:]
@@ -70,6 +77,12 @@ enum RuntimeObjectEmitter {
         /// identically to the CONST and function tables; write-only at this slice
         /// (02-03 consumes it to emit `.readCount`).
         var weaveLabelPaths: [String: [String]] = [:]
+        /// The knot/stitch read-count addressing table (ADR-011 EXTEND #2): a
+        /// dotted source name (`knot.stitch`, or a bare `knot`) -> its absolute
+        /// compiled namedContent path. Reuses the path emitKnot/emitStitch already
+        /// key their containers by; consumed by the `.variableReference` lowering to
+        /// emit `.readCount` for a dotted read-count subject naming a knot/stitch.
+        var knotStitchPaths: [String: [String]] = [:]
         /// Names that are function-local in the current scope (parameters plus
         /// `~ temp` declarations inside a function body). An assignment to a local
         /// name lowers to `temp=` so the runtime consults the call frame — the
@@ -80,9 +93,33 @@ enum RuntimeObjectEmitter {
         func bindingLocals(_ names: Set<String>) -> LoweringContext {
             LoweringContext(
                 constants: constants, functions: functions,
-                weaveLabelPaths: weaveLabelPaths, localNames: names
+                weaveLabelPaths: weaveLabelPaths, knotStitchPaths: knotStitchPaths,
+                localNames: names
             )
         }
+
+        /// Resolve a (possibly dotted) name to the absolute compiled path of a
+        /// known weave label or knot/stitch, reusing the pre-built tables — never
+        /// re-deriving. Returns nil for a true miss (a real qualified variable).
+        func readCountPath(for name: String) -> [String]? {
+            if let labelPath = weaveLabelPaths[name] { return labelPath }
+            return knotStitchPaths[name]
+        }
+    }
+
+    /// Build the knot/stitch read-count path table (ADR-011 EXTEND #2). A knot is
+    /// addressed by `[knot.name]`; a stitch nested under it by `[knot.name,
+    /// stitch.name]` — the same namedContent path `emitKnot`/`emitStitch` key their
+    /// containers by. The dotted source name (`knot.stitch`) is the lookup key.
+    private static func collectKnotStitchPaths(_ knots: [KnotGroup]) -> [String: [String]] {
+        var paths: [String: [String]] = [:]
+        for knot in knots {
+            paths[knot.name] = [knot.name]
+            for stitch in knot.stitches {
+                paths["\(knot.name).\(stitch.name)"] = [knot.name, stitch.name]
+            }
+        }
+        return paths
     }
 
     /// Collect the parameter list of every function definition, keyed by name, so
@@ -211,6 +248,13 @@ enum RuntimeObjectEmitter {
         case .variableReference(let name):
             if let inlined = context.constants[name] {
                 return lowerExpression(inlined, context: context)
+            }
+            // A name resolving to a known weave label or knot/stitch is a
+            // read-count subject (ADR-011 EXTEND #2): emit `.readCount(path)`
+            // addressing the resolved container. A true miss (a real qualified
+            // variable) falls through to `.variableReference`.
+            if let path = context.readCountPath(for: name) {
+                return [.readCount(path.joined(separator: "."))]
             }
             return [.variableReference(name: name)]
         case .binary(let oper, let left, let right):

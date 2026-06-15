@@ -129,8 +129,7 @@ struct Compiler_S4_CeilingTests {
     // STOP condition. Disabled (not deleted) so the suite stays releasable and the
     // pending mechanism stays documented; re-enabled when the expanded-scope step
     // lands the resolver. Escalated to the orchestrator.
-    @Test(.disabled("pending step 06-01 expanded scope (escalated): dotted read-count addressing needs choice (label)+{condition} parsing, label-keyed choice containers, count-visits flagging, and a name→path table — multiple weave subsystems missing; SCOPE-GUARD STOP"))
-    func `a dotted read-count reference to a named stitch lowers to a read-count node`() throws {
+    @Test func `a dotted read-count reference to a named stitch lowers to a read-count node`() throws {
         let source = """
         -> waiting
         === waiting ===
@@ -151,6 +150,64 @@ struct Compiler_S4_CeilingTests {
             containsReadCount(blueprint.root),
             "no .readCount node emitted for the dotted read-count subject"
         )
+    }
+
+    // 02-03 enabler B1 — PARSER: a dotted identifier parses to a single
+    // `.variableReference("a.b")` atom (not an `unexpectedToken` throw), while a
+    // plain identifier and a dotted comparison still parse unchanged.
+    @Test func `parses a dotted identifier as a single variable reference`() throws {
+        #expect(try InkExpressionParser.parse("waiting.guard_post")
+            == .variableReference("waiting.guard_post"))
+        // Plain identifier unchanged (no regression).
+        #expect(try InkExpressionParser.parse("force") == .variableReference("force"))
+        // Operator parsing around a dotted ref unchanged: `a.b > 1`.
+        #expect(try InkExpressionParser.parse("a.b > 1")
+            == .binary(op: ">", left: .variableReference("a.b"), right: .intLiteral(1)))
+    }
+
+    // 02-03 enabler B2 — RESOLUTION (knot.stitch): a dotted reference naming a
+    // compiled knot.stitch lowers to `.readCount("knot.stitch")`, never a
+    // surviving `.variableReference`.
+    @Test func `a dotted reference to a knot stitch lowers to a read-count node`() throws {
+        let source = """
+        -> waiting
+        === waiting ===
+        = guard_post
+        The corridor is empty.
+        {waiting.guard_post: He has been here before.}
+        -> END
+        """
+        let blueprint = try InkCompiler.compile(source: source)
+        #expect(containsReadCount(blueprint.root))
+        #expect(variableReferenceNames(in: blueprint.root).filter { $0.contains(".") }.isEmpty)
+    }
+
+    // 02-03 enabler B3 — RESOLUTION (weave label): a reference naming a weave
+    // label (the `(door)` label on a root-level choice, registered by the 02-02
+    // discovery pre-pass into `weaveLabelPaths`) resolves to `.readCount(<path>)`
+    // via the weave-label table, never a surviving `.variableReference`.
+    @Test func `a reference to a weave label lowers to a read-count node`() throws {
+        let source = """
+        + (door) Open the door.
+        {door: It is already open.}
+        -> END
+        """
+        let blueprint = try InkCompiler.compile(source: source)
+        #expect(containsReadCount(blueprint.root))
+        #expect(variableReferenceNames(in: blueprint.root).contains("door") == false)
+    }
+
+    // 02-03 enabler B4 — table MISS fall-through: a dotted name resolving to no
+    // known knot/stitch/weave-label stays a `.variableReference` (a real
+    // qualified variable, NOT an error and NOT a read-count).
+    @Test func `an unknown dotted name falls through to a variable reference`() throws {
+        let source = """
+        VAR ship = 0
+        {ship.engine: humming}
+        -> END
+        """
+        let blueprint = try InkCompiler.compile(source: source)
+        #expect(variableReferenceNames(in: blueprint.root).contains("ship.engine"))
     }
 }
 
