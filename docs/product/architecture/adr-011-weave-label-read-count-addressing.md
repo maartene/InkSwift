@@ -8,6 +8,21 @@ grounded in the original inklecate C# compiler's three-phase weave-naming algori
 from the original inklecate compiler" below). Governing heuristic: *when in doubt, follow the
 original.* Implementation pending DELIVER.
 
+**AMENDED 2026-06-15 (DELIVER back-propagation, user-approved).** During DELIVER step 02-03 the
+flagship `TheIntercept.ink` e2e was found to require **two** read-count shapes, not one: knot.**choice-label**
+(`harris_demands_component.cant_talk_right`, `start.delay` — covered below) AND knot.**stitch**
+(`inside_hoopers_hut.back_of_hut_2`, `slam_door_shut_and_gone.time_to_move_now` — *not* covered by the
+weave-label-only design as originally written). Two consequent gaps, both fixable **inside `Compiler/`**
+(boundary + WL-D7 hold): (1) the expression parser rejected dotted identifiers (`InkParserExpressions.isIdentifier`),
+so `{a.b: …}` failed at parse time before lowering — Decision item 1 covered only choice `(label)`/`{condition}`
+parsing; (2) knot/stitch absolute paths were never registered nor CountVisits-flagged — Decision items 4/5
+addressed labelled weave containers only. **Resolution**: generalise the design from "weave label" to "any
+read-count-referenced named container" — resolve dotted references against the weave-label table AND the
+existing knot/stitch `namedContent` absolute paths (same reuse-the-cached-path principle), and flag exactly
+the referenced knots/stitches alongside labelled containers. No new component; zero CREATE NEW; the core
+principles (reuse cached paths, never re-derive; flag only referenced targets) are preserved. See the
+"Upstream Issues" section in `docs/feature/native-ink-compiler/feature-delta.md` for the full evidence table.
+
 ## Context
 
 The native compiler (`Sources/SwiftInkRuntime/Compiler/`) cannot compile a **dotted

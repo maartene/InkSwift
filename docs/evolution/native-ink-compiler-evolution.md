@@ -132,3 +132,62 @@ The deeper cross-feature lesson is a **compiler/runtime parity gap**: the *runti
 | Execution log (step history) | `docs/feature/native-ink-compiler/deliver/execution-log.json` |
 | Architecture brief (Feature Coverage Matrix + Component Inventory) | `docs/product/architecture/brief.md` |
 | Compiler sources | `Sources/SwiftInkRuntime/Compiler/` |
+
+---
+
+## Milestone — Weave-Label Read-Count Addressing
+
+**Date**: 2026-06-15
+**Milestone scope**: a read-count addressing subsystem for the native compiler — dotted read-count references to named weave labels AND named knots/stitches (`{knot.label: …}`, `{knot.stitch: …}`) lower to a runtime `.readCount(resolvedPath)` node. Implements **ADR-011 (Option B, AMENDED 2026-06-15)**.
+**Commits**: `db4bcef..c47b2a0` on `main` (5 steps: 01-01, 02-01, 02-02, 02-03, 03-01) — trunk-based, committed step-by-step as each went green
+**Test result**: full suite **323 tests GREEN**; the RED-pin AT `a dotted read-count reference to a named stitch lowers to a read-count node` is GREEN
+**Quality gates**: SwiftLint `--strict` boundary rules R1/R3/R5 + WL-D7 ("no runtime change") held throughout — the slice is confined entirely to `Compiler/`; adversarial review **APPROVED** (0 defects, 0 testing theater, no test weakening; 1 advisory only — ~3 tests over a heuristic budget); DES integrity **exit 0** (all 5 steps complete RED/GREEN/COMMIT traces); mutation testing disabled project-wide (CLAUDE.md)
+
+### Milestone Summary
+
+This slice delivers the read-count addressing subsystem that ADR-011 designed, entirely within `Compiler/` with zero runtime/Engine/Decoder change (the read-count / `CNT?` / CountVisits machinery was already implemented; this slice only makes the compiler *emit* into it). What shipped, by step:
+
+- **01-01** — Parse a choice's `(label)` weave-label and `{condition}` guard. The AST `choice` case gains `weaveLabel` + `condition` (mirroring the existing gather `(label)` parsing).
+- **02-01** — Key labelled choice outcome containers by their label (`label ?? c-N`), mirroring how gathers are already keyed. A labelled choice becomes addressable by its name segment in the absolute path.
+- **02-02** — A discovery pre-pass (= inklecate's `Weave.ResolveWeavePointNaming`) plus a `weaveLabelPaths` table on `LoweringContext`. Labelled-only; collects the SET of labels that are read-count-referenced; reuses the resolver's already-cached absolute paths (never re-derives).
+- **02-03** *(scope-expanded, user-approved)* — The expression parser now accepts dotted identifiers, and `lowerExpression` emits `.readCount(resolvedPath)` resolving a dotted reference against the weave-label table AND knot/stitch absolute paths; a miss falls through to `.variableReference` (today's behaviour, matching the original). Re-enabled the RED-pin AT (GREEN).
+- **03-01** *(scope-expanded, user-approved)* — Sets the `0x1` CountVisits flag on exactly the read-count-referenced targets (labelled weave containers AND referenced knots/stitches); lowers `{condition}`-guarded choices; plus two surgical parser fixes (gather `- -> target` mis-level in `consumeMarkers`; `text[]suffix` empty-bracket choice split).
+
+### The Two User-Approved Scope Expansions (ADR-011 back-propagation)
+
+ADR-011 originally scoped read-count addressing to **weave labels only**. During DELIVER step 02-03, direct inspection of `TheIntercept.ink` found the flagship e2e requires **two** read-count shapes, not one: knot.**choice-label** (`harris_demands_component.cant_talk_right`, `start.delay` — covered by the original design) AND knot.**stitch** (`inside_hoopers_hut.back_of_hut_2`, `slam_door_shut_and_gone.time_to_move_now` — *not* covered). Two consequent gaps surfaced, both fixable inside `Compiler/`: (1) the expression parser rejected dotted identifiers (`InkParserExpressions.isIdentifier`), so `{a.b: …}` failed at parse time before lowering — ADR-011 item 1 covered choice `(label)`/`{condition}` parsing only; (2) knot/stitch absolute paths were never registered nor CountVisits-flagged — ADR-011 items 4/5 addressed labelled weave containers only.
+
+The user approved expanding steps 02-03 and 03-01 to deliver the full subsystem rather than ship a partial one. The design was **generalised from "weave label" to "any read-count-referenced named container"** — resolving dotted references against the weave-label table AND the existing knot/stitch `namedContent` absolute paths (the same paths diverts already target — single source of path truth), and flagging exactly the referenced knots/stitches alongside labelled containers. No new component, zero CREATE NEW; ADR-011's governing principles (reuse cached paths, never re-derive; flag only referenced targets) were preserved and merely generalised. This back-propagation is recorded in ADR-011's Status note (AMENDED 2026-06-15) and the `## Wave: DELIVER / [WHY] Upstream Issues` section of `feature-delta.md` (the four-dotted-ref evidence table).
+
+The RED-pin AT was honoured as authored: it uses `waiting.guard_post` (knot.**stitch**) — exactly the needed-but-unscoped shape, not a fixture/mechanism mismatch.
+
+### FOLLOW-UP — TheIntercept e2e remains descoped (precise remaining blocker)
+
+> **This is a clearly-flagged FOLLOW-UP, not a regression and not delivered work.**
+
+The flagship **TheIntercept e2e** (`The Intercept compiles natively and plays identical to the inklecate oracle`) remains `.disabled` with an evidence-backed reason. This slice delivered the read-count addressing subsystem that ADR-011 had hoped would close the e2e — but closing the e2e was discovered to require a **THIRD subsystem beyond ADR-011**: variable-text `{|…|}` at a **gather-lead position** threading back into the gather's nested choices (a `VariableTextEmitter` + gather-lead continuation-threading concern), with further unknown blockers past line 86 of `TheIntercept.ink`.
+
+Per the user (2026-06-15: "cut losses; find an alternative approach"), this is a **multi-subsystem follow-up to be designed afresh — an alternative closure strategy, not chased per-blocker**. The "zero `.disabled` ATs at finalize" invariant is **consciously WAIVED for this one e2e AT** (carried forward from `compiler-variable-text` slice-04, now with a precise, evidence-backed reason and a delivered subsystem behind it). Context: ADR-011 (AMENDED) and `feature-delta.md`'s Upstream-Issues section.
+
+### Cross-Feature Signal / Lesson
+
+**A deep integration test surfaces latent subsystems one layer at a time — budget for that, don't chase it blocker-by-blocker.** TheIntercept's full native-compile e2e has now falsified two successive "this is the last blocker" premises: `compiler-variable-text` slice-04 falsified "line 86 variable text is the sole blocker" (surfacing the `not` operator + this weave-label subsystem); this slice in turn revealed a third subsystem (variable-text-at-gather-lead). Each honest RED was correct and valuable — but the pattern is that a single flagship end-to-end fixture is a *discovery instrument*, not a closeable checklist item. The lesson: when a deep e2e keeps unmasking unrelated subsystems, stop incremental blocker-chasing and **design a deliberate, scoped closure strategy** for the remaining surface as its own piece of work (the user's "alternative approach" decision). The per-slice subsystems (variable-text lowering, read-count addressing) were each correct, oracle-green, and independently valuable; bundling them under one e2e's GREEN was the false economy.
+
+### Components EXTENDed (no new components — all EXTEND, per ADR-011)
+
+| Component | Path | Extension this slice |
+|---|---|---|
+| `InkParser` / `InkParserExpressions` | `Compiler/Parser/` | Choice `(label)` + `{condition}` parsing; dotted-identifier acceptance in expressions; two surgical parser fixes (gather `- -> target` mis-level; `text[]suffix` empty-bracket split) |
+| `CompilerAST` | `Compiler/AST/` | `choice` case gains `weaveLabel: String?` + `condition: InkExpression?` |
+| `WeaveEmitter` | `Compiler/Codegen/` | Label-keyed choice containers; `0x1` CountVisits flag on read-count-referenced targets only; labelled label→absolute-path + knot/stitch path discovery |
+| `RuntimeObjectEmitter` / `LoweringContext` | `Compiler/Codegen/` | `weaveLabelPaths` table; discovery pre-pass; `.readCount(resolvedPath)` emission in `lowerExpression` (miss → fall through to `.variableReference`) |
+
+### Source-of-Truth Pointers (this milestone)
+
+| Artifact | Path |
+|---|---|
+| ADR (Option B, AMENDED 2026-06-15) | `docs/product/architecture/adr-011-weave-label-read-count-addressing.md` |
+| Feature delta (DESIGN + DELIVER Upstream-Issues) | `docs/feature/native-ink-compiler/feature-delta.md` |
+| Architecture brief (Component Inventory) | `docs/product/architecture/brief.md` |
+| KPI contracts (kpi-1 ceiling note) | `docs/product/kpi-contracts.yaml` |
+| Compiler sources | `Sources/SwiftInkRuntime/Compiler/` |

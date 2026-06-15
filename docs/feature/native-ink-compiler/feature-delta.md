@@ -1586,3 +1586,27 @@ The one genuine design fork is **how to build the name→path resolution table a
 Option B is chosen because it **reuses the proven absolute-path arithmetic** the resolver already performs for divert targets and gather labels — eliminating the single largest correctness risk (path derivation on deeply nested containers, which is exactly the `TheIntercept` shape). It threads through the existing `LoweringContext` pattern that already carries two resolution tables, so it adds the least new structure and aligns with the `WeaveEmitter`/`ConditionalEmitter` named-collector idiom the crafter already maintains. Its only weakness — forward references — is cheaply and completely closed by a discovery pre-pass that reuses existing level-partitioning. Options A and C both re-introduce duplicate path arithmetic (A directly, C by re-traversal), which is the risk this design most needs to avoid.
 
 **Provenance: matches inklecate's three-phase `ResolveWeavePointNaming` → `GenerateRuntimeObject` → `ResolveReferences`** (governing heuristic: *when in doubt, follow the original*). The discovery pre-pass = phase 1 (`Weave.cs:81-100`): registers **only labelled** weave points (unlabelled `g-N`/`c-N` are not name-addressable) and collects the read-count-referenced label SET. The resolver's already-cached absolute path = phase 2 (`GenerateRuntimeObject`, with labelled containers also named by their label, `Gather.cs:21-24`). `lowerExpression` reading the table to emit `.readCount(path)` = phase 3 (`VariableReference.cs:87-142`), which **reads the cached `runtimePath` and never re-derives** (`VariableReference.cs:111`) and sets the `0x1` CountVisits flag only on the resolved target (`VariableReference.cs:101`). Option A is rejected precisely because re-deriving paths is *the one thing the original deliberately avoids*; Option C is rejected because the original fuses naming/path/keying into `Weave`/`Gather` rather than a standalone resolver, so a separate component would duplicate or tightly couple to that work.
+
+---
+
+## Wave: DELIVER / [WHY] Upstream Issues — ADR-011 scope incompleteness (knot/stitch read-counts + parser dotted identifiers)
+
+**Discovered**: 2026-06-15 during DELIVER step 02-03 (crafter escalation). **Resolution**: user-approved scope expansion (deliver the full e2e). **Affects**: ADR-011 Decision items 1, 4, 5; DESIGN Component Decomposition; roadmap steps 02-03 / 03-01.
+
+**Finding.** ADR-011 scoped read-count addressing to **weave labels only** (labelled choices/gathers). Direct inspection of `TheIntercept.ink` shows the flagship e2e requires **two** read-count shapes, not one:
+
+| Dotted reference | Target kind | Definition | Covered by ADR-011 weave-label table? |
+|---|---|---|---|
+| `harris_demands_component.cant_talk_right` (L414) | knot.**choice-label** | `* (cant_talk_right) …` (L331) | ✓ yes |
+| `start.delay` in `{not start.delay}` (L113) | knot.**choice-label** | `* (delay) …` (L102) | ✓ yes |
+| `inside_hoopers_hut.back_of_hut_2` (L1345) | knot.**stitch** | `= back_of_hut_2` (L926) | ✗ **no** |
+| `slam_door_shut_and_gone.time_to_move_now` (L1635) | knot.**stitch** | `= time_to_move_now` (L1011) | ✗ **no** |
+
+Two gaps follow, both fixable **entirely inside `Compiler/`** (the R1/R3/R5 boundary + WL-D7 "no runtime change" hold):
+
+1. **Expression-parser dotted-identifier gap.** `InkParserExpressions.isIdentifier` (`InkParserExpressions.swift:155-159`) rejects `.`, so any dotted reference in a condition (`{a.b: …}`) throws `unexpectedToken` **before** lowering — affecting all four refs above. ADR-011 Decision item 1 ("Parser EXTEND") covered choice `(label)` / `{condition}` parsing only, not dotted identifiers in expressions. The lexer already keeps `.` inside the token (`InkParserExpressions.swift:284`), so the fix is to accept a dotted identifier as a `variableReference`.
+2. **knot/stitch read-count addressing.** `weaveLabelPaths` registers labelled weave points only; plain stitches (and knots) are never registered nor CountVisits-flagged. Resolving them reuses the **existing** knot/stitch `namedContent` absolute-path arithmetic (the same paths diverts already target — single source of path truth, no re-derivation), staying faithful to ADR-011's governing reuse principle.
+
+**Why the RED-pin AT was right.** The `.disabled` RED-pin `a dotted read-count reference to a named stitch lowers to a read-count node` uses `waiting.guard_post` (knot.**stitch**). This is not a fixture/mechanism mismatch — it is exactly the needed-but-unscoped knot.stitch shape. The AT is honoured as authored.
+
+**Scope expansion (user-approved).** Step **02-03** grows to: fix the parser dotted-identifier gap; resolve a dotted reference against the weave-label table AND knot/stitch absolute paths; emit `.readCount(path)` (miss → fall through). Step **03-01** grows to: set the `0x1` CountVisits flag on the read-count-referenced **knots/stitches** as well as labelled weave containers. No new component, still zero CREATE NEW; the design's reuse-the-cached-path / flag-only-referenced-targets principles are preserved and merely generalised from "weave label" to "any read-count-referenced named container". ADR-011 amended (Status note) accordingly.

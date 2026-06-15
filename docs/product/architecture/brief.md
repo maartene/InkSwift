@@ -267,10 +267,15 @@ Feature tiers follow inkle's own documentation structure:
 > blocker" premise and surfaced two further, unrelated gaps: (1) the **`not` unary operator** — now
 > shipped (step 05-01); and (2) **dotted read-count addressing of named weave labels**
 > (`{harris_demands_component.cant_talk_right: …}` → a `CNT?` node addressing a named label), which
-> needs a whole weave-label addressing subsystem. **(2) is DEFERRED (user-approved 2026-06-15) to the
-> `native-ink-compiler` feature** — see the Deferred / Known-Gap note below. The "no sequences"
-> introductory claim remains inaccurate (line 86 is a variable-text once-only form); it now compiles,
-> but TheIntercept's full native compile is blocked by the weave-label gap, not by it.
+> needs a whole weave-label addressing subsystem. **(2) has since SHIPPED** in the native-ink-compiler
+> **weave-label read-count addressing slice** (2026-06-15, ADR-011 Option B, commits `db4bcef..c47b2a0`) —
+> dotted read-counts to named weave labels AND knots/stitches now lower to `.readCount(resolvedPath)`;
+> 323 tests GREEN. **However TheIntercept's full native-compile e2e is STILL `.disabled`**: closing it
+> was found to need a THIRD subsystem (variable-text `{|…|}` at a gather-lead position threading back into
+> the gather's nested choices) plus unknown blockers past line 86 — a multi-subsystem FOLLOW-UP to be
+> designed afresh (user decision 2026-06-15), not chased per-blocker. The "no sequences" introductory
+> claim remains inaccurate (line 86 is a variable-text once-only form). See
+> `docs/evolution/native-ink-compiler-evolution.md` (weave-label milestone) and ADR-011.
 
 #### Implementation Roadmap by Tier
 
@@ -1006,25 +1011,34 @@ or minimal EXTEND.
 > rejects the unsupported set. **Still deferred:** `SourceReader` IO adapter (`compile(fileURL:)`) and
 > the `swift-tools-version` raise (C-7).
 >
-> **DESIGNED, in progress (weave-label read-count addressing slice — 2026-06-15, ADR-011):** the last
-> gap to the flagship `TheIntercept.ink` native-compile e2e is **dotted read-count addressing of named
-> weave labels** (`{knot.label: text}` → `.readCount(resolvedPath)`), descoped from `compiler-variable-text`
-> slice-04 (user-approved). This is a minimal **EXTEND** of the shipped pipeline — no new component —
-> built as **Option B (CHOSEN)**: an incremental label→path table via an extended `LoweringContext` + a
-> discovery pre-pass, **explicitly grounded in the original inkle/ink C# compiler** (governing heuristic:
-> *when in doubt, follow the original*). Option B maps one-to-one onto inklecate's three-phase weave-naming
-> algorithm — `Weave.ResolveWeavePointNaming` (`Weave.cs:81-100`, our discovery pre-pass; labelled-only) →
-> `GenerateRuntimeObject` (cached absolute paths) → `VariableReference.ResolveReferences`
-> (`VariableReference.cs:87-142`, which reads the cached `runtimePath` and never re-derives). Concretely:
-> `InkParser`/`CompilerAST` gain choice `(label)` + `{condition}` parsing; `WeaveEmitter` gains label-keyed
-> choice containers + the `0x1` CountVisits flag on the **read-count-referenced** labelled containers only
-> (the pre-pass SET, matching `VariableReference.cs:101`) + a labelled-only label→absolute-path registration;
-> `RuntimeObjectEmitter`/`LoweringContext` gain a `weaveLabelPaths` table + `.readCount(path)` emission in
-> `lowerExpression`. **No runtime/Engine/Decoder change** (the read-count / `CNT?` / CountVisits machinery is
-> already implemented; D3 §"Visit counts" holds). Correctness is Level-1 execution-equivalence (own resolved
-> path). DELIVER re-enables the two `.disabled` ATs (`Compiler_S4_CeilingTests`: TheIntercept e2e + dotted
-> read-count RED pin). See `docs/feature/native-ink-compiler/feature-delta.md` (DESIGN — weave-label slice)
-> and ADR-011.
+> **Shipped (Component Inventory update — weave-label read-count addressing slice, 2026-06-15, ADR-011 Option B):**
+> a **read-count addressing subsystem** now lets the compiler lower a dotted read-count reference — to a named
+> weave **label** AND a named **knot/stitch** (`{knot.label: text}`, `{knot.stitch: text}`) — into a runtime
+> `.readCount(resolvedPath)` node. Delivered as a minimal **EXTEND** of the shipped pipeline (no new component,
+> zero CREATE NEW), built as **Option B (CHOSEN)**: an incremental label→path table via an extended
+> `LoweringContext` + a discovery pre-pass, grounded in the original inkle/ink C# compiler's three-phase
+> weave-naming algorithm (`ResolveWeavePointNaming` → `GenerateRuntimeObject` → `ResolveReferences`; reads the
+> cached path, never re-derives). Concretely, the EXTENDed components: **`InkParser`/`InkParserExpressions`**
+> (`Compiler/Parser/`) — choice `(label)` + `{condition}` parsing, dotted-identifier acceptance in expressions,
+> plus two surgical parser fixes (gather `- -> target` mis-level; `text[]suffix` empty-bracket split);
+> **`CompilerAST`** (`Compiler/AST/`) — `choice` gains `weaveLabel` + `condition`; **`WeaveEmitter`**
+> (`Compiler/Codegen/`) — label-keyed choice containers, the `0x1` CountVisits flag on the read-count-referenced
+> targets only (labelled containers AND referenced knots/stitches — the pre-pass SET, matching
+> `VariableReference.cs:101`), and label/knot-stitch path discovery; **`RuntimeObjectEmitter`/`LoweringContext`**
+> (`Compiler/Codegen/`) — a `weaveLabelPaths` table + `.readCount(path)` emission in `lowerExpression` (a table
+> miss falls through to `.variableReference`). **No runtime/Engine/Decoder change** (the read-count / `CNT?` /
+> CountVisits machinery was already implemented; R1/R3/R5 + WL-D7 held). Two user-approved scope expansions
+> (steps 02-03, 03-01) generalised the design from "weave label" to "any read-count-referenced named container"
+> after `TheIntercept.ink` was found to need knot.stitch read-counts too — ADR-011 amended accordingly. 5 steps
+> `db4bcef..c47b2a0`; full suite 323 tests GREEN; the dotted read-count RED-pin AT is GREEN; adversarial review
+> APPROVED; DES integrity exit 0.
+> **DEFERRED / FOLLOW-UP:** the flagship `TheIntercept.ink` full native-compile **e2e remains `.disabled`** —
+> closing it needs a THIRD subsystem beyond ADR-011 (variable-text `{|…|}` at a **gather-lead** position
+> threading back into the gather's nested choices), with further unknown blockers past line 86. Per the user
+> (2026-06-15) this is a multi-subsystem follow-up to be **designed afresh as an alternative closure strategy,
+> not chased per-blocker**; the "zero `.disabled` at finalize" invariant is consciously waived for this one e2e
+> AT. See `docs/evolution/native-ink-compiler-evolution.md` (weave-label milestone), ADR-011, and
+> `feature-delta.md`'s Upstream-Issues section.
 
 #### Decisions (recommended; ADR-backed)
 

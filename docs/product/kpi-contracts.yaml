@@ -122,6 +122,36 @@ features:
         0 inklecate invocations — the variable-text lowering is a compiler-only diff; production
         Compiler/ still references no Process/inklecate symbol and spawns no subprocess (holds).
 
+    measured_baselines_weave_label_read_count:
+      # Recorded at finalize of the native-ink-compiler weave-label read-count addressing slice
+      # (2026-06-15, ADR-011 Option B, commits db4bcef..c47b2a0, 5 steps). Delta on top of the
+      # compiler-variable-text baselines above. Full swift test: 323 tests, 0 failures.
+      as_of: 2026-06-15
+      scope: read-count addressing subsystem — dotted read-count references to named weave labels AND named knots/stitches
+      kpi-1: >
+        Dotted read-count addressing has LANDED: a dotted read-count reference to a named weave label
+        (knot.choice-label) OR a named knot/stitch now lowers to a runtime .readCount(resolvedPath) node
+        (parser dotted-identifier acceptance + WeaveEmitter label-keyed containers + targeted 0x1 CountVisits
+        flag + weaveLabelPaths table + lowerExpression .readCount emission). The dotted read-count RED-pin AT
+        (a dotted read-count reference to a named stitch lowers to a read-count node) is GREEN. Zero
+        runtime/Engine/Decoder change (R1/R3/R5 + WL-D7 held).
+        HOWEVER the flagship TheIntercept.ink full native-compile end-to-end (the north-star ceiling fixture)
+        is STILL NOT GREEN and its e2e oracle test REMAINS .disabled — DO NOT claim it green. The blocker is
+        no longer the weave-label gap (that shipped this slice): closing the e2e was found to require a THIRD
+        subsystem beyond ADR-011 — variable-text {|...|} at a gather-lead position threading back into the
+        gather's nested choices (VariableTextEmitter + gather-lead continuation threading) — plus further
+        unknown blockers past line 86 of TheIntercept.ink. Per user decision (2026-06-15) this is a
+        multi-subsystem FOLLOW-UP to be designed afresh as an alternative closure strategy, not chased
+        per-blocker. So: read-count-addressing supported-corpus coverage is at oracle parity; the TheIntercept
+        full e2e north-star (kpi-1 ceiling) is NOT yet met — it remains DEFERRED by the gather-lead
+        variable-text gap.
+      kpi-2: >
+        unchanged — unsupported-construct rejection holds; this slice added no new constructs to the
+        supported or rejected set (it addresses read-counts of already-supported named targets).
+      kpi-4: >
+        0 inklecate invocations — the read-count addressing diff is Compiler/-only; production Compiler/
+        still references no Process/inklecate symbol and spawns no subprocess (holds).
+
     monitoring_model:
       runtime_telemetry: none           # library, not a service — no dashboards/alerts at runtime
       instrument_kind: ci-test-gate     # every KPI is a CI assertion
