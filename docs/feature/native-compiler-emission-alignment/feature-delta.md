@@ -237,3 +237,17 @@ Wave-Decision Reconciliation: 0 contradictions. The SPIKE (`## Wave: SPIKE`) doe
 **Layer-2 phase note (per SPIKE directive)**: `vt-inline-choices-gather` pins the PRE-EXISTING `continuationLowerer` hardcoded-`fallThrough:.end` bug (`WeaveEmitter.swift:90`), which mis-compiles the inline variable-text continuation independently of gather-lead. The naive layer-1 (threading) fix converges onto this layer-2 residual, so the inline AT is repaired by the SAME Phase-3 step even though its shape is not gather-lead. The two layers are fixed together; no separate DELIVER step.
 
 **TheIntercept e2e**: stays `.disabled` (its existing trait in `Compiler_S4_CeilingTests.swift` is unchanged here). Re-enabled only AFTER these six land green — its lines 85-106 are the `vt-gather-lead-empty-choice` shape plus an explicit `-> opts` loop-back. Out of scope for this DISTILL session per task directive.
+
+---
+
+## Wave: DELIVER / [REF] Phase 3 (#3b) — variable-text continuation threading (2026-06-16)
+
+**Shipped** (commits `0eece57` step 01-01, `ead21bc` step 01-02; on `main`):
+- **01-01 (layer 2, pre-existing bug):** plumbed the enclosing loose-end `fallThrough` down `lowerBody → lowerVariableTextLine → continuationLowerer → WeaveEmitter.lower` (replacing the hardcoded `fallThrough:.end` at `WeaveEmitter.swift:90`); added `WeaveEmitter.FallThrough` (`.gather`/`.end`). Re-enabled `vt-inline-choices-gather`.
+- **01-02 (layer 1, gather-lead fold):** SPIKE Option-A — a gather whose lead line is variable-text keeps its nested choices in the flat body so they thread as the line's continuation. Also: multi-segment `{&…}{\!…}` ordinal keying (`VariableTextEmitter`), inline-conditional `{c: -> t}` real-divert emission (`ConditionalEmitter`), and `fallThrough` threading through `RuntimeObjectEmitter`. Re-enabled the 5 gather-lead ATs.
+
+**Gates:** all 6 variable-text-threading ATs GREEN; full suite **330 green, 0 regressions** (incl. both TheIntercept playthroughs + the whole variable-text/weave/gather corpus); SwiftLint `--strict` 0 violations; adversarial review **APPROVED**; DES integrity **2/2 steps complete (exit 0)**; mutation disabled (CLAUDE.md). Boundary held: `Compiler/` only, runtime REUSE-AS-IS.
+
+**Diagnostic delta (DIAG_INTERCEPT):** the variable-text threading behavioral gap is closed (proven by the 6 execution-equivalence ATs incl. the `vt-gather-lead-empty-choice` TheIntercept opts/waited exemplar). Structural findings ROSE (~50→65) and containers fell slightly (450→440) — this is the fold renaming/renesting containers (native names `opts`/`seq0-d`/`seq0-end`/`think`/`plan`; inklecate nests anonymously), the **cosmetic D5-licensed #1/#3a class**, NOT a regression (full suite green confirms). `readCount` (8 vs 54) and `dottedVariableReference` (2) are UNCHANGED — those are Phases 1–2 (#4a/#4b), untouched as expected.
+
+**Remaining for full TheIntercept e2e (still `.disabled` by design):** Phase 1 (#4b dotted-ref tail), Phase 2 (#4a implicit read-count coverage). The e2e re-enables only after those land. The "zero `.disabled` at finalize" invariant applies at FEATURE completion, not this phase.
