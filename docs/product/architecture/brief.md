@@ -1186,6 +1186,16 @@ One new source file is introduced (`Compiler/Codegen/VariableTextEmitter.swift`)
 new `ContentSegment` AST case and a parser rule. All other changes are EXTEND/REUSE.
 See ADR-010.
 
+> **Shipped (Component Inventory update — DELIVER slice 01, 2026-06-15):** the variable-text
+> lowering pass landed as the stateless `Compiler/Codegen/VariableTextEmitter.swift` (parametrized
+> `#f:5` stage-dispatch over `(op, bound, appendEmptyStage)`), with `ContentSegment.variableText`
+> + `VariableTextMode` (AST), a top-level-`|` parse rule (`InkParser`), a `.variableText` dispatch
+> in `RuntimeObjectEmitter.lowerBody`, and the `UnsupportedConstructDetector` gate narrowed to
+> shuffle-only. The once-only forms (`{!a|b}` / bare `{|x|}`, row 27) are MUST-COMPILE and play
+> oracle-identical; the single gate flip also makes sequence (25) and cycle (26) compile, with
+> their boundary-verification scenarios deferred to slices 02–03 and the `TheIntercept.ink` e2e to
+> slice 04. Compiler-only diff; zero runtime/engine change (KPI #4 holds). Commit `19544602`.
+
 #### Lowering decisions (ground truth — verified against inklecate)
 
 All three forms lower to an anonymous dispatch container flagged `#f:5`

@@ -804,3 +804,279 @@ required.
 - **Correctness gate**: hermetic Level-1 execution-equivalence (committed `.ink.json`
   through pure-Swift `Story`).
 - **No new dependency, no new port, no new `NodeKind` case.**
+
+---
+
+# Feature Delta: compiler-variable-text (DISTILL wave)
+
+**Wave**: DISTILL | **Density**: lean (Tier-1 [REF]) | **Acceptance designer**: Sentinel-authored
+**Date**: 2026-06-15 | **Status**: DISTILL complete — pending Final Wave Review Gate before DELIVER handoff
+
+> Acceptance tests authored as executable Swift Testing suites. Per the project
+> CLAUDE.md `.disabled`-trait policy (the pre-commit gate runs the full `swift test`),
+> every new AT is authored `.disabled` with a reason naming its DELIVER slice; the
+> suite stays green and per-step trunk commits are unblocked. DELIVER removes each
+> `.disabled` as its GREEN step. Mandate-7 RED scaffolds are NOT used (the project's
+> `.disabled` convention supersedes them; the ATs already compile against the existing
+> `InkCompiler.compile` driving port). The shuffle regression guard is ENABLED (green
+> today, must stay green).
+
+---
+
+## Wave: DISTILL / [REF] Wave-Decision Reconciliation (HARD GATE)
+
+Read: DISCUSS + DESIGN sections (this file), `design/wave-decisions.md`. No `devops/`
+directory for this feature → graceful degradation: default infra (no new adapter, so
+nothing to configure). Checked every DISCUSS decision against DESIGN:
+
+- DISCUSS D-A (scope = rows 25-27 compile; shuffle 28 rejects) ↔ DESIGN DDD-5 (reject
+  ONLY shuffle) — **consistent**.
+- DISCUSS "zero runtime change" ↔ DESIGN DDD-8 (every op already in engine) — **consistent**.
+- DISCUSS reuse job/persona/port ↔ DESIGN "no new port" — **consistent**.
+
+**Reconciliation passed — 0 contradictions.** One non-blocking imprecision surfaced and
+recorded (not a contradiction): DISCUSS US-01 example 3 ("bare `{\|x\|}` plays
+identically to `{!x\|}`") is looser than DESIGN ground truth (bare = plain sequence with
+a leading empty stage; emits on visit 1, not visit 0). The oracle is authoritative — see
+upstream issues below.
+
+---
+
+## Wave: DISTILL / [REF] Scenario List (tags)
+
+| Suite (file) | Scenario | Tags | State |
+|---|---|---|---|
+| VT0 ShuffleRejectGuard | shuffle rejects with a named, located error; no story | `@error @kpi-3 @guardrail` | **ENABLED (green now)** |
+| VT1 OnceOnly (US-01) | once-only `{!a\|b}` emits text exactly once then silent | `@us-01 @real-io @kpi-1` | `.disabled` → slice-01 |
+| VT1 OnceOnly (US-01) | bare `{\|x\|}` lowers to a leading-empty sequence | `@us-01 @real-io @kpi-1` | `.disabled` → slice-01 |
+| VT2 Sequence (US-02) | 3-stage sequence advances then clamps (clamp-at-last boundary) | `@us-02 @real-io @kpi-1` | `.disabled` → slice-02 |
+| VT2 Sequence (US-02) | 2-stage sequence clamps, distinct from once-only (boundary) | `@us-02 @real-io @kpi-1` | `.disabled` → slice-02 |
+| VT2 Sequence (US-02) | mixed variable-text + conditional: no key collision (OQ-3 AC) | `@us-02 @real-io @kpi-1` | `.disabled` → slice-02 |
+| VT3 Cycle (US-03) | 2-stage cycle wraps forever | `@us-03 @real-io @kpi-1` | `.disabled` → slice-03 |
+| VT3 Cycle (US-03) | 4-stage cycle modulo-wrap, no off-by-one (wrap boundary) | `@us-03 @real-io @kpi-1` | `.disabled` → slice-03 |
+| S4 Ceiling (US-04) | TheIntercept compiles natively e2e, oracle-identical (descoped test re-pointed) | `@us-04 @real-io @kpi-1 @kpi-2` | `.disabled` → slice-04 |
+
+**Contract shape** (principle 12): every variable-text scenario is `pure-function` —
+`InkCompiler.compile` is source → `StoryBlueprint` with no side effect, and playback is
+deterministic; oracle execution-equivalence is the assertion. The shuffle guard is also
+`pure-function` (source → thrown located `CompileError`, no mutation). No
+`bounded-change` / `unbounded-preservation` scenarios exist in this feature.
+
+Error-path / guardrail coverage: 1 of 9 scenarios is the shuffle reject guard; every
+slice (01-04) commits against it. The variable-text happy paths are themselves boundary
+fixtures (clamp / wrap / once / leading-empty / modulo-wrap / mixed) per the DESIGN OQ-1
+front-loading mandate, so the suite is boundary-dense rather than naive-happy-path.
+
+---
+
+## Wave: DISTILL / [REF] Architecture of Reference / WS Strategy
+
+- **Walking skeleton: NO** (brownfield — DISCUSS scope gate; the read→parse→codegen→runtime
+  spine already ships). No `@walking_skeleton` scenario required.
+- **Driving port** (entry): `InkCompiler.compile(source:)` → `StoryBlueprint`, played via
+  the production pure-Swift `Story`. **Real adapter** (production composition), per the
+  Architecture of Reference driving-port default. No new driving adapter.
+- **Driven external / non-deterministic**: none introduced (no clock/net/fs/subprocess).
+  inklecate is **offline/test-only** — it produced the committed `.ink.json` oracles ahead
+  of time; CI never invokes it (and no JS bridge is invoked). This is the established
+  hermetic Level-1 execution-equivalence pattern (`CompilerOracle`).
+
+---
+
+## Wave: DISTILL / [REF] Adapter / Oracle Coverage
+
+| Adapter / mechanism | `@real-io` scenario | Covered by |
+|---|---|---|
+| `InkCompiler.compile` (driving port) | YES | every VT scenario (native compile path) |
+| Committed inklecate `.ink.json` oracle | YES | `CompilerOracle.compileAndPlay` (all 8 VT/US-04 ATs) |
+| Pure-Swift `Story` playback (no JS bridge) | YES | `CompilerOracle.play` |
+
+No driven adapter is `NO — MISSING`. No costly external requires a `@requires_external`
+contract smoke (inklecate is pre-run offline).
+
+---
+
+## Wave: DISTILL / [REF] Driving Adapter Verification
+
+The only entry point in DESIGN is the in-process `InkCompiler.compile(source:)` call
+(not a CLI/HTTP/hook — no subprocess/protocol adapter exists in this library). Every AT
+invokes it directly through the production facade and asserts the observable: emitted
+lines + presented choices (happy path) or the thrown located `CompileError` (shuffle
+guard). Exit-code/HTTP-status verification is N/A (no process/endpoint adapter).
+
+---
+
+## Wave: DISTILL / [REF] Test Placement & Fixtures
+
+**Tests** (precedent: existing `Compiler_S*` acceptance suites live here):
+`Tests/SwiftInkRuntimeTests/Acceptance/`
+- `Compiler_VT0_ShuffleRejectGuardTests.swift` (enabled guardrail)
+- `Compiler_VT1_OnceOnlyTests.swift`, `Compiler_VT2_SequenceTests.swift`, `Compiler_VT3_CycleTests.swift`
+- US-04 re-uses `Compiler_S4_CeilingTests.swift` (existing TheIntercept test re-pointed to slice-04)
+
+**Fixtures** (`.ink` source + committed inklecate `.ink.json` oracle, regenerated offline):
+`Tests/SwiftInkRuntimeTests/Fixtures/`
+`vt-once-sticky`, `vt-once-bare`, `vt-seq-three`, `vt-seq-two`, `vt-cycle-two`,
+`vt-cycle-four`, `vt-mixed` (new); `reject-shuffle` (reused); `TheIntercept` (reused).
+Regen command per fixture: `inklecate -o <name>.ink.json <name>.ink` (offline, committed).
+
+Ground-truth playback (captured by playing each committed oracle through the runtime):
+
+| Fixture | Form | Oracle playback (choiceScript `[0]`) |
+|---|---|---|
+| vt-once-sticky | `{!The lock clicks open.\|}` | `["The lock clicks open."]` (once) |
+| vt-once-bare | `{\|The corridor falls quiet.\|}` | `["The corridor falls quiet."]` (emits on 2nd visit) |
+| vt-seq-three | `{red\|green\|blue}` | `red, green, blue, blue, …` (clamp) |
+| vt-seq-two | `{Day.\|Night.}` | `Day., Night., Night., …` (clamp) |
+| vt-cycle-two | `{&heads\|tails}` | `heads, tails, heads, tails, …` (wrap) |
+| vt-cycle-four | `{&Spring\|Summer\|Autumn\|Winter}` | `Spring, Summer, Autumn, Winter, Spring, …` (modulo) |
+| vt-mixed | cond + `{red\|green\|blue}` | `First time. … red.` / `Back again. … green.` / `… blue.` (clamp) |
+
+---
+
+## Wave: DISTILL / [REF] Pre-DELIVER Fail-for-the-Right-Reason Gate
+
+Per CLAUDE.md the new ATs are `.disabled` (skipped), so genuine RED is exercised by
+DELIVER when it removes each trait. The DISTILL gate here verifies the suite is **not
+BROKEN**: full `swift test` → **288 tests, 0 failures**; VT1/VT2/VT3 suites report
+*passed* with their ATs skipped; VT0 shuffle guard passes; all new ATs **compile**
+against the existing `InkCompiler.compile`/`CompilerOracle`/`CompileError`/`Story` API.
+Classification of each disabled AT when DELIVER enables it: `MISSING_FUNCTIONALITY`
+(sequence/cycle/once not yet lowered + gate not yet narrowed) — the correct RED. Recorded
+in `distill/red-classification.md`.
+
+---
+
+## Wave: DISTILL / [REF] Required DELIVER Modifications (existing suites)
+
+The gate change moves rows 25-27 from reject → compile. Two existing suites assert the
+OLD reject behaviour and will RED once the gate narrows — DELIVER must update them as
+part of the slice that lands the gate change (slice-01):
+
+- `Compiler_S6_UnsupportedRejectionTests.swift` — remove `reject-seq`/`reject-cycle`/`reject-once`
+  from `rejectCorpus` (they now compile; shuffle/thread/list/random/external stay).
+- `Compiler_S5_FeatureReferenceConsistencyTests.swift` — move `reject-seq`/`reject-cycle`/`reject-once`
+  from `documentedUnsupported` to `documentedSupported` (with playable oracle fixtures).
+- `docs/product/ink-feature-reference.md` — move rows 25-27 MUST-REJECT → MUST-COMPILE
+  (the DISCUSS downstream doc-update note; S5 suite is the SSOT the prose mirrors).
+
+---
+
+## Wave: DISTILL / [REF] Outcomes Registry / KPI Contracts
+
+- **Outcomes registry**: no `docs/product/outcomes/registry.yaml` in this repo; the
+  feature reuses `job-native-compilation` with no new typed contract surface at a driving
+  port (`VariableTextEmitter` is an internal codegen component behind the unchanged
+  compile port). Registration correctly skipped (consistent with DESIGN Outcome Collision
+  Check = N/A).
+- **KPI tags**: scenarios carry `@kpi-1` (execution-equivalence), `@kpi-2` (TheIntercept
+  e2e), `@kpi-3` (shuffle guardrail), `@kpi-4` is a code-review guardrail (compiler-only
+  diff), not a runnable scenario tag.
+
+---
+
+## Wave: DISTILL / [REF] Self-Review Checklist
+
+- [x] WS strategy declared (NO — brownfield; Architecture-of-Reference driving port real adapter).
+- [x] Scenarios tagged (`@real-io` for compile-path ATs; `@error`/`@guardrail` for shuffle).
+- [x] Every driven adapter has a real-I/O scenario (oracle harness; no costly external).
+- [x] In-memory doubles: none used (production composition + committed oracle).
+- [x] Driving adapter exercised via its actual entry (`InkCompiler.compile`), not a deeper internal.
+- [x] ATs compile against existing public API (no ImportError equivalent; build green).
+- [x] New ATs are `.disabled` with a DELIVER-slice reason (not BROKEN); suite green (288/0).
+- [x] Backtick test names; `.disabled("…")` is a trait arg, not a `@Test("…")` label (style mandate honoured).
+- [x] Error-path/guardrail present (shuffle reject) and boundary-dense happy paths (clamp/wrap/once/modulo/mixed).
+- [x] Oracle fixtures generated offline and committed; ground-truth playback captured.
+- [x] OQ-1 boundary corpus + OQ-3 mixed-construct AC discharged.
+- [x] Finalize invariant noted: zero `.disabled` ATs must remain when DELIVER completes (DELIVER removes all VT + S4 traits).
+
+---
+
+## Wave: DISTILL / [REF] Wave Decisions Summary
+
+- 8 acceptance scenarios authored (`.disabled`) across US-01..US-04 + 1 enabled shuffle
+  guard; mapped 1:1 to slices 01-04 for one-at-a-time DELIVER.
+- Hermetic Level-1 execution-equivalence via `CompilerOracle`; 7 new fixtures + oracles
+  committed; ground-truth playback verified by playing oracles through the runtime.
+- OQ-1 (boundary corpus) and OQ-3 (mixed-construct, no key collision) promoted to ATs.
+- Upstream clarification recorded: bare `{\|x\|}` ≠ `{!x\|}` (DESIGN/oracle authoritative).
+- DELIVER must update S5/S6 + the feature-reference doc when the gate narrows (slice-01).
+- Suite green: 288 tests, 0 failures; new ATs skipped (disabled), shuffle guard green.
+
+---
+
+# Feature Delta: compiler-variable-text (DELIVER wave — slice 01)
+
+**Wave**: DELIVER | **Density**: lean (Tier-1 [REF]) | **Slice**: slice-01-once-only
+**Date**: 2026-06-15 | **Status**: slice 01 DELIVERED (slices 02–04 pending) | **Orchestrator**: nw-deliver
+
+---
+
+## Wave: DELIVER / [REF] Implementation Summary (slice 01)
+
+Landed the variable-text lowering mechanism (ADR-010) and narrowed the unsupported-construct
+gate to **shuffle-only**, flipping ink-feature-reference matrix rows 25–27 from MUST-REJECT to
+MUST-COMPILE. A new stateless `VariableTextEmitter` lowers the deterministic alternatives
+(`{a|b|c}` sequence, `{&a|b}` cycle, `{\!a|b}` once, bare `{|x|}`) onto the runtime's existing
+visit-count + native-arithmetic + conditional-divert machinery via one parametrized routine over
+`(op, bound, appendEmptyStage)` — a `#f:5` dispatch container computes a clamped (`MIN`) or
+wrapped (`%`) stage index and dispatches through `du`/`==`/conditional-divert to per-stage
+`seqN-sI` containers that rejoin a shared `seqN-end` continuation. **Zero runtime change** (every
+op already shipped). The two VT1 once-only acceptance scenarios are GREEN against the committed
+inklecate oracle; the shuffle regression guard stays GREEN. Per DISTILL U-2 / DESIGN DDD-5 the
+single gate flip makes sequence and cycle compile here too; their **boundary verification
+scenarios** (VT2 clamp/mixed, VT3 modulo-wrap, S4 e2e) remain slices 02–04 and stay `.disabled`.
+
+One in-scope subtlety surfaced and was fixed inside `RuntimeObjectEmitter`: the `seqN-end`
+continuation routes a trailing weave choice through `WeaveEmitter`, so the `+ [Again] -> loop`
+sticky choice in the once-sticky fixture survives the rejoin (a latent continuation-choice drop).
+
+## Wave: DELIVER / [REF] Files Modified (slice 01)
+
+**Production (compiler-only diff — no Engine/Decoder/Facade change):**
+- `Compiler/Codegen/VariableTextEmitter.swift` — NEW; parametrized stage-dispatch emitter (ConditionalEmitter idiom; distinct `seq{N}-*` namespace).
+- `Compiler/AST/CompilerAST.swift` — `ContentSegment.variableText(mode:stages:)` + `VariableTextMode {sequence,cycle,once}`.
+- `Compiler/Parser/InkParser.swift` — top-level-`|` variable-text parse rule in `scanBraceSegment` (after the inline-conditional `:` check).
+- `Compiler/Codegen/RuntimeObjectEmitter.swift` — `.variableText` dispatch in `lowerBody`; weave-aware continuation lowering.
+- `Compiler/Parser/UnsupportedConstructDetector.swift` — `leadingMarker` narrowed to `~`→shuffle only; statement-level rejects + `:` discriminator untouched.
+
+**Tests / docs:**
+- `Acceptance/Compiler_VT1_OnceOnlyTests.swift` — `.disabled` removed from both ATs (now GREEN).
+- `Acceptance/Compiler_S5_FeatureReferenceConsistencyTests.swift` — rows 25–27 → `documentedSupported` (pointed at `vt-seq-three`/`vt-cycle-two`/`vt-once-sticky`).
+- `Acceptance/Compiler_S6_UnsupportedRejectionTests.swift` — `reject-seq`/`reject-cycle`/`reject-once` dropped from `rejectCorpus`; shuffle + statement-level stay.
+- `docs/product/ink-feature-reference.md` — rows 25–27 MUST-REJECT → MUST-COMPILE + prose.
+
+## Wave: DELIVER / [REF] Scenarios Green (slice 01)
+
+**2 of 2** slice-01 acceptance scenarios GREEN (2026-06-15):
+- VT1 — `{\!The lock clicks open.|}` plays `["The lock clicks open."]` (once), native == oracle.
+- VT1 — bare `{|The corridor falls quiet.|}` plays `["The corridor falls quiet."]` (emits on 2nd visit), native == oracle.
+
+Still `.disabled` (pending slices 02–04): VT2 ×3, VT3 ×2, S4 ×1. VT0 shuffle guard ENABLED + GREEN.
+
+## Wave: DELIVER / [REF] DoD Check (slice 01)
+
+- [x] Both VT1 once-only ATs GREEN (native == oracle == expected lines).
+- [x] VT0 shuffle regression guard GREEN (located, named `.unsupportedConstruct`, no story).
+- [x] S5/S6 reconciled; ink-feature-reference rows 25–27 → MUST-COMPILE.
+- [x] Full `swift test` GREEN — 288 tests, 0 failures (independently re-run by orchestrator).
+- [x] SwiftLint `--strict` — 0 violations (R1/R3/R5 boundary gates).
+- [x] Compiler-only diff (no Engine/Decoder/Facade; no new `NodeKind` case; no `Package.swift` change).
+- [x] Zero `.disabled` VT1 ATs remain (slice-01 finalize invariant for its scenarios).
+
+## Wave: DELIVER / [REF] Quality Gates (slice 01)
+
+- **Roadmap integrity** (`des-verify-integrity --roadmap-only`) — exit 0.
+- **TDD 3-phase canon** (ADR-025) — RED→GREEN→COMMIT logged EXECUTED/PASS; genuine RED confirmed (`.unsupportedConstruct` = MISSING_FUNCTIONALITY).
+- **Pre-commit gate** — swiftlint `--strict` + `swift test` both passed; committed to trunk (`19544602`) with `Step-Id: 01-01` + `Task-Id: compiler-variable-text` trailers.
+- **Adversarial review** (`nw-software-crafter-reviewer`) — APPROVED, no blockers; Testing-Theater scan clean.
+- **Mutation testing** — SKIPPED (disabled project-wide per CLAUDE.md; oracle execution-equivalence is the test-quality gate).
+- **Deliver integrity** (`des-verify-integrity`) — exit 0, "All 1 steps have complete DES traces".
+
+## Wave: DELIVER / [REF] Pre-requisites (slice 01)
+
+DISTILL VT1 ATs + committed `vt-once-sticky`/`vt-once-bare` oracle fixtures; DESIGN Lowering
+Specification + Component Decomposition (ADR-010); the delivered `native-ink-compiler` pipeline
+(`ConditionalEmitter` pattern template, `lowerBody` recursion, the engine `visit`/`du`/`MIN`/`%`/
+`pop`/`nop`/`==`/conditional-divert ops). Authoritative cross-slice call recorded in DISTILL
+upstream-issues U-2 (gate flips to shuffle-only in slice 01).
