@@ -57,8 +57,7 @@ struct Compiler_S4_CeilingTests {
     //      DESCOPE to the `native-ink-compiler` feature (2026-06-15).
     // Trait stays `.disabled` until native-ink-compiler lands weave-label
     // read-count addressing; the AT genuinely fails and must NOT be weakened.
-    @Test(.disabled("DEFERRED (native-ink-compiler weave-label slice, user decision 2026-06-15 'cut losses; alternative approach'): read-count addressing + CountVisits flagging + {condition} lowering + the gather-divert/empty-bracket parser fixes ALL landed and are oracle-green in isolation. The full TheIntercept e2e additionally needs variable-text {|...|} at a gather-lead position to thread back into the gather's nested choices (VariableTextEmitter + gather-lead continuation threading) plus likely further blockers past line 86 — a multi-subsystem effort to be designed as a follow-up, not chased per-blocker. The AT genuinely fails and is NOT weakened."))
-    func `The Intercept compiles natively and plays identical to the inklecate oracle`() throws {
+    @Test func `The Intercept compiles natively and plays identical to the inklecate oracle`() throws {
         let oracleJSON = try CompilerOracle.oracleJSON("TheIntercept")
         let interceptScript = [0, 2, 1, 0, 0, 1, 2, 0, 1, 0]
 
