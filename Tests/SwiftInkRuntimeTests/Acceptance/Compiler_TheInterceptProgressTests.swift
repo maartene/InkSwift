@@ -92,12 +92,23 @@ struct Compiler_TheInterceptProgressTests {
     ///      `-> missing_reel -> harris_demands_component` loose end) through the same
     ///      `divertStatements` recogniser, so the gather's loose-end chain lowers
     ///      identically.
-    /// The NEXT blocker is at index 22: after `missing_reel` returns and flow continues
-    /// to `harris_demands_component` (ink ~196+, a larger knot), native plays one wrong
-    /// line and stops — NATIVE[22] = "They are keeping me waiting." (a restart to story
-    /// start) vs ORACLE[22] = "So. Do you have it?" Harris is wasting no time… — the
-    /// `harris_demands_component` knot body is not threaded yet — next step.
-    private static let floor = 22
+    /// Step 01-08 resolves the TUNNEL-RETURN gather loose-end, advancing native
+    /// 22 → 29 oracle-matching lines. The `missing_reel` knot's loose end
+    /// (TheIntercept.ink ~211, `-    ->->`) is a tunnel RETURN: pop the tunnel stack
+    /// and resume at the call site so flow continues to `harris_demands_component`.
+    /// The fix is in `WeaveEmitter.inlineBodyStatements` (gather/choice outcome
+    /// lowering): a bare `->->` outcome now lowers to `.tunnelReturn` (runtime
+    /// `->->`), matching the main-statement path. Previously the arrow-split treated
+    /// `->->` as a divert whose target was itself `->`, yielding an empty
+    /// `tunnelDivert("")` that restarted the story at its top — hence native played
+    /// `start.g-0`'s "They are keeping me waiting." instead of returning to
+    /// `harris_demands_component`'s "So. Do you have it?".
+    /// The NEXT blocker is at index 29, inside `admitted_to_something` (ink ~380+):
+    /// native plays the `harris_asks_for_theory` "There's nothing to explain…" branch
+    /// where the oracle plays `admitted_to_something`'s "I've done things," I begin…
+    /// (NATIVE[29] = "There's nothing to explain," I reply stiffly… vs
+    /// ORACLE[29] = "I've done things," I begin…) — next step.
+    private static let floor = 29
 
     @Test
     func `native TheIntercept plays past the opts gather, matching the oracle prefix`() throws {

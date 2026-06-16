@@ -560,6 +560,18 @@ private enum WeaveParser {
     /// rather than echoing the arrow as literal text. An empty body yields none.
     private static func inlineBodyStatements(_ body: String, at position: SourcePosition) -> [InkStatement] {
         guard body.isEmpty == false else { return [] }
+        // A bare `->->` outcome is a TUNNEL RETURN (the `missing_reel` gather
+        // loose-end at TheIntercept.ink ~211), not a divert: it pops the tunnel
+        // stack and resumes at the call site (`-> missing_reel -> harris_…`), so on
+        // return flow continues to `harris_demands_component`. It must lower to
+        // `.tunnelReturn` (runtime `->->`), matching the main-statement path. Without
+        // this guard the arrow-split below treated `->->` as a divert whose target
+        // was itself `->`, yielding an empty `tunnelDivert("")` that restarted the
+        // story at its top. Checked before the arrow-split so the empty-target path
+        // is never reached.
+        if body.trimmingCharacters(in: .whitespaces) == "->->" {
+            return [InkStatement(kind: .tunnelReturn, position: position)]
+        }
         // A non-divert outcome is parsed by the shared outcome recogniser so it
         // behaves like the body line it stands in for: a brace-bearing outcome
         // (variable-text `{|…|}` / inline-conditional `{c: …}`, #3b layer 1) lowers
