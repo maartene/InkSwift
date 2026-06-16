@@ -305,7 +305,7 @@ public enum InkParser {
             return
         }
         if trimmed.hasPrefix(divertMarker) {
-            statements.append(InkStatement(kind: divertKind(of: trimmed), position: position))
+            statements.append(contentsOf: divertStatements(of: trimmed, at: position))
             return
         }
         if let kind = weaveKind(of: trimmed) {
@@ -602,6 +602,39 @@ public enum InkParser {
             return .tunnelDivert(tunnelTarget)
         }
         return .divert(target)
+    }
+
+    /// Lower a leading-`->` divert line into one OR MORE statements, recognising a
+    /// TUNNEL CHAIN `-> A -> B [-> C …]`: each non-final hop tunnel-calls its knot
+    /// (`tunnelDivert`, runtime `->t->`) and, on the knot's `->->` return, flow
+    /// falls through to the next hop; the final hop is a plain divert (`->`),
+    /// matching inklecate's adjacent `{"->t->":A},{"->":B}` emission. A bare single
+    /// divert / `-> END` / single tunnel (`-> k ->`) is unchanged (one statement).
+    static func divertStatements(
+        of trimmed: String,
+        at position: SourcePosition
+    ) -> [InkStatement] {
+        let body = String(trimmed.dropFirst(divertMarker.count))
+            .trimmingCharacters(in: .whitespaces)
+        let endsAsTunnel = body.hasSuffix(divertMarker)
+        let hops = body
+            .components(separatedBy: divertMarker)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { $0.isEmpty == false }
+        // A real chain has ≥2 named hops with a plain final divert. Anything else
+        // (single divert, `-> END`, single tunnel `-> k ->`) keeps the one-statement
+        // path so existing behaviour is untouched.
+        guard hops.count >= 2, endsAsTunnel == false else {
+            return [InkStatement(kind: divertKind(of: trimmed), position: position)]
+        }
+        var statements: [InkStatement] = []
+        for tunnelTarget in hops.dropLast() {
+            statements.append(InkStatement(kind: .tunnelDivert(tunnelTarget), position: position))
+        }
+        let finalTarget = hops[hops.count - 1]
+        let finalKind: InkStatementKind = finalTarget == endTarget ? .end : .divert(finalTarget)
+        statements.append(InkStatement(kind: finalKind, position: position))
+        return statements
     }
 
     /// Parse a weave-outcome string (a gather's `- outcome`) into a single

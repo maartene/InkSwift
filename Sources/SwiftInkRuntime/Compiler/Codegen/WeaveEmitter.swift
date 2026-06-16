@@ -603,6 +603,15 @@ private enum WeaveParser {
             }
         }
         let target = String(body[arrowRange.upperBound...]).trimmingCharacters(in: .whitespaces)
+        // A bare-divert outcome that is a TUNNEL CHAIN (`-> A -> B`) — e.g. the
+        // `missing_reel -> harris_demands_component` gather loose-end — lowers via the
+        // shared parser recogniser to `tunnelDivert(A)` + `divert(B)`, matching
+        // inklecate's adjacent `{"->t->":A},{"->":B}`. A single-hop divert keeps the
+        // existing one-statement path (and its inline auto-glue) below.
+        if prose.isEmpty, target.contains("->") {
+            statements.append(contentsOf: InkParser.divertStatements(of: body, at: position))
+            return statements
+        }
         // An inline divert (`prose -> target` on ONE source line) auto-glues the
         // prose to the divert target (ink default divert glue): emit explicit glue
         // so the re-entered target's first line joins on the same output line,

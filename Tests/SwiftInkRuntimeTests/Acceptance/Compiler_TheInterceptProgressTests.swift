@@ -75,12 +75,29 @@ struct Compiler_TheInterceptProgressTests {
     ///      `.readCount` key to the unique real container ending in that label within
     ///      the same knot, so `not disagree` reads the true count (1) and suppresses
     ///      `[Smile]` — matching the oracle's 2-choice menu.
-    /// The NEXT blocker is at index 19: native runs out after `g-6` ("We need that
-    /// component," he says). Oracle continues into the `missing_reel` knot via the
-    /// `{not missing_reel: -> missing_reel -> harris_demands_component}` block + the
-    /// trailing `-> missing_reel -> harris_demands_component` tunnel chain (ink
-    /// ~181-195) — native does not thread that tunnel-divert chain yet — next step.
-    private static let floor = 19
+    /// Step 01-07 threads the TUNNEL CHAIN `-> missing_reel -> harris_demands_component`
+    /// (TheIntercept.ink line 182 inside the `{not missing_reel:}` block conditional,
+    /// and line 195 at the gather loose end), advancing native 19 → 22 oracle-matching
+    /// lines. A chain `-> A -> B` means: tunnel-call A; on the knot's `->->` return,
+    /// continue to B — inklecate lowers it to adjacent `{"->t->":A},{"->":B}`. Two
+    /// coordinated fixes, both in `Compiler/`:
+    ///   1. PARSER CHAIN SPLIT — `InkParser.divertStatements` recognises a leading-`->`
+    ///      line carrying ≥2 named hops (`-> A -> B`) and emits `tunnelDivert(A)` +
+    ///      `divert(B)`, rather than a single broken `divert("A -> B")`. The standalone
+    ///      statement path (and, via `appendStatements`, the block-conditional branch
+    ///      body at line 182) now thread the chain. A bare divert / `-> END` / single
+    ///      tunnel `-> k ->` is untouched (one statement).
+    ///   2. GATHER-OUTCOME CHAIN — `WeaveEmitter.inlineBodyStatements` routes a
+    ///      bare-divert gather outcome whose target itself contains `->` (the line-195
+    ///      `-> missing_reel -> harris_demands_component` loose end) through the same
+    ///      `divertStatements` recogniser, so the gather's loose-end chain lowers
+    ///      identically.
+    /// The NEXT blocker is at index 22: after `missing_reel` returns and flow continues
+    /// to `harris_demands_component` (ink ~196+, a larger knot), native plays one wrong
+    /// line and stops — NATIVE[22] = "They are keeping me waiting." (a restart to story
+    /// start) vs ORACLE[22] = "So. Do you have it?" Harris is wasting no time… — the
+    /// `harris_demands_component` knot body is not threaded yet — next step.
+    private static let floor = 22
 
     @Test
     func `native TheIntercept plays past the opts gather, matching the oracle prefix`() throws {
