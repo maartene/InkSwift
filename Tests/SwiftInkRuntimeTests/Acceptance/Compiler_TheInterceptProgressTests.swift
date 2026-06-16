@@ -219,14 +219,10 @@ struct Compiler_TheInterceptProgressTests {
 
     @Test
     func `native TheIntercept plays past the opts gather, matching the oracle prefix`() throws {
-        let result = try CompilerOracle.compileAndPlay("TheIntercept", choiceScript: Self.script)
-        #expect(
-            result.native.count >= Self.floor,
-            "native played only \(result.native.count) lines; expected at least \(Self.floor)"
-        )
-        #expect(
-            Array(result.oracle.prefix(Self.floor)) == Array(result.native.prefix(Self.floor)),
-            "native diverged from the oracle within the first \(Self.floor) lines"
+        try OracleDiagnostics.expectNativeMatchesOraclePrefix(
+            story: "TheIntercept",
+            script: Self.script,
+            floor: Self.floor
         )
     }
 }
