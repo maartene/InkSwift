@@ -177,7 +177,15 @@ public enum InkParser {
         // A bare `{`-opener block has no subject: every arm carries its own guard,
         // so it is always a guarded (non-switch) block with no pre-arm content.
         let hasSubject = subjectText.isEmpty == false
-        let isSwitch = hasSubject && subjectIsSwitchValue(subjectText)
+        // A real switch opens DIRECTLY with `- guard:` arms (`{ x: - 1: … - 2: … }`):
+        // its first body line is an arm opener, no content precedes it. A guarded
+        // if/else carries content right after `{ subject:` as the implicit first arm
+        // (`{ not flag: …true… - else: …false… }`) — the subject is that arm's guard,
+        // NOT a switch value. Without this structural guard a guarded if/else whose
+        // subject lacked a comparison operator (e.g. `not knot.label`) was misread as
+        // a switch, dropping the implicit-first-arm content and its condition entirely.
+        let opensWithArm = bodyLines.first.map { isArmOpener($0.text) } ?? false
+        let isSwitch = hasSubject && opensWithArm && subjectIsSwitchValue(subjectText)
         // A switch compares the subject value against each arm's label; a guarded
         // block treats the subject as the first arm's guard and any content before
         // the first explicit `- guard:` arm as that arm's body.

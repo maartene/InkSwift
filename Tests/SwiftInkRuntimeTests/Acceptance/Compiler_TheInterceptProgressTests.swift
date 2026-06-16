@@ -160,11 +160,31 @@ struct Compiler_TheInterceptProgressTests {
     ///      now resolves the nested choices into a named rejoin sub-container (`<key>-w`)
     ///      and lowers the body with its fall-through pointing AT that rejoin, so the
     ///      continuation diverts into the choice menu.
-    /// The NEXT blocker is at index 63 (post-`still_have` reveal, ink ~reveal_location_of_component):
-    /// native and oracle diverge on a downstream conditional content selection
-    /// (native emits the "double bluff" line; oracle emits "God help you if you're
-    /// lying") — a distinct choice-path / conditional-content defect for a later step.
-    private static let floor = 63
+    /// Step 01-12 resolves the GUARDED-IF/ELSE-MISREAD-AS-SWITCH defect at the
+    /// `harris_believes` stitch (`reveal_location_of_component`, TheIntercept.ink ~1604),
+    /// advancing native 63 → 73 oracle-matching lines. The block conditional
+    /// `{ not night_falls.hooper_didnt_give_himself_up : …God help you… - else: …double
+    /// bluff… }` is a GUARDED if/else: content ("God help you") follows `{ subject:`
+    /// directly as the implicit first arm, the subject IS that arm's guard. The fix is
+    /// in `Compiler/Parser/InkParser.swift`:
+    ///   - SWITCH-VS-GUARDED STRUCTURAL DISCRIMINATION — `switchOrGuardedBlock`
+    ///     classified any subject lacking a comparison operator as a switch value
+    ///     (`subjectIsSwitchValue` only scanned for `> < == != >= <=`). A boolean
+    ///     subject like `not knot.label` therefore became a (bogus) switch, so the
+    ///     pre-arm "God help you" content — emitted before `armStarted` — and the
+    ///     condition itself were DROPPED; native hardcoded an unconditional jump to
+    ///     the `- else:` branch ("double bluff"). A real switch opens DIRECTLY with
+    ///     `- guard:` arms (`{ x: - 1: … - 2: … }`) with no pre-arm content; a guarded
+    ///     if/else carries content right after `{ subject:`. The classifier now also
+    ///     requires the block's FIRST body line to be an arm opener (`opensWithArm`)
+    ///     before treating it as a switch — so the guarded if/else keeps its subject
+    ///     as the implicit first-arm guard, lowering `not night_falls.hooper_…` to the
+    ///     real `CNT?` read-count (0 in this playthrough → "God help you").
+    /// The NEXT blocker is at index 73 (TheIntercept.ink ~1661): native and oracle
+    /// diverge on the inline conditional `{ forceful > 2:…|A little vengeance, disguised
+    /// as doing something good.}` — native picks a different branch than the oracle (a
+    /// `forceful` operand evaluation defect) for a later step.
+    private static let floor = 73
 
     @Test
     func `native TheIntercept plays past the opts gather, matching the oracle prefix`() throws {
