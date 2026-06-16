@@ -97,13 +97,22 @@ public enum InkParser {
             subjectText = ""
         }
         var index = start + 1
+        var depth = 0
         while index < lines.count {
             let candidate = lines[index].trimmingCharacters(in: .whitespaces)
             if candidate == "}" {
-                index += 1
-                break
+                if depth == 0 {
+                    index += 1
+                    break
+                }
+                bodyLines.append((candidate, index + 1))
+                depth -= 1
+            } else {
+                if candidate.hasPrefix("{") && !candidate.contains("}") {
+                    depth += 1
+                }
+                bodyLines.append((candidate, index + 1))
             }
-            bodyLines.append((candidate, index + 1))
             index += 1
         }
         let statement = try buildConditionalBlock(subjectText: subjectText, bodyLines: bodyLines, position: position)
@@ -154,7 +163,7 @@ public enum InkParser {
         bodyLines: [(text: String, number: Int)],
         position: SourcePosition
     ) throws -> InkStatement {
-        let opensArm = bodyLines.contains { isArmOpener($0.text) }
+        let opensArm = hasArmOpenerAtDepth0(bodyLines)
         if opensArm {
             return try switchOrGuardedBlock(subjectText: subjectText, bodyLines: bodyLines, position: position)
         }
@@ -199,7 +208,9 @@ public enum InkParser {
         var pendingBody: [InkStatement] = []
         var armStarted = isSwitch == false && hasSubject
 
-        for line in bodyLines {
+        var lineIndex = 0
+        while lineIndex < bodyLines.count {
+            let line = bodyLines[lineIndex]
             if let guardText = armGuard(of: line.text) {
                 if armStarted {
                     branches.append(ConditionalBranch(match: pendingMatch, body: pendingBody))
@@ -211,9 +222,10 @@ public enum InkParser {
                 if inline.isEmpty == false {
                     try appendStatements(from: inline, lineNumber: line.number, into: &pendingBody)
                 }
+                lineIndex += 1
                 continue
             }
-            try appendStatements(from: line.text, lineNumber: line.number, into: &pendingBody)
+            lineIndex = try appendBodyUnit(bodyLines: bodyLines, from: lineIndex, into: &pendingBody)
         }
         if armStarted {
             branches.append(ConditionalBranch(match: pendingMatch, body: pendingBody))
@@ -233,8 +245,9 @@ public enum InkParser {
     ) throws -> InkStatement {
         let condition = try InkExpressionParser.parse(subjectText)
         var trueBody: [InkStatement] = []
-        for line in bodyLines {
-            try appendStatements(from: line.text, lineNumber: line.number, into: &trueBody)
+        var lineIndex = 0
+        while lineIndex < bodyLines.count {
+            lineIndex = try appendBodyUnit(bodyLines: bodyLines, from: lineIndex, into: &trueBody)
         }
         let branches = [ConditionalBranch(match: condition, body: trueBody)]
         return InkStatement(
@@ -253,6 +266,80 @@ public enum InkParser {
     /// True when a body line opens an arm: `- <guard>:`.
     private static func isArmOpener(_ text: String) -> Bool {
         armGuard(of: text) != nil
+    }
+
+    /// True when any body line at brace-nesting depth 0 is an arm opener.
+    /// Lines inside nested `{…}` blocks are at depth > 0 and are excluded so
+    /// inner block arms are not mistaken for arms of the enclosing block.
+    private static func hasArmOpenerAtDepth0(_ bodyLines: [(text: String, number: Int)]) -> Bool {
+        var depth = 0
+        for line in bodyLines {
+            let trimmed = line.text
+            if trimmed.hasPrefix("{") && !trimmed.contains("}") {
+                depth += 1
+            } else if trimmed == "}" {
+                if depth > 0 { depth -= 1 }
+            } else if depth == 0 && isArmOpener(trimmed) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// Process one logical unit from `bodyLines` at `index` into `statements`
+    /// and return the next index. A bare `{` opener (starts with `{`, no `}` on
+    /// the same line) is a nested multi-line block — it is recursively assembled
+    /// via `buildConditionalBlock`. Any other line is dispatched to
+    /// `appendStatements` as usual.
+    private static func appendBodyUnit(
+        bodyLines: [(text: String, number: Int)],
+        from index: Int,
+        into statements: inout [InkStatement]
+    ) throws -> Int {
+        let line = bodyLines[index]
+        let trimmed = line.text
+        guard trimmed.hasPrefix("{"), !trimmed.contains("}") else {
+            try appendStatements(from: line.text, lineNumber: line.number, into: &statements)
+            return index + 1
+        }
+        let position = SourcePosition(line: line.number, column: 1)
+        let afterBrace = String(trimmed.dropFirst())
+        var nestedBodyLines: [(text: String, number: Int)] = []
+        let subjectText: String
+        if let colonIndex = topLevelColonIndex(in: afterBrace) {
+            subjectText = String(afterBrace[..<colonIndex]).trimmingCharacters(in: .whitespaces)
+            let firstInline = String(afterBrace[afterBrace.index(after: colonIndex)...])
+                .trimmingCharacters(in: .whitespaces)
+            if !firstInline.isEmpty {
+                nestedBodyLines.append((firstInline, line.number))
+            }
+        } else {
+            subjectText = ""
+        }
+        var depth = 1
+        var nextIndex = index + 1
+        while nextIndex < bodyLines.count {
+            let nested = bodyLines[nextIndex]
+            let nestedTrimmed = nested.text
+            if nestedTrimmed == "}" {
+                depth -= 1
+                if depth == 0 {
+                    nextIndex += 1
+                    break
+                }
+                nestedBodyLines.append((nestedTrimmed, nested.number))
+            } else {
+                if nestedTrimmed.hasPrefix("{") && !nestedTrimmed.contains("}") {
+                    depth += 1
+                }
+                nestedBodyLines.append((nestedTrimmed, nested.number))
+            }
+            nextIndex += 1
+        }
+        let statement = try buildConditionalBlock(
+            subjectText: subjectText, bodyLines: nestedBodyLines, position: position)
+        statements.append(statement)
+        return nextIndex
     }
 
     /// The guard text of an arm-opening line `- <guard>: …`, or `nil` when the
