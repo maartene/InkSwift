@@ -855,6 +855,9 @@ enum RuntimeObjectEmitter {
                     continuation: rest, keyPrefix: keyPrefix,
                     fallThrough: fallThrough, named: &named,
                     lowerBranch: branchLowerer(context: context),
+                    lowerContinuation: inlineConditionalContinuationLowerer(
+                        context: context, enclosingKeyPrefix: keyPrefix, fallThrough: fallThrough
+                    ),
                     lowerExpression: { lowerExpression($0, context: context) }
                 ))
                 return children
@@ -975,7 +978,9 @@ enum RuntimeObjectEmitter {
                               statements, context: context, keyPrefix: bodyKeyPrefix,
                               fallThrough: looseEnd, named: &weaveNamed
                           )
-                      }) else {
+                      },
+                      lowerCondition: { expression in lowerExpression(expression, context: context) }
+                  ) else {
                 // Address the chained segment's containers under `enclosingKeyPrefix`
                 // (not the continuation's own `prefix`): like the weave branch above,
                 // its dispatch/stage/choice containers promote up into the enclosing
@@ -1061,7 +1066,14 @@ enum RuntimeObjectEmitter {
                               statements, context: context, keyPrefix: bodyKeyPrefix,
                               fallThrough: looseEnd, named: &weaveNamed
                           )
-                      }) else {
+                      },
+                      // Thread the choice-guard lowerer so the rejoin weave's `{cond}`
+                      // guards emit their eval-stack nodes — a knot/gather-opening block
+                      // conditional whose rejoin is a guarded choice menu (e.g.
+                      // `admitted_to_something`'s `{not drugged}[…]` / `{drugged}[…]`
+                      // choices) otherwise lowered every choice unguarded (all shown).
+                      lowerCondition: { expression in lowerExpression(expression, context: context) }
+                  ) else {
                 return lowerBody(
                     body, context: context, keyPrefix: prefix,
                     fallThrough: fallThrough, named: &collected

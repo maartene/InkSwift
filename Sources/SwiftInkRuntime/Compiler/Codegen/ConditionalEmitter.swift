@@ -56,6 +56,7 @@ enum ConditionalEmitter {
         fallThrough: WeaveEmitter.FallThrough = .end,
         named: inout [String: ContainerNode],
         lowerBranch: BranchLowerer,
+        lowerContinuation: BranchLowerer? = nil,
         lowerExpression: ExpressionLowerer
     ) -> [NodeKind] {
         let ordinal = nextOrdinal(in: named)
@@ -86,7 +87,8 @@ enum ConditionalEmitter {
         dispatch.append(unconditionalDivert(to: elseKey.map { path(keyPrefix, $0) } ?? endPath))
         registerContinuation(
             continuation, endKey: endKey, keyPrefix: keyPrefix,
-            fallThrough: fallThrough, named: &named, lowerBranch: lowerBranch
+            fallThrough: fallThrough, named: &named,
+            lowerBranch: lowerBranch, lowerContinuation: lowerContinuation
         )
         return dispatch
     }
@@ -225,17 +227,35 @@ enum ConditionalEmitter {
         keyPrefix: [String],
         fallThrough: WeaveEmitter.FallThrough,
         named: inout [String: ContainerNode],
-        lowerBranch: BranchLowerer
+        lowerBranch: BranchLowerer,
+        lowerContinuation: BranchLowerer? = nil
     ) {
+        // When a `lowerContinuation` is supplied (the weave-routing path, symmetric
+        // with `lowerInline`), a weave-bearing rejoin (trailing choices/gathers after
+        // a knot/gather-opening block conditional, e.g. `admitted_to_something`'s
+        // `{not drugged: … -else: …}` followed by the `[Explain]/[Don't explain]/…`
+        // menu) routes through the WeaveEmitter so the choices become real
+        // choicePoints whose `c-N`/`g-N` containers NEST under the `-end` rejoin
+        // (keyed by `keyPrefix + [endKey]`). Without it the choices flattened into
+        // the rejoin as literal prose and the menu was never presented — native fell
+        // straight through to the first body. A PLAIN rejoin (or absent lowerer)
+        // keeps the legacy flat path: lower with `lowerBranch` and promote any nested
+        // conditional containers up into the parent collector.
         var endNamed: [String: ContainerNode] = [:]
-        var children = lowerBranch(continuation, keyPrefix + [endKey], &endNamed)
-        for (innerKey, container) in endNamed {
-            named[innerKey] = container
+        var children: [NodeKind]
+        if let lowerContinuation {
+            children = lowerContinuation(continuation, keyPrefix + [endKey], &endNamed)
+        } else {
+            children = lowerBranch(continuation, keyPrefix + [endKey], &endNamed)
+            for (innerKey, container) in endNamed {
+                named[innerKey] = container
+            }
+            endNamed = [:]
         }
         if containsWeaveItem(continuation) == false, endsWithControlFlow(continuation) == false {
             children.append(contentsOf: fallThroughNodes(fallThrough))
         }
-        named[endKey] = ContainerNode(children: children, namedContent: [:], flags: 0, name: endKey)
+        named[endKey] = ContainerNode(children: children, namedContent: endNamed, flags: 0, name: endKey)
     }
 
     private static func inlineBranchContainer(_ text: String, key: String, endPath: [String]) -> ContainerNode {

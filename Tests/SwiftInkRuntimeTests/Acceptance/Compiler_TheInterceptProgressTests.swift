@@ -103,12 +103,36 @@ struct Compiler_TheInterceptProgressTests {
     /// `tunnelDivert("")` that restarted the story at its top — hence native played
     /// `start.g-0`'s "They are keeping me waiting." instead of returning to
     /// `harris_demands_component`'s "So. Do you have it?".
-    /// The NEXT blocker is at index 29, inside `admitted_to_something` (ink ~380+):
-    /// native plays the `harris_asks_for_theory` "There's nothing to explain…" branch
-    /// where the oracle plays `admitted_to_something`'s "I've done things," I begin…
-    /// (NATIVE[29] = "There's nothing to explain," I reply stiffly… vs
-    /// ORACLE[29] = "I've done things," I begin…) — next step.
-    private static let floor = 29
+    /// Step 01-09 resolves the BLOCK-CONDITIONAL-OPENED WEAVE, advancing native
+    /// 29 → 40 oracle-matching lines. The `admitted_to_something` knot (ink ~380)
+    /// OPENS with a multi-line block conditional (`{ not drugged: … - else: … }`),
+    /// then presents a guarded choice menu (`[Explain]` then nested `[Explain]` /
+    /// `{drugged}[Say nothing]` / `{not drugged}[Lie]`; outer `{not drugged}[Don't
+    /// explain]/[Lie]/[Evade]`, `{drugged}[Say nothing]`). The block conditional's
+    /// `cond{N}-end` rejoin flattened those trailing choices into literal prose —
+    /// the menu was never presented and native fell straight through to the first
+    /// body (`i_know_where`'s "There's nothing to explain…"). Two coordinated fixes,
+    /// both in `Compiler/`:
+    ///   1. BLOCK-REJOIN WEAVE ROUTING — `ConditionalEmitter.lower` /
+    ///      `registerContinuation` gained the `lowerContinuation` weave-routing path
+    ///      that `lowerInline` already had (step 01-04): a weave-bearing rejoin now
+    ///      routes through the WeaveEmitter so the trailing choices become real
+    ///      choicePoints whose `c-N`/`g-N` containers nest under the `-end` rejoin.
+    ///      `RuntimeObjectEmitter.lowerBody` threads its
+    ///      `inlineConditionalContinuationLowerer` into the block-conditional call.
+    ///   2. REJOIN CHOICE GUARDS — both continuation lowerers
+    ///      (`inlineConditionalContinuationLowerer`, `continuationLowerer`) now pass
+    ///      `lowerCondition` to `WeaveEmitter.lower`, so the rejoin weave's `{cond}`
+    ///      choice guards emit their eval-stack nodes. Without it every choice
+    ///      lowered unguarded (all shown), so native offered `{not drugged}` choices
+    ///      on the drugged path and picked the wrong nested branch.
+    /// The NEXT blocker is at index 40 (`harris_has_seen_it_before`, ink ~440+):
+    /// native splits a glue-joined line — NATIVE[40] = "Smart man," he replies.
+    /// "You wouldn't last. (then NATIVE[41] = "<> So why don't you tell me…")
+    /// where ORACLE[40] joins them: "…You wouldn't last. So why don't you tell me,
+    /// right now. Where is it?" — a `<>` leading-glue line-join defect for the
+    /// next step.
+    private static let floor = 40
 
     @Test
     func `native TheIntercept plays past the opts gather, matching the oracle prefix`() throws {
