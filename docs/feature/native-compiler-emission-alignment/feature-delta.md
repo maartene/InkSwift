@@ -312,3 +312,21 @@ User decision: pursue the e2e via **probe-driven real fixing** (DIAG_INTERCEPT2 
 **Status:** native plays 15 of 80 oracle lines along the script; 0 surviving unresolved dotted refs; full suite 334 green; all fixes inside `Compiler/` (no runtime change); DES integrity 3/3. Next blocker = oracle index 15 (post-`lift_up_cup` gather, ink ~line 148).
 
 **Trajectory note:** ~3–4 matched lines per increment; ~65 lines remain → on the order of a dozen-plus more increments to full equivalence. Each increment is a substantial dispatch. The method is sound and regression-free; the open question is appetite for the remaining climb vs. the documented subset-cap fallback.
+
+---
+
+## Wave: DELIVER / [REF] Probe-driven TheIntercept real-fixing — batch 2 (2026-06-16)
+
+| Step | Commit | Blocker cleared | matched floor |
+|---|---|---|---|
+| 01-04 | `e674fa5` | post-`lift_up_cup` gather: inline-conditional fall-through + bare-label read-count + weave-in-continuation | 15 → 16 |
+| 01-05 | `89e532c` | gather-opened block conditional `{ teacup: ~assign <>text }` + leading glue (parser-only) | 16 → 17 |
+| 01-06 | `5f4fc4f` | block-conditional fall-through into rejoin + read-count path reconciliation (`{not disagree}` deep path) | 17 → 19 |
+
+**Status:** native matches 19/80 oracle lines; 0 unresolved dotted refs; full suite 334 green; all fixes in `Compiler/` (no runtime change); DES integrity 6/6. Next blocker = oracle index 19: the `missing_reel`/`harris_demands_component` tunnel-divert chain (`-> missing_reel -> harris_demands_component`, ink ~181-195).
+
+**TRAJECTORY DATA (the convergence question):**
+- Batch 1 (increments 1-3): 4 → 15 = **+11 over 3** (~3.7 lines/increment) — the opening's big structural blockers (opts gather, deep labels, pushes_cup path).
+- Batch 2 (increments 4-6): 15 → 19 = **+4 over 3** (~1.3 lines/increment) — the interrogation scene (teacup/drugged/forceful), mechanically DENSE (assignments, block conditionals, deep read-counts, glue) — yield DECELERATED, not accelerated.
+
+**Read:** the fixes are all GENERAL (≈13 distinct compiler defects in scoping/keying/divert/conditional-rejoin/read-count-path — real parity hardening, not story patches), but per-increment line-yield has NOT accelerated; it dropped entering the dense middle scene. Whether it accelerates later (once tunnels + the dense-scene construct debt are paid, later linear scenes may come cheaply) or stays slow is still unproven. At 19/80 after 6 increments, the remaining road is plausibly 15-40+ more increments. Decision point for the maintainer: keep climbing, vs. take stock against the subset-cap.
