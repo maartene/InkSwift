@@ -134,6 +134,23 @@ enum WeaveEmitter {
     /// (a knot or knot.stitch). Each label's absolute path is `keyPrefix + label`,
     /// and the lookup key is the DOTTED source name (`knot.label`, `knot.stitch.label`)
     /// the reference uses — so `{not start.delay}` resolves to `[start, delay]`.
+    /// The BARE-named weave labels inside a body, each mapped to its absolute
+    /// compiled path. A bare read-count reference (`{lift_up_cup:…}`) inside the same
+    /// knot/stitch resolves a label by its bare name in local scope (inklecate's
+    /// local-scope resolution). The caller merges these GLOBALLY only for labels that
+    /// are unique story-wide — a bare name appearing in two knots stays dotted-only to
+    /// avoid cross-knot mis-resolution (step 01-04).
+    static func discoverBareLabelPaths(
+        _ statements: [InkStatement],
+        keyPrefix: [String]
+    ) -> [String: [String]] {
+        guard containsWeave(statements) else { return [:] }
+        let block = WeaveParser.parse(statements, atLevel: 1)
+        var localPaths: [String: [String]] = [:]
+        WeaveDiscovery.recordLabelPaths(block, keyPrefix: keyPrefix, into: &localPaths)
+        return localPaths
+    }
+
     static func discoverLabelPaths(
         _ statements: [InkStatement],
         keyPrefix: [String]

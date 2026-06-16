@@ -99,8 +99,10 @@ enum ConditionalEmitter {
         falseText: String,
         continuation: [InkStatement],
         keyPrefix: [String],
+        fallThrough: WeaveEmitter.FallThrough = .end,
         named: inout [String: ContainerNode],
         lowerBranch: BranchLowerer,
+        lowerContinuation: BranchLowerer? = nil,
         lowerExpression: ExpressionLowerer
     ) -> [NodeKind] {
         let ordinal = nextOrdinal(in: named)
@@ -118,10 +120,64 @@ enum ConditionalEmitter {
         dispatch.append(conditionalDivert(to: path(keyPrefix, trueKey)))
         dispatch.append(unconditionalDivert(to: path(keyPrefix, falseKey)))
 
+        // The rejoin `-end` container is where post-conditional flow actually lands
+        // (both arms divert here), so the continuation's trailing choices and its
+        // loose-end fall-through must be threaded HERE — not after the unreachable
+        // dispatch nodes in the enclosing body. When a `lowerContinuation` is
+        // supplied it routes a weave-bearing continuation through the WeaveEmitter
+        // (so trailing choices become real choicePoints) and threads the enclosing
+        // fall-through itself; otherwise the plain branch lowerer applies and the
+        // fall-through divert is appended when the continuation does not divert away.
+        // Step 01-04: the post-lift_up_cup gather's `{forceful<=0:,sternly}` line is
+        // followed by `[Agree]/[Disagree]/…` choices — without weave routing they
+        // flattened into the rejoin as literal prose; without the fall-through the
+        // simpler `{took:lift|take}` body dead-ended before its gather.
         var endNamed: [String: ContainerNode] = [:]
-        let endChildren = lowerBranch(continuation, keyPrefix + [endKey], &endNamed)
+        var endChildren: [NodeKind]
+        if let lowerContinuation {
+            endChildren = lowerContinuation(continuation, keyPrefix + [endKey], &endNamed)
+        } else {
+            endChildren = lowerBranch(continuation, keyPrefix + [endKey], &endNamed)
+        }
+        // A continuation that opens its own weave (trailing choices/gathers routed
+        // through the resolver) OR already diverts away threads its own loose end; a
+        // PLAIN continuation (text + logic, e.g. the lift_up_cup body's `{took:…}`
+        // line tail) must append the enclosing fall-through here so flow rejoins the
+        // gather instead of dead-ending in the rejoin container.
+        if containsWeaveItem(continuation) == false, endsWithControlFlow(continuation) == false {
+            endChildren.append(contentsOf: fallThroughNodes(fallThrough))
+        }
+        // The rejoin's own diverts (`…cond{N}-end.cond{M}-*`, `…cond{N}-end.c-K`)
+        // resolve under the `-end` container, so its nested containers NEST here —
+        // they are NOT promoted to the enclosing scope (which would resolve their
+        // paths one level too shallow and cross-wire sibling conditionals).
         named[endKey] = ContainerNode(children: endChildren, namedContent: endNamed, flags: 0, name: endKey)
         return dispatch
+    }
+
+    /// True when the continuation contains a weave item (choice/gather) at its top
+    /// level — such a continuation routes through the resolver, which threads the
+    /// loose-end fall-through into each item, so no trailing fall-through is appended.
+    private static func containsWeaveItem(_ statements: [InkStatement]) -> Bool {
+        statements.contains { statement in
+            switch statement.kind {
+            case .choice, .gather:
+                return true
+            default:
+                return false
+            }
+        }
+    }
+
+    /// The loose-end fall-through nodes for the rejoin continuation: a divert to the
+    /// enclosing gather, or `end` for a top-level loose end.
+    private static func fallThroughNodes(_ fallThrough: WeaveEmitter.FallThrough) -> [NodeKind] {
+        switch fallThrough {
+        case .gather(let target):
+            return [unconditionalDivert(to: target)]
+        case .end:
+            return [.controlCommand("end")]
+        }
     }
 
     // MARK: - Arm registration

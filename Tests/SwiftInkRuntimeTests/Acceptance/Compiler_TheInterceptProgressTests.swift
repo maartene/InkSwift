@@ -24,28 +24,29 @@ struct Compiler_TheInterceptProgressTests {
     private static let script = [0, 2, 1, 0, 0, 1, 2, 0, 1, 0]
 
     /// The achieved oracle-matching line floor for this step. Native must match the
-    /// oracle for at least the first `floor` lines. Step 01-03 resolves the
-    /// `-> pushes_cup` divert from the `[Deny]` choice body (TheIntercept.ink ~121).
-    /// Four root causes, all in `Compiler/`:
-    ///   1. PARSE — a deeper gather (`- - (pushes_cup)`) inside a level-1 `*` choice
-    ///      now opens a NESTED weave inside that choice body (was swallowed as raw
-    ///      body text, so `pushes_cup` was never emitted as a container).
-    ///   2. KEYING — sibling choice/gather bodies' anonymous `cond{N}`/`seq{N}`
-    ///      containers shared one ordinal counter per body and collided when promoted
-    ///      to the enclosing scope; the `[Deny]` body's `{cooperate:…}` continuation
-    ///      (holding `-> pushes_cup`) was clobbered. The ordinal counter now spans
-    ///      sibling bodies (seeded from the shared collector), so each is unique.
-    ///   3. DIVERT — a bare weave-label divert (`-> pushes_cup`) now qualifies to the
-    ///      label's absolute physical path via the knot-namespace `weaveLabelPaths`
-    ///      key, mirroring inklecate's by-name weave-point resolution.
-    ///   4. PARSE — a plain prose line with a MID-line divert (`Harris looks
-    ///      disapproving. -> pushes_cup`) and a gather outcome ending in trailing glue
-    ///      (`… : <>`) now lower to text + glue + real divert instead of literal text.
-    /// Native advances 11 → 15 oracle-matching lines. The NEXT blocker is at index 15:
-    /// the oracle continues "Quite a difficult situation," he begins, sternly. …"
-    /// (the post-`lift_up_cup` gather `g-... "Quite a difficult situation"`, ink ~148)
-    /// where native runs out — next step.
-    private static let floor = 15
+    /// oracle for at least the first `floor` lines. Step 01-04 resolves the
+    /// post-`lift_up_cup` gather (TheIntercept.ink ~148), where native dead-ended
+    /// after the `lift_up_cup` choice body. Three root causes, all in `Compiler/`:
+    ///   1. FALL-THROUGH — an inline conditional `{took:lift|take}` MID-body (the
+    ///      `lift_up_cup` body) routed flow into its `cond{N}-end` rejoin container,
+    ///      but the body's loose-end fall-through divert was emitted (unreachable)
+    ///      AFTER the dispatch instead of inside the rejoin. The enclosing
+    ///      fall-through now threads into the rejoin so flow rejoins the gather.
+    ///   2. READ-COUNT — a bare choice-label read-count conditional
+    ///      (`{lift_up_cup:he|Harris}`) resolved as a plain variable (always false →
+    ///      "Harris"). A bare label that is UNIQUE story-wide is now registered in the
+    ///      read-count table so it lowers to `CNT?` of the label's container, matching
+    ///      inklecate's local-scope by-name resolution → "he".
+    ///   3. WEAVE-IN-CONTINUATION — choices trailing an inline-conditional line
+    ///      (`… begins{forceful<=0:,sternly}.` then `[Agree]/[Disagree]/…`) flattened
+    ///      into the rejoin as literal prose. The rejoin now routes a weave-bearing
+    ///      continuation through the WeaveEmitter (real choicePoints), nesting its
+    ///      containers under the rejoin's own scope to avoid sibling collisions.
+    /// Native advances 15 → 16 oracle-matching lines. The NEXT blocker is at index 16:
+    /// native splits the gather line "…I reply, sipping at my tea…" and emits a literal
+    /// "}" — the multi-line block conditional `{ teacup: ~drugged=true <>, sipping… }`
+    /// with an embedded assignment + glue (ink ~159) is not yet lowered — next step.
+    private static let floor = 16
 
     @Test
     func `native TheIntercept plays past the opts gather, matching the oracle prefix`() throws {

@@ -44,6 +44,13 @@ enum RuntimeObjectEmitter {
         for knot in knots {
             mergeWeaveLabelPaths(of: knot, into: &weaveLabelPaths)
         }
+        // Bare-name local resolution (step 01-04): a read-count subject spelled by
+        // its BARE label (`{lift_up_cup:he|Harris}` referencing the `(lift_up_cup)`
+        // choice in the same stitch) resolves in inklecate's local scope. Register
+        // each bare label that is UNIQUE story-wide so the bare reference resolves;
+        // duplicated bare labels (e.g. `opts`/`yes` reused across knots) stay
+        // dotted-only — registering them would mis-resolve to the last knot's path.
+        mergeUniqueBareLabels(rootBody: rootBody, knots: knots, into: &weaveLabelPaths)
         // Knot/stitch read-count addressing (ADR-011 EXTEND #2): record every
         // knot's and stitch's already-built namedContent path so a dotted
         // read-count subject (`knot.stitch`) resolves to its container path,
@@ -217,6 +224,32 @@ enum RuntimeObjectEmitter {
             for (key, path) in WeaveEmitter.discoverLabelPaths(stitch.body, keyPrefix: prefix) {
                 table[key] = path
             }
+        }
+    }
+
+    /// Register each BARE weave label that is unique across the whole story into the
+    /// read-count table, so a bare-named read-count subject resolves in local scope.
+    /// A bare name occurring in two or more bodies is left dotted-only (ambiguous).
+    private static func mergeUniqueBareLabels(
+        rootBody: [InkStatement],
+        knots: [KnotGroup],
+        into table: inout [String: [String]]
+    ) {
+        var occurrences: [String: [[String]]] = [:]
+        func collect(_ body: [InkStatement], keyPrefix: [String]) {
+            for (label, path) in WeaveEmitter.discoverBareLabelPaths(body, keyPrefix: keyPrefix) {
+                occurrences[label, default: []].append(path)
+            }
+        }
+        collect(rootBody, keyPrefix: [])
+        for knot in knots {
+            collect(knot.body, keyPrefix: [knot.name])
+            for stitch in knot.stitches {
+                collect(stitch.body, keyPrefix: [knot.name, stitch.name])
+            }
+        }
+        for (label, paths) in occurrences where paths.count == 1 {
+            if table[label] == nil { table[label] = paths[0] }
         }
     }
 
@@ -731,7 +764,7 @@ enum RuntimeObjectEmitter {
                let inlineIndex = segments.firstIndex(where: isConditionalSegment) {
                 children.append(contentsOf: lowerInlineConditionalLine(
                     segments, conditionalIndex: inlineIndex, restOfBody: rest,
-                    context: context, keyPrefix: keyPrefix, named: &named
+                    context: context, keyPrefix: keyPrefix, fallThrough: fallThrough, named: &named
                 ))
                 return children
             }
@@ -871,6 +904,7 @@ enum RuntimeObjectEmitter {
         restOfBody: [InkStatement],
         context: LoweringContext,
         keyPrefix: [String],
+        fallThrough: WeaveEmitter.FallThrough = .end,
         named: inout [String: ContainerNode]
     ) -> [NodeKind] {
         guard case .conditional(let condition, let ifTrue, let ifFalse) = segments[conditionalIndex] else {
@@ -884,11 +918,61 @@ enum RuntimeObjectEmitter {
 
         children.append(contentsOf: ConditionalEmitter.lowerInline(
             condition: condition, trueText: ifTrue, falseText: ifFalse,
-            continuation: continuation, keyPrefix: keyPrefix, named: &named,
+            continuation: continuation, keyPrefix: keyPrefix,
+            fallThrough: fallThrough, named: &named,
             lowerBranch: branchLowerer(context: context),
+            lowerContinuation: inlineConditionalContinuationLowerer(
+                context: context, enclosingKeyPrefix: keyPrefix, fallThrough: fallThrough
+            ),
             lowerExpression: { lowerExpression($0, context: context) }
         ))
         return children
+    }
+
+    /// A continuation lowerer for the inline-conditional rejoin `-end` container.
+    /// When the rejoin opens a weave (trailing choices/gathers after the line, e.g.
+    /// the post-lift_up_cup gather's `[Agree]/[Disagree]/…`), route it through the
+    /// WeaveEmitter so they become real choicePoints whose loose ends thread the
+    /// enclosing fall-through; the resolver promotes the `c-N`/`g-N` containers into
+    /// the ENCLOSING scope (keyed by `enclosingKeyPrefix`). A NON-weave rejoin
+    /// (plain text + logic, or a nested inline conditional like `{forceful<=0:…}`)
+    /// lowers under the rejoin's OWN `prefix` so its nested containers nest under
+    /// `…cond{N}-end`, not the enclosing scope (which would collide with sibling
+    /// conditionals — step 01-04 cross-wiring regression).
+    private static func inlineConditionalContinuationLowerer(
+        context: LoweringContext,
+        enclosingKeyPrefix: [String],
+        fallThrough: WeaveEmitter.FallThrough
+    ) -> (_ body: [InkStatement], _ prefix: [String], _ named: inout [String: ContainerNode]) -> [NodeKind] {
+        return { body, prefix, collected in
+            // The rejoin's own `prefix` (`…cond{N}-end`) is the scope BOTH the weave
+            // c-N/g-N containers and any nested inline conditional nest under, so
+            // choicePoint targets and rejoin diverts resolve self-consistently and
+            // never collide with sibling conditionals in the enclosing scope.
+            guard leadsWithWeave(body),
+                  let weave = try? WeaveEmitter.lower(
+                      body, keyPrefix: prefix, fallThrough: fallThrough,
+                      lowerStatement: { statements, bodyKeyPrefix in
+                          var weaveNamed: [String: ContainerNode] = [:]
+                          return lowerBody(statements, context: context, keyPrefix: bodyKeyPrefix, named: &weaveNamed)
+                      },
+                      lowerStatementWithFallThrough: { statements, looseEnd, bodyKeyPrefix in
+                          var weaveNamed: [String: ContainerNode] = [:]
+                          return lowerBody(
+                              statements, context: context, keyPrefix: bodyKeyPrefix,
+                              fallThrough: looseEnd, named: &weaveNamed
+                          )
+                      }) else {
+                return lowerBody(
+                    body, context: context, keyPrefix: prefix,
+                    fallThrough: fallThrough, named: &collected
+                )
+            }
+            for (key, container) in weave.named {
+                collected[key] = container
+            }
+            return weave.children
+        }
     }
 
     /// Build the continuation statements for an inline conditional: the line's
