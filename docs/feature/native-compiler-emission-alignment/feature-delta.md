@@ -330,3 +330,19 @@ User decision: pursue the e2e via **probe-driven real fixing** (DIAG_INTERCEPT2 
 - Batch 2 (increments 4-6): 15 → 19 = **+4 over 3** (~1.3 lines/increment) — the interrogation scene (teacup/drugged/forceful), mechanically DENSE (assignments, block conditionals, deep read-counts, glue) — yield DECELERATED, not accelerated.
 
 **Read:** the fixes are all GENERAL (≈13 distinct compiler defects in scoping/keying/divert/conditional-rejoin/read-count-path — real parity hardening, not story patches), but per-increment line-yield has NOT accelerated; it dropped entering the dense middle scene. Whether it accelerates later (once tunnels + the dense-scene construct debt are paid, later linear scenes may come cheaply) or stays slow is still unproven. At 19/80 after 6 increments, the remaining road is plausibly 15-40+ more increments. Decision point for the maintainer: keep climbing, vs. take stock against the subset-cap.
+
+---
+
+## Wave: DELIVER / [REF] Probe-driven TheIntercept real-fixing — batch 3 (acceleration test, 2026-06-16)
+
+User authorized one batch as an acceleration test (does per-increment yield rise once we clear the dense interrogation scene?). Answer: **YES, decisively.**
+
+| Step | Commit | Blocker cleared | matched floor | delta |
+|---|---|---|---|---|
+| 01-07 | `58e908b` | tunnel chain `-> A -> B` (parser split into tunnelDivert(A)+divert(B)) | 19 → 22 | +3 |
+| 01-08 | `ae4eb6b` | bare `->->` tunnel-return at a gather loose-end (was empty tunnelDivert → story restart) | 22 → 29 | +7 |
+| 01-09 | `72706bc` | block-conditional-opened guarded choice menu (rejoin weave-routing + rejoin choice guards) | 29 → 40 | +11 |
+
+**Trajectory across all 3 batches:** batch 1 +3.7/inc, batch 2 +1.3/inc (dense interrogation scene), batch 3 **+3 → +7 → +11 (accelerating)**. Native now matches **40 / 80** oracle lines (plays 60); 0 unresolved dotted refs; full suite 334 green; all fixes in `Compiler/` (no runtime change); DES integrity 9/9.
+
+**Verdict on convergence:** the dense interrogation scene was the construct-debt-heavy core; once tunnels + block-conditional-rejoin weaving landed, large linear sections opened in single increments (+11 last step). This refutes the "infinite whack-a-mole" worry — yield rises as the distinct-construct debt is paid. Remaining: 40 → 80 (next blocker: leading-glue line-join in harris_has_seen_it_before, ~ink 440). At the recovered rate, full equivalence is plausibly ~3-6 more increments, not dozens.
