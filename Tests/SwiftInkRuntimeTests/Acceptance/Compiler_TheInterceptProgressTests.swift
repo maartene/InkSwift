@@ -180,11 +180,27 @@ struct Compiler_TheInterceptProgressTests {
     ///     before treating it as a switch — so the guarded if/else keeps its subject
     ///     as the implicit first-arm guard, lowering `not night_falls.hooper_…` to the
     ///     real `CNT?` read-count (0 in this playthrough → "God help you").
-    /// The NEXT blocker is at index 73 (TheIntercept.ink ~1661): native and oracle
-    /// diverge on the inline conditional `{ forceful > 2:…|A little vengeance, disguised
-    /// as doing something good.}` — native picks a different branch than the oracle (a
-    /// `forceful` operand evaluation defect) for a later step.
-    private static let floor = 73
+    /// Step 01-13 resolves the DROPPED-INLINE-CONDITIONAL-ARMS-ON-REJOIN-WEAVE defect
+    /// at the `{ forceful > 2:…|…}` inline conditional (TheIntercept.ink ~1661, inside
+    /// the `[Yes]` choice body of a rejoin weave), advancing native 73 → 76 oracle-
+    /// matching lines. A gather/choice body lowered under its OWN per-container key
+    /// prefix (the rejoin-weave path) opens inline-conditional sub-containers
+    /// (`cond{N}-b*`/`-end`) addressed from that body's prefix. The body lowerer
+    /// returned only the node stream and DROPPED those named containers, so the
+    /// dispatch's branch diverts (`…c-0.cond0-b1`) pointed at nothing and the
+    /// `forceful` arms vanished. The fix is in `Compiler/Codegen/`:
+    ///   - BODY-LOWERING NAMED-CONTAINER PROPAGATION — `WeaveEmitter` gains a
+    ///     `BodyLowering {children, named}` result so a body lowered under its own
+    ///     prefix returns the sub-containers it opened; `WeaveResolver` nests them in
+    ///     the outcome/gather container it builds (via `containerSpliced`'s `bodyNamed`),
+    ///     and `RuntimeObjectEmitter`'s rejoin-weave lowerers return `named` rather than
+    ///     discarding it. Bodies lowered under the enclosing (flat) prefix still promote
+    ///     their containers flat — only the per-container-prefix path nests.
+    /// The NEXT blocker is at index 76 (TheIntercept.ink, the `decent men have affairs.
+    /// You scientists.` line): native emits `affairs.You` where the oracle has
+    /// `affairs. You` — a missing inter-fragment space (a glue / sentence-join defect)
+    /// for a later step.
+    private static let floor = 76
 
     @Test
     func `native TheIntercept plays past the opts gather, matching the oracle prefix`() throws {

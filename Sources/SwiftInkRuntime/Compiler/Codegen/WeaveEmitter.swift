@@ -43,6 +43,23 @@ import Foundation
 
 enum WeaveEmitter {
 
+    /// The result of lowering a gather/choice body: its node stream plus any NAMED
+    /// containers the body itself opened (inline-conditional `cond{N}-b*`/`-end`
+    /// arms, variable-text `seq{N}-*` stages). When the body is lowered under its
+    /// OWN per-container key prefix (the rejoin-weave path), those containers must
+    /// nest inside the container being built — they cannot be promoted flat to the
+    /// enclosing scope (their diverts are addressed from the body's prefix). The
+    /// resolver attaches `named` to the outcome/gather container it constructs.
+    struct BodyLowering {
+        let children: [NodeKind]
+        let named: [String: ContainerNode]
+
+        init(children: [NodeKind], named: [String: ContainerNode] = [:]) {
+            self.children = children
+            self.named = named
+        }
+    }
+
     /// Where a body's loose end falls when it does not divert away itself. Lives on
     /// `WeaveEmitter` (not nested in the private `WeaveResolver`) so a caller can
     /// thread an enclosing-scope loose-end target into `lower` (#3b layer 2): an
@@ -72,8 +89,8 @@ enum WeaveEmitter {
         _ statements: [InkStatement],
         keyPrefix: [String] = [],
         fallThrough: FallThrough = .end,
-        lowerStatement: @escaping ([InkStatement], [String]) -> [NodeKind],
-        lowerStatementWithFallThrough: (([InkStatement], FallThrough, [String]) -> [NodeKind])? = nil,
+        lowerStatement: @escaping ([InkStatement], [String]) -> BodyLowering,
+        lowerStatementWithFallThrough: (([InkStatement], FallThrough, [String]) -> BodyLowering)? = nil,
         lowerCondition: @escaping (InkExpression) -> [NodeKind] = { _ in [] }
     ) throws -> (children: [NodeKind], named: [String: ContainerNode]) {
         let resolved = try lowerWithLabelPaths(
@@ -99,8 +116,8 @@ enum WeaveEmitter {
         _ statements: [InkStatement],
         keyPrefix: [String] = [],
         fallThrough: FallThrough = .end,
-        lowerStatement: @escaping ([InkStatement], [String]) -> [NodeKind],
-        lowerStatementWithFallThrough: (([InkStatement], FallThrough, [String]) -> [NodeKind])? = nil,
+        lowerStatement: @escaping ([InkStatement], [String]) -> BodyLowering,
+        lowerStatementWithFallThrough: (([InkStatement], FallThrough, [String]) -> BodyLowering)? = nil,
         lowerCondition: @escaping (InkExpression) -> [NodeKind] = { _ in [] }
     ) throws -> (children: [NodeKind], named: [String: ContainerNode], labelPaths: [String: [String]]) {
         let block = WeaveParser.parse(statements, atLevel: 1)
@@ -714,14 +731,14 @@ private final class WeaveResolver {
     /// knot/stitch prefix — without the per-container prefix, two sibling choice
     /// bodies' conditionals collide on `cond0-*` and clobber each other's
     /// continuation (the `-> pushes_cup` continuation loss, step 01-03).
-    let lowerStatement: ([InkStatement], [String]) -> [NodeKind]
+    let lowerStatement: ([InkStatement], [String]) -> WeaveEmitter.BodyLowering
     /// Lowers a gather/choice body while threading the enclosing loose-end target,
     /// so a body that LEADS with a variable-text / inline-conditional line falls
     /// through to the enclosing gather (not the hardcoded `.end`) once its trailing
     /// choices thread off that line (#3b layer 1+2). `nil` falls back to the plain
     /// `lowerStatement` (callers that do not thread a loose-end into bodies). Takes
     /// the container's own key prefix (see `lowerStatement`).
-    let lowerStatementWithFallThrough: (([InkStatement], FallThrough, [String]) -> [NodeKind])?
+    let lowerStatementWithFallThrough: (([InkStatement], FallThrough, [String]) -> WeaveEmitter.BodyLowering)?
     /// Lowers a choice's `{guard}` expression to POSTFIX eval-stack nodes, reusing
     /// the `RuntimeObjectEmitter.lowerExpression` idiom (composes with 02-03's dotted
     /// read-count operands). The resolver wraps the result in an `ev … /ev` block.
@@ -733,8 +750,8 @@ private final class WeaveResolver {
     private(set) var labelPaths: [String: [String]] = [:]
 
     init(
-        lowerStatement: @escaping ([InkStatement], [String]) -> [NodeKind],
-        lowerStatementWithFallThrough: (([InkStatement], FallThrough, [String]) -> [NodeKind])? = nil,
+        lowerStatement: @escaping ([InkStatement], [String]) -> WeaveEmitter.BodyLowering,
+        lowerStatementWithFallThrough: (([InkStatement], FallThrough, [String]) -> WeaveEmitter.BodyLowering)? = nil,
         lowerCondition: @escaping (InkExpression) -> [NodeKind] = { _ in [] }
     ) {
         self.lowerStatement = lowerStatement
@@ -745,7 +762,9 @@ private final class WeaveResolver {
     /// Lower a gather/choice body, threading `looseEnd` when a fall-through-aware
     /// lowerer is available (so a variable-text-lead body falls through correctly);
     /// otherwise lower it plainly.
-    private func lowerBody(_ body: [InkStatement], looseEnd: FallThrough, keyPrefix: [String]) -> [NodeKind] {
+    private func lowerBody(
+        _ body: [InkStatement], looseEnd: FallThrough, keyPrefix: [String]
+    ) -> WeaveEmitter.BodyLowering {
         if let lowerStatementWithFallThrough {
             return lowerStatementWithFallThrough(body, looseEnd, keyPrefix)
         }
@@ -758,8 +777,12 @@ private final class WeaveResolver {
         fallThrough: FallThrough
     ) throws -> (children: [NodeKind], named: [String: ContainerNode]) {
         let gathers = gatherKeys(block, keyPrefix: keyPrefix)
-        var children = lowerStatement(block.lead, keyPrefix)
-        var named: [String: ContainerNode] = [:]
+        let lead = lowerStatement(block.lead, keyPrefix)
+        var children = lead.children
+        // The block lead is lowered under the enclosing `keyPrefix`, so any named
+        // containers it opened (inline-conditional/variable-text sub-containers) are
+        // addressed from THAT scope and belong directly in this block's `named`.
+        var named: [String: ContainerNode] = lead.named
 
         // A block that LEADS with a gather (content above the first `*`, e.g. an
         // intro line) is reached by sequential flow, not a loose-end divert: after
@@ -870,9 +893,11 @@ private final class WeaveResolver {
             lead.append(.text(choice.label))
             lead.append(.newline)
         }
-        lead.append(contentsOf: lowerBody(choice.body, looseEnd: looseEnd, keyPrefix: keyPrefix))
+        let body = lowerBody(choice.body, looseEnd: looseEnd, keyPrefix: keyPrefix)
+        lead.append(contentsOf: body.children)
         return try containerSpliced(
             lead: lead, body: choice.body, nested: choice.nested,
+            bodyNamed: body.named,
             key: key, nestedKeyPrefix: keyPrefix, looseEnd: looseEnd
         )
     }
@@ -908,9 +933,11 @@ private final class WeaveResolver {
                 gather, nested: nested, key: key, keyPrefix: keyPrefix, looseEnd: looseEnd
             )
         }
+        let body = lowerBody(gather.body, looseEnd: looseEnd, keyPrefix: keyPrefix + [key])
         return try containerSpliced(
-            lead: lowerBody(gather.body, looseEnd: looseEnd, keyPrefix: keyPrefix + [key]),
+            lead: body.children,
             body: gather.body, nested: gather.nested,
+            bodyNamed: body.named,
             key: key, nestedKeyPrefix: keyPrefix + [key], looseEnd: looseEnd
         )
     }
@@ -953,8 +980,12 @@ private final class WeaveResolver {
 
         // The body lowered so its conditional continuation falls through to the
         // rejoin (the choices), not the gather's eventual loose end.
-        let named: [String: ContainerNode] = [rejoinKey: rejoin]
-        let lead = lowerBody(gather.body, looseEnd: .gather(rejoinPath), keyPrefix: gatherPath)
+        var named: [String: ContainerNode] = [rejoinKey: rejoin]
+        let body = lowerBody(gather.body, looseEnd: .gather(rejoinPath), keyPrefix: gatherPath)
+        // The gather body's own inline-conditional/variable-text sub-containers nest
+        // under the gather scope alongside the rejoin (step 01-13).
+        for (bodyKey, container) in body.named { named[bodyKey] = container }
+        let lead = body.children
         // A body that does not itself divert away (no conditional reached, or a
         // conditional whose every arm rejoins inline) still needs to reach the
         // choices: append the rejoin divert when the lead does not end in control flow.
@@ -986,16 +1017,22 @@ private final class WeaveResolver {
         lead: [NodeKind],
         body: [InkStatement],
         nested: WeaveBlock?,
+        bodyNamed: [String: ContainerNode] = [:],
         key: String,
         nestedKeyPrefix: [String],
         looseEnd: FallThrough
     ) throws -> ContainerNode {
         var children = lead
-        var named: [String: ContainerNode] = [:]
+        // The body's own named containers (inline-conditional `cond{N}-b*`/`-end`
+        // arms, variable-text stages) were lowered under THIS container's key prefix,
+        // so they nest here — without this they vanish and the diverts that target
+        // them (`…c-0.cond0-b1`) point at nothing (step 01-13: the `[Yes]` body's
+        // `{forceful>2:…|…}` branches were dropped on the rejoin-weave path).
+        var named: [String: ContainerNode] = bodyNamed
         if let nested {
             let resolved = try resolve(nested, keyPrefix: nestedKeyPrefix, fallThrough: looseEnd)
             children.append(contentsOf: stripDone(resolved.children))
-            named = resolved.named
+            for (nestedKey, container) in resolved.named { named[nestedKey] = container }
         } else if endsWithDivert(body) == false {
             children.append(contentsOf: fallThroughNodes(looseEnd))
         }

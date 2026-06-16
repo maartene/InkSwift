@@ -448,11 +448,14 @@ enum RuntimeObjectEmitter {
                 // continuation (the `-> pushes_cup` loss, step 01-03). Containers
                 // stay promoted FLAT at the enclosing scope (the established design);
                 // only their ordinal is made body-unique. Diverts use the same flat
-                // `keyPrefix`, so target and storage agree.
+                // `keyPrefix`, so target and storage agree. This path lowers under the
+                // FLAT `keyPrefix`, so it returns its named containers via the shared
+                // collector (promoted flat below) — NOT through BodyLowering.named
+                // (which nests them in the container, the wrong scope here).
                 var weaveNamed = bodyNamed.contents
                 let children = lowerBody(statements, context: context, keyPrefix: keyPrefix, named: &weaveNamed)
                 bodyNamed.merge(weaveNamed)
-                return children
+                return WeaveEmitter.BodyLowering(children: children)
             },
             // Threads the gather/choice loose-end into a body that LEADS with a
             // variable-text line, so its folded trailing choices fall through to the
@@ -467,7 +470,7 @@ enum RuntimeObjectEmitter {
                     fallThrough: looseEnd, named: &weaveNamed
                 )
                 bodyNamed.merge(weaveNamed)
-                return children
+                return WeaveEmitter.BodyLowering(children: children)
             },
             lowerCondition: { expression in lowerExpression(expression, context: context) }
         )
@@ -983,15 +986,21 @@ enum RuntimeObjectEmitter {
                   let weave = try? WeaveEmitter.lower(
                       body, keyPrefix: enclosingKeyPrefix, fallThrough: fallThrough,
                       lowerStatement: { statements, bodyKeyPrefix in
+                          // Lowered under the body's OWN per-container prefix, so its
+                          // inline-conditional/variable-text sub-containers nest in the
+                          // container being built — return them via BodyLowering.named
+                          // so the resolver attaches them there (step 01-13).
                           var weaveNamed: [String: ContainerNode] = [:]
-                          return lowerBody(statements, context: context, keyPrefix: bodyKeyPrefix, named: &weaveNamed)
+                          let children = lowerBody(statements, context: context, keyPrefix: bodyKeyPrefix, named: &weaveNamed)
+                          return WeaveEmitter.BodyLowering(children: children, named: weaveNamed)
                       },
                       lowerStatementWithFallThrough: { statements, looseEnd, bodyKeyPrefix in
                           var weaveNamed: [String: ContainerNode] = [:]
-                          return lowerBody(
+                          let children = lowerBody(
                               statements, context: context, keyPrefix: bodyKeyPrefix,
                               fallThrough: looseEnd, named: &weaveNamed
                           )
+                          return WeaveEmitter.BodyLowering(children: children, named: weaveNamed)
                       },
                       lowerCondition: { expression in lowerExpression(expression, context: context) }
                   ) else {
@@ -1071,15 +1080,23 @@ enum RuntimeObjectEmitter {
                   let weave = try? WeaveEmitter.lower(
                       body, keyPrefix: prefix, fallThrough: fallThrough,
                       lowerStatement: { statements, bodyKeyPrefix in
+                          // Each rejoin-weave body lowers under its OWN per-container
+                          // prefix; its inline-conditional `cond{N}-b*`/`-end` arms must
+                          // nest inside that container — return them via BodyLowering so
+                          // the resolver attaches them (step 01-13: the `[Yes]` body's
+                          // `{forceful>2:…|…}` branches were dropped here, leaving the
+                          // dispatch's branch diverts pointing at nothing).
                           var weaveNamed: [String: ContainerNode] = [:]
-                          return lowerBody(statements, context: context, keyPrefix: bodyKeyPrefix, named: &weaveNamed)
+                          let children = lowerBody(statements, context: context, keyPrefix: bodyKeyPrefix, named: &weaveNamed)
+                          return WeaveEmitter.BodyLowering(children: children, named: weaveNamed)
                       },
                       lowerStatementWithFallThrough: { statements, looseEnd, bodyKeyPrefix in
                           var weaveNamed: [String: ContainerNode] = [:]
-                          return lowerBody(
+                          let children = lowerBody(
                               statements, context: context, keyPrefix: bodyKeyPrefix,
                               fallThrough: looseEnd, named: &weaveNamed
                           )
+                          return WeaveEmitter.BodyLowering(children: children, named: weaveNamed)
                       },
                       // Thread the choice-guard lowerer so the rejoin weave's `{cond}`
                       // guards emit their eval-stack nodes — a knot/gather-opening block
