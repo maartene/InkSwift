@@ -139,12 +139,32 @@ struct Compiler_TheInterceptProgressTests {
     /// first, then the remainder VERBATIM (the source space after `<>` is literal
     /// content inklecate preserves — oracle text node `^ So why…`, so trimming would
     /// yield `last.So` instead of the oracle's `last. So`). The fix is in `Compiler/`.
-    /// The NEXT blocker is at index 55 (`paused` gather, ink ~542-545): the gather body
-    /// OPENS with a block conditional `{ not nope: That gives me pause… }`. Native
-    /// SKIPS that conditional's true-branch line (ORACLE[55] = "That gives me pause. I
-    /// hadn't thought of it as such…") and emits ORACLE[56] directly — a
-    /// block-conditional-at-gather-position / `nope` read-count defect for the next step.
-    private static let floor = 55
+    /// Step 01-11 resolves the BLOCK-CONDITIONAL-AT-GATHER-POSITION + bare read-count,
+    /// advancing native 55 → 63 oracle-matching lines. The `paused` gather
+    /// (`i_met_a_young_man`, TheIntercept.ink ~542) OPENS with a block conditional
+    /// `{ not nope: That gives me pause… }` then presents a `[Yes]/[No]/[Tell the
+    /// truth]/[Lie]` menu. Native both SKIPPED the true-branch line (ORACLE[55]) and
+    /// dead-ended after the gather prose (the menu was never offered). Two coordinated
+    /// fixes, both in `Compiler/`:
+    ///   1. BARE READ-COUNT LOCAL SCOPE — `{ not nope }`'s `nope` is a choice LABEL,
+    ///      but `nope` is not unique story-wide (also a label in `harris_demands_component`),
+    ///      so `mergeUniqueBareLabels` left it dotted-only and the subject lowered as a
+    ///      plain `.variableReference nope` (undefined → wrong truth value). `LoweringContext.readCountPath`
+    ///      now resolves a bare subject in LOCAL knot scope FIRST (`knot.label` against
+    ///      `weaveLabelPaths`), symmetric with `qualifiedDivertTarget`'s by-name weave
+    ///      resolution — so `nope` lowers to `.readCount i_met_a_young_man.g-1.nope`.
+    ///   2. GATHER-CONDITIONAL-THEN-CHOICES ROUTING — a gather whose body opens/contains
+    ///      a block conditional and is followed by nested choices diverts away into the
+    ///      conditional's `cond{N}-end` continuation; splicing the choices INLINE after
+    ///      the dispatch left them unreachable. `WeaveEmitter.gatherWithConditionalThenChoices`
+    ///      now resolves the nested choices into a named rejoin sub-container (`<key>-w`)
+    ///      and lowers the body with its fall-through pointing AT that rejoin, so the
+    ///      continuation diverts into the choice menu.
+    /// The NEXT blocker is at index 63 (post-`still_have` reveal, ink ~reveal_location_of_component):
+    /// native and oracle diverge on a downstream conditional content selection
+    /// (native emits the "double bluff" line; oracle emits "God help you if you're
+    /// lying") — a distinct choice-path / conditional-content defect for a later step.
+    private static let floor = 63
 
     @Test
     func `native TheIntercept plays past the opts gather, matching the oracle prefix`() throws {

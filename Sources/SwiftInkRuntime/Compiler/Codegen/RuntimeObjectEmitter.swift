@@ -302,7 +302,21 @@ enum RuntimeObjectEmitter {
         /// Resolve a (possibly dotted) name to the absolute compiled path of a
         /// known weave label or knot/stitch, reusing the pre-built tables — never
         /// re-deriving. Returns nil for a true miss (a real qualified variable).
+        ///
+        /// A BARE read-count subject (`{ not nope: … }`) resolves in LOCAL knot scope
+        /// FIRST — symmetric with `qualifiedDivertTarget`'s by-name weave-point
+        /// resolution. inklecate resolves a bare read-count reference against the
+        /// enclosing knot's namespace; the `knot.label` key is registered by
+        /// `discoverLabelPaths`/`mergeWeaveLabelPaths`. Without this, a bare label
+        /// that is NOT unique story-wide (so `mergeUniqueBareLabels` leaves it
+        /// dotted-only — e.g. `nope` appears in two knots) fell through to
+        /// `.variableReference`, evaluating an undefined variable instead of the
+        /// label's read-count. The knot-scoped lookup precedes the bare-global lookup
+        /// so a local label shadows a same-named label in another knot.
         func readCountPath(for name: String) -> [String]? {
+            if knotScope.isEmpty == false, name.contains(".") == false {
+                if let localPath = weaveLabelPaths["\(knotScope).\(name)"] { return localPath }
+            }
             if let labelPath = weaveLabelPaths[name] { return labelPath }
             return knotStitchPaths[name]
         }

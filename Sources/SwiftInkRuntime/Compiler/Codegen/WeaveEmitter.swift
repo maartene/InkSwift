@@ -889,11 +889,93 @@ private final class WeaveResolver {
         keyPrefix: [String],
         looseEnd: FallThrough
     ) throws -> ContainerNode {
-        try containerSpliced(
+        // GATHER BODY OPENS WITH A BLOCK CONDITIONAL THEN PRESENTS CHOICES
+        // (`- (paused) { not nope: … } "prose" * (yes) [Yes] …`, TheIntercept ~542):
+        // the body's block conditional lowers to a divert-away dispatch whose
+        // continuation (`cond{N}-end`) rejoins and then must reach the gather's
+        // NESTED choices. Splicing the nested choices INLINE after the dispatch (the
+        // default `containerSpliced` path) leaves them unreachable — flow diverts into
+        // `cond{N}-end`, runs the post-conditional prose, then hits the loose-end
+        // fall-through, never reaching the inline choices (native dead-ends; the
+        // `[Yes]/[No]/…` menu is never offered). Instead, resolve the nested choices
+        // into a NAMED rejoin sub-container (`<key>-w`) and lower the body with its
+        // fall-through pointing AT that rejoin, so the conditional continuation
+        // diverts to the choices. Symmetric with the 01-09 block-rejoin weave routing,
+        // but here the choices are the gather's own nested weave, not the conditional's
+        // textual continuation.
+        if let nested = gather.nested, bodyContainsBlockConditional(gather.body) {
+            return try gatherWithConditionalThenChoices(
+                gather, nested: nested, key: key, keyPrefix: keyPrefix, looseEnd: looseEnd
+            )
+        }
+        return try containerSpliced(
             lead: lowerBody(gather.body, looseEnd: looseEnd, keyPrefix: keyPrefix + [key]),
             body: gather.body, nested: gather.nested,
             key: key, nestedKeyPrefix: keyPrefix + [key], looseEnd: looseEnd
         )
+    }
+
+    /// True when any top-level statement in the gather body is a block/switch
+    /// conditional — such a body lowers to a divert-away dispatch whose continuation
+    /// must thread onward to the gather's nested choices.
+    private func bodyContainsBlockConditional(_ statements: [InkStatement]) -> Bool {
+        statements.contains { statement in
+            if case .conditionalBlock = statement.kind { return true }
+            return false
+        }
+    }
+
+    /// Lower a gather whose body opens/contains a block conditional and is followed
+    /// by nested choices. The nested choices are resolved into a named rejoin
+    /// sub-container (`<key>-w`); the body is lowered with its fall-through pointing
+    /// at that rejoin so the conditional's `cond{N}-end` continuation diverts into the
+    /// choices. The rejoin's own `c-N`/`g-N` outcome containers nest under it, so
+    /// their paths resolve from the gather scope.
+    private func gatherWithConditionalThenChoices(
+        _ gather: WeaveGather,
+        nested: WeaveBlock,
+        key: String,
+        keyPrefix: [String],
+        looseEnd: FallThrough
+    ) throws -> ContainerNode {
+        let gatherPath = keyPrefix + [key]
+        let rejoinKey = "\(key)-w"
+        let rejoinPath = gatherPath + [rejoinKey]
+
+        // The choice menu rejoin: the nested weave resolved under its own path so its
+        // choicePoints + c-N/g-N containers nest correctly; its loose ends fall
+        // through to the gather's own loose end (the next gather / enclosing end).
+        let resolvedNested = try resolve(nested, keyPrefix: rejoinPath, fallThrough: looseEnd)
+        let rejoin = ContainerNode(
+            children: resolvedNested.children, namedContent: resolvedNested.named,
+            flags: 0, name: rejoinKey
+        )
+
+        // The body lowered so its conditional continuation falls through to the
+        // rejoin (the choices), not the gather's eventual loose end.
+        let named: [String: ContainerNode] = [rejoinKey: rejoin]
+        let lead = lowerBody(gather.body, looseEnd: .gather(rejoinPath), keyPrefix: gatherPath)
+        // A body that does not itself divert away (no conditional reached, or a
+        // conditional whose every arm rejoins inline) still needs to reach the
+        // choices: append the rejoin divert when the lead does not end in control flow.
+        var children = lead
+        if endsWithControlFlowNode(lead) == false {
+            children.append(.divert(
+                target: rejoinPath.joined(separator: "."), isConditional: false, isVariable: false
+            ))
+        }
+        return ContainerNode(children: children, namedContent: named, flags: 0, name: key)
+    }
+
+    /// True when the already-lowered node list ends in a flow-terminating node (a
+    /// divert away or an `end`), so no extra fall-through divert is needed.
+    private func endsWithControlFlowNode(_ nodes: [NodeKind]) -> Bool {
+        switch nodes.last {
+        case .divert, .controlCommand("end"), .controlCommand("done"):
+            return true
+        default:
+            return false
+        }
     }
 
     /// Build an outcome/gather container from its already-lowered `lead` prose:
