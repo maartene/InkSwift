@@ -27,29 +27,55 @@ honest gate is the *real story itself*.
 3. Pick a fixed **choice script** (a `[Int]` choosing an option at each choice point) that exercises
    the path you care about.
 
+## Caveat: a passing probe does NOT mean compilation succeeded
+
+The probe is a **diagnostic tool**, not an assertion. By design it always exits green — even when
+native compilation throws — so that partial-support stories can be diagnosed incrementally without
+blocking the test run. When native compile fails, the playback report says
+`NATIVE PLAY THREW: <error>` in its stdout; the structural census says `NATIVE COMPILE THREW`;
+but the test itself still passes. **A green probe checkmark only means "the probe ran".**
+
+If you need a hard gate — e.g. to confirm a story at least compiles before diagnosing divergences —
+use `DIAG_STRICT=1`. In strict mode the probe asserts `nativeError == nil` and fails the test
+if native compilation throws:
+
+```
+DIAG_STORY=poc-borrowed-light-script DIAG_STRICT=1 swift test --filter OracleDivergenceProbe
+```
+
+Run this first whenever you add a new story fixture. A red strict-mode probe means fix the
+compiler crash before looking at divergences.
+
 ## The loop (one real blocker at a time)
 
 The instrument is `OracleDiagnostics` + the env-driven `OracleDivergenceProbe`
 (`Tests/SwiftInkRuntimeTests/Diagnostics/`). The driver is the **playback first-divergence** report.
 
-1. **Diagnose.** Run the generic probe to see exactly where native first diverges from the oracle:
+1. **Confirm compilation succeeds (strict gate).** Before diagnosing divergences, verify the story
+   at least compiles natively:
+   ```
+   DIAG_STORY=<Story> DIAG_STRICT=1 swift test --filter OracleDivergenceProbe
+   ```
+   If this fails, fix the compiler error first. A divergence report is meaningless if native
+   compilation never completes.
+3. **Diagnose.** Run the generic probe to see exactly where native first diverges from the oracle:
    ```
    DIAG_STORY=<Story> DIAG_SCRIPT=0,2,1,0 swift test --filter OracleDivergenceProbe
    ```
    It prints: matched-line floor `N`, the first diverging index, the native vs oracle line there,
    and any surviving unresolved dotted `.variableReference`s. That divergence **is** your next task.
-2. **Pin it with a ratchet AT.** In an acceptance suite, assert the achieved prefix with
+4. **Pin it with a ratchet AT.** In an acceptance suite, assert the achieved prefix with
    `OracleDiagnostics.expectNativeMatchesOraclePrefix(story:script:floor:)`. The floor only ever
    rises — a regression that drops below it reds the suite. Bump the floor to your next target
    (just past the current blocker) to make it RED.
-3. **RED → GREEN → COMMIT** against the *real* story:
+5. **RED → GREEN → COMMIT** against the *real* story:
    - **RED:** the bumped ratchet fails for the right business reason (native diverges at the blocker).
    - **GREEN:** fix the actual construct/combination in `Compiler/` (see boundary rules). Re-run the
      probe; set the floor to the **actual achieved** matched-line count (it often jumps past several
      lines that reuse already-fixed constructs). Full suite green.
    - **COMMIT:** through the pre-commit gate (SwiftLint `--strict` + full `swift test`; never
      `--no-verify`).
-4. **Re-diagnose and repeat** until the probe reports "NO DIVERGENCE: native == oracle for all M
+6. **Re-diagnose and repeat** until the probe reports "NO DIVERGENCE: native == oracle for all M
    lines." Then re-enable / add the story's full e2e AT (compile + play, `#expect(native == oracle)`).
 
 ## The two diagnostics — when to use which
