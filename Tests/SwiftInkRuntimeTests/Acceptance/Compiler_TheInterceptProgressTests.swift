@@ -196,11 +196,26 @@ struct Compiler_TheInterceptProgressTests {
     ///     and `RuntimeObjectEmitter`'s rejoin-weave lowerers return `named` rather than
     ///     discarding it. Bodies lowered under the enclosing (flat) prefix still promote
     ///     their containers flat — only the per-container-prefix path nests.
-    /// The NEXT blocker is at index 76 (TheIntercept.ink, the `decent men have affairs.
-    /// You scientists.` line): native emits `affairs.You` where the oracle has
-    /// `affairs. You` — a missing inter-fragment space (a glue / sentence-join defect)
-    /// for a later step.
-    private static let floor = 76
+    /// Step 01-14 resolves the LEADING-GLUE WHITESPACE-TRIM defect at the post-block
+    /// `<> You scientists."` line (TheIntercept.ink ~1685, immediately after the
+    /// `{ not losttemper: …have affairs. - else: … }` block conditional), advancing
+    /// native 76 → 80 oracle-matching lines — FULL execution equivalence (all 80
+    /// lines match; the playback probe reports "NO DIVERGENCE"). A standalone content
+    /// line LEADING with `<>` glues to the preceding output; the source whitespace
+    /// AFTER the marker is literal content inklecate preserves (the oracle text node
+    /// is `^ You scientists.`, a leading space). `InkParser.appendContent`'s
+    /// leading-`<>` branch trimmed that remainder, so native joined `affairs.You`
+    /// instead of the oracle's `affairs. You`. The fix is in
+    /// `Compiler/Parser/InkParser.swift`:
+    ///   - LEADING-GLUE VERBATIM REMAINDER — `appendContent` now keeps a plain-prose
+    ///     post-`<>` remainder VERBATIM (drop ONLY the marker, preserve the leading
+    ///     space), symmetric with `WeaveEmitter.inlineBodyStatements`' leading-`<>`
+    ///     branch (step 01-10). A brace-/divert-/glue-bearing remainder still
+    ///     re-dispatches through `appendContent` (which trims) so those constructs
+    ///     are still recognised.
+    /// Native now matches ALL 80 oracle lines of the canonical TheIntercept
+    /// playthrough; the next step re-enables the full e2e (currently `.disabled`).
+    private static let floor = 80
 
     @Test
     func `native TheIntercept plays past the opts gather, matching the oracle prefix`() throws {

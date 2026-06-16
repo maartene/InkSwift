@@ -684,14 +684,27 @@ public enum InkParser {
         // conditional body `<>, sipping…` and the post-block `<>.` in TheIntercept
         // ~161/163): emit glue first, then lower the remainder so its prose joins
         // the previous line on the same output line — instead of echoing `<>` as
-        // literal text. The remainder is re-dispatched through `appendContent` so a
-        // trailing-glue / brace-bearing remainder is still recognised.
+        // literal text.
+        //
+        // The source whitespace AFTER `<>` is literal content inklecate preserves
+        // (the post-block `<> You scientists."` at TheIntercept.ink ~1685 lowers to
+        // the oracle text node `^ You scientists.`, a LEADING space). Trimming it
+        // would yield `affairs.You` instead of the oracle's `affairs. You`. So for a
+        // plain-prose remainder, drop ONLY the marker and keep the rest VERBATIM. A
+        // brace-/divert-/glue-bearing remainder still re-dispatches through
+        // `appendContent` (which trims) so those constructs are still recognised —
+        // symmetric with `WeaveEmitter.inlineBodyStatements`' leading-`<>` branch.
         if trimmed.hasPrefix(glueMarker), trimmed != glueMarker {
             statements.append(InkStatement(kind: .glue, position: position))
             let remainder = String(trimmed.dropFirst(glueMarker.count))
-                .trimmingCharacters(in: .whitespaces)
-            if remainder.isEmpty == false {
-                try appendContent(from: remainder, position: position, into: &statements)
+            if remainder.contains("{") || remainder.contains("#")
+                || remainder.contains(divertMarker) || remainder.hasSuffix(glueMarker) {
+                let dispatchable = remainder.trimmingCharacters(in: .whitespaces)
+                if dispatchable.isEmpty == false {
+                    try appendContent(from: dispatchable, position: position, into: &statements)
+                }
+            } else if remainder.trimmingCharacters(in: .whitespaces).isEmpty == false {
+                statements.append(InkStatement(kind: .text(remainder), position: position))
             }
             return
         }
