@@ -57,11 +57,30 @@ struct Compiler_TheInterceptProgressTests {
     ///      text. `appendContent` now emits leading glue and re-lowers the remainder,
     ///      so the block's continuation joins the gather line on one output line,
     ///      matching inklecate's "…I reply, sipping at my tea…".
-    /// Native advances 16 → 17 oracle-matching lines. The NEXT blocker is at index 17:
-    /// native runs out (17 lines) after the teacup gather — it dead-ends at the
-    /// following weave's choice menu (ink ~165-174: `-` then `[Watch him]`/`[Wait]`/
-    /// `{not disagree} [Smile]`), producing no further output — next step.
-    private static let floor = 17
+    /// Step 01-06 resolves two coupled defects at the post-teacup weave (ink ~159-174),
+    /// advancing native 17 → 19 oracle-matching lines. Both fixes are in `Compiler/`:
+    ///   1. BLOCK-CONDITIONAL FALL-THROUGH — a block conditional (`-  { teacup: … }`
+    ///      then `<>.`) at the TAIL of a gather body rejoined its `cond{N}-end`
+    ///      continuation container, but that container ended without diverting onward;
+    ///      the gather's loose-end divert (`-> g-5`) was emitted (unreachable) AFTER
+    ///      the conditional dispatch. `ConditionalEmitter.lower` now threads the
+    ///      enclosing-scope fall-through into the `-end` rejoin (symmetric with
+    ///      `lowerInline`), so flow rejoins the gather and the `[Watch him]`/`[Wait]`/
+    ///      `{not disagree}[Smile]` choice menu is presented.
+    ///   2. READ-COUNT PATH RECONCILIATION — the `{not disagree}` guard on `[Smile]`
+    ///      read `start.waited.disagree`, but the `(disagree)` choice trails an
+    ///      inline-conditional gather lead and physically compiles to
+    ///      `start.waited.cond2-end.cond0-end.disagree`. The discovery pre-pass
+    ///      predicts the flat path; a post-lowering pass reconciles each dangling
+    ///      `.readCount` key to the unique real container ending in that label within
+    ///      the same knot, so `not disagree` reads the true count (1) and suppresses
+    ///      `[Smile]` — matching the oracle's 2-choice menu.
+    /// The NEXT blocker is at index 19: native runs out after `g-6` ("We need that
+    /// component," he says). Oracle continues into the `missing_reel` knot via the
+    /// `{not missing_reel: -> missing_reel -> harris_demands_component}` block + the
+    /// trailing `-> missing_reel -> harris_demands_component` tunnel chain (ink
+    /// ~181-195) — native does not thread that tunnel-divert chain yet — next step.
+    private static let floor = 19
 
     @Test
     func `native TheIntercept plays past the opts gather, matching the oracle prefix`() throws {

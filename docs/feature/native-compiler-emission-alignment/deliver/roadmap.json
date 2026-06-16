@@ -2,7 +2,7 @@
   "roadmap": {
     "project_id": "native-compiler-emission-alignment",
     "created_at": "2026-06-16T08:00:00Z",
-    "total_steps": 5
+    "total_steps": 6
   },
   "phases": [
     {
@@ -112,7 +112,28 @@
             "Sources/SwiftInkRuntime/Compiler/Parser/InkParser.swift",
             "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_TheInterceptProgressTests.swift"
           ],
-          "implementation_notes": "PROBE-DRIVEN (DIAG_INTERCEPT2). After 01-04 native matches 16 oracle lines (plays 22) then diverges at index 16: the teacup block conditional with an embedded assignment + glue ({ teacup: ~drugged = true <>, sipping... }, TheIntercept.ink ~line 159) — native splits the gather line and emits a literal '}'. INVESTIGATE the real cause with a throwaway dump (remove before commit). FIX in Compiler/ only (no runtime change). RED: bump ratchet AT N past index 16. GREEN: fix; re-run DIAG_INTERCEPT2; set N to the actual achieved floor; full suite green. COMMIT with Step-Id + Task-Id trailers (stage execution-log.json WITH the code commit); body states achieved N + next blocker. If blocked beyond Compiler/ or needs a runtime change, STOP and escalate. Do NOT re-enable the e2e. Boundary R1/R3/R5."
+          "implementation_notes": "PROBE-DRIVEN (DIAG_INTERCEPT2). After 01-04 native matches 16 oracle lines (plays 22) then diverges at index 16: the teacup block conditional with an embedded assignment + glue ({ teacup: ~drugged = true <>, sipping... }, TheIntercept.ink ~line 159) — native splits the gather line and emits a literal '}'. INVESTIGATE the real cause with a throwaway dump (remove before commit). FIX in Compiler/ only (no runtime change). RED: bump ratchet AT N past index 16. GREEN: fix; re-run DIAG_INTERCEPT2; set N to the actual achieved floor; full suite green. COMMIT with Step-Id + Task-Id trailers (stage execution-log.json WITH the code commit); body states achieved N + next blocker. If blocked beyond Compiler/ or needs a runtime change, STOP and escalate. Do NOT re-enable the e2e. Boundary R1/R3/R5. DONE (commit 89e532c): gather-opened block conditional + leading glue (parser-only); native matched 16->17."
+        },
+        {
+          "id": "01-06",
+          "name": "Advance native TheIntercept past the next blocker (probe-driven)",
+          "criteria": [
+            "Native advances past the current probe blocker at oracle index 17 (the bare '-' gather + choice menu [Watch him]/[Wait]/{not disagree}[Smile], TheIntercept.ink ~lines 168-174).",
+            "The ratchet AT N is bumped to the new achieved oracle-matching floor (> 17).",
+            "No regression in the full suite."
+          ],
+          "agent": "nw-software-crafter",
+          "deps": ["01-05"],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_TheInterceptProgressTests.swift",
+          "scenario_name": "native TheIntercept plays past the opts gather, matching the oracle prefix",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Compiler/Codegen/WeaveEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/RuntimeObjectEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/ConditionalEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Parser/InkParser.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_TheInterceptProgressTests.swift"
+          ],
+          "implementation_notes": "PROBE-DRIVEN (DIAG_INTERCEPT2). After 01-05 native matches 17 oracle lines then runs out at index 17: a bare '-' gather (TheIntercept.ink ~line 168) followed by a choice menu '* [Watch him]' / '* [Wait]' / '* {not disagree} [Smile]' that native does not present (no further output). INVESTIGATE the real cause with a throwaway dump (remove before commit) — likely a gather-then-choice-menu threading or guarded-choice issue. FIX in Compiler/ only (no runtime change). RED: bump ratchet AT N past index 17. GREEN: fix; re-run DIAG_INTERCEPT2; set N to the actual achieved floor; full suite green. COMMIT with Step-Id + Task-Id trailers (stage execution-log.json WITH the code commit); body states achieved N + next blocker. If blocked beyond Compiler/ or needs a runtime change, STOP and escalate. Do NOT re-enable the e2e. Boundary R1/R3/R5."
         }
       ]
     }

@@ -74,7 +74,20 @@ enum RuntimeObjectEmitter {
         if let globalDecl = emitGlobalDecl(statements, context: context) {
             namedContent[globalDeclKey] = globalDecl
         }
-        let root = ContainerNode(children: rootChildren, namedContent: namedContent, flags: 0, name: nil)
+        let builtRoot = ContainerNode(children: rootChildren, namedContent: namedContent, flags: 0, name: nil)
+        // Read-count path reconciliation (step 01-06): the discovery pre-pass predicts
+        // a label's compiled path from the WEAVE structure alone, but a labelled choice
+        // that trails an inline-conditional / variable-text gather lead is physically
+        // nested under that line's `cond{N}-end` continuation container(s) — e.g. the
+        // `(disagree)` choice after `… {lift_up_cup:he|Harris} begins{forceful<=0:,sternly}.`
+        // compiles to `start.waited.cond2-end.cond0-end.disagree`, not the flat
+        // `start.waited.disagree` discovery recorded. A `.readCount("start.waited.disagree")`
+        // guard (`{not disagree}`) then reads a non-existent container → always 0 → the
+        // `[Smile]` choice is never suppressed. Reconcile each `.readCount` key that
+        // names no real container against the actually-emitted container whose path
+        // ends with that label inside the same knot, when exactly one such container
+        // exists (uniqueness avoids cross-scope mis-resolution).
+        let root = reconcilingReadCountPaths(builtRoot)
         // CountVisits flagging (ADR-011 EXTEND, generalised WL-D4): set the runtime's
         // 0x1 CountVisits flag on EXACTLY the read-count-referenced targets — labelled
         // weave containers AND referenced knots/stitches. The set of referenced
@@ -84,6 +97,91 @@ enum RuntimeObjectEmitter {
         // matches inklecate (VariableReference.cs:101 flags a container only when a
         // reference resolves to it; countAllVisits is OFF) — no over-flagging.
         return flaggingCountVisits(root, atPaths: referencedReadCountPaths(in: root))
+    }
+
+    // MARK: - Read-count path reconciliation
+
+    /// Rewrite every `.readCount(key)` whose key names no existing container to the
+    /// actually-emitted container path, when a unique reconciling target exists. The
+    /// reconciliation target is a container whose absolute path ENDS with the same
+    /// final label segment as the dangling key AND shares its leading knot segment;
+    /// uniqueness within that knot prevents cross-scope mis-resolution. A key that
+    /// already resolves (or whose label is ambiguous) is left untouched.
+    private static func reconcilingReadCountPaths(_ root: ContainerNode) -> ContainerNode {
+        var containerPaths: Set<String> = []
+        collectContainerPaths(root, prefix: [], into: &containerPaths)
+        var rewrites: [String: String] = [:]
+        for key in danglingReadCountKeys(in: root, existing: containerPaths) {
+            if let resolved = reconciledPath(for: key, among: containerPaths) {
+                rewrites[key] = resolved
+            }
+        }
+        guard rewrites.isEmpty == false else { return root }
+        return rewritingReadCounts(root, rewrites: rewrites)
+    }
+
+    /// The dot-joined absolute path of every named container in the tree (the set of
+    /// real read-count-addressable targets). Numeric children are never named targets.
+    private static func collectContainerPaths(
+        _ container: ContainerNode, prefix: [String], into paths: inout Set<String>
+    ) {
+        for (key, child) in container.namedContent {
+            let path = prefix + [key]
+            paths.insert(path.joined(separator: "."))
+            collectContainerPaths(child, prefix: path, into: &paths)
+        }
+        for child in container.children {
+            if case .container(let nested) = child {
+                collectContainerPaths(nested, prefix: prefix, into: &paths)
+            }
+        }
+    }
+
+    /// Every `.readCount` key in the tree that does NOT match an existing container.
+    private static func danglingReadCountKeys(
+        in container: ContainerNode, existing: Set<String>
+    ) -> Set<String> {
+        var keys: Set<String> = []
+        collectReadCountPaths(container, into: &keys)
+        return keys.subtracting(existing)
+    }
+
+    /// The unique real container whose path ends with `key`'s final label segment and
+    /// shares `key`'s leading knot segment, else `nil` (no match or ambiguous).
+    private static func reconciledPath(for key: String, among paths: Set<String>) -> String? {
+        let segments = key.split(separator: ".").map(String.init)
+        guard let label = segments.last, let knot = segments.first else { return nil }
+        let suffix = ".\(label)"
+        let candidates = paths.filter { candidate in
+            candidate != key
+                && candidate.hasSuffix(suffix)
+                && candidate.hasPrefix("\(knot).")
+        }
+        return candidates.count == 1 ? candidates.first : nil
+    }
+
+    /// Rebuild the tree replacing each `.readCount(key)` whose key is in `rewrites`
+    /// with the reconciled path; all other nodes are preserved verbatim.
+    private static func rewritingReadCounts(
+        _ container: ContainerNode, rewrites: [String: String]
+    ) -> ContainerNode {
+        let children = container.children.map { child -> NodeKind in
+            switch child {
+            case .readCount(let key):
+                return .readCount(rewrites[key] ?? key)
+            case .container(let nested):
+                return .container(rewritingReadCounts(nested, rewrites: rewrites))
+            default:
+                return child
+            }
+        }
+        var rebuiltNamed: [String: ContainerNode] = [:]
+        for (key, child) in container.namedContent {
+            rebuiltNamed[key] = rewritingReadCounts(child, rewrites: rewrites)
+        }
+        return ContainerNode(
+            children: children, namedContent: rebuiltNamed, flags: container.flags, name: container.name
+        )
     }
 
     // MARK: - CountVisits flagging
@@ -754,7 +852,8 @@ enum RuntimeObjectEmitter {
             if case .conditionalBlock(let subject, let isSwitch, let branches) = statement.kind {
                 children.append(contentsOf: ConditionalEmitter.lower(
                     subject: subject, isSwitch: isSwitch, branches: branches,
-                    continuation: rest, keyPrefix: keyPrefix, named: &named,
+                    continuation: rest, keyPrefix: keyPrefix,
+                    fallThrough: fallThrough, named: &named,
                     lowerBranch: branchLowerer(context: context),
                     lowerExpression: { lowerExpression($0, context: context) }
                 ))

@@ -53,6 +53,7 @@ enum ConditionalEmitter {
         branches: [ConditionalBranch],
         continuation: [InkStatement],
         keyPrefix: [String],
+        fallThrough: WeaveEmitter.FallThrough = .end,
         named: inout [String: ContainerNode],
         lowerBranch: BranchLowerer,
         lowerExpression: ExpressionLowerer
@@ -85,7 +86,7 @@ enum ConditionalEmitter {
         dispatch.append(unconditionalDivert(to: elseKey.map { path(keyPrefix, $0) } ?? endPath))
         registerContinuation(
             continuation, endKey: endKey, keyPrefix: keyPrefix,
-            named: &named, lowerBranch: lowerBranch
+            fallThrough: fallThrough, named: &named, lowerBranch: lowerBranch
         )
         return dispatch
     }
@@ -209,17 +210,30 @@ enum ConditionalEmitter {
     /// post-conditional statements under the continuation's own key-prefix, then
     /// promote any nested conditional containers they declared into the parent
     /// collector so sibling/nested rejoin targets resolve from root.
+    ///
+    /// The `-end` rejoin is where post-conditional flow actually lands (every arm
+    /// diverts here), so an enclosing-scope loose-end fall-through must be threaded
+    /// HERE — not after the unreachable dispatch nodes in the enclosing body. When a
+    /// block conditional is the tail of a gather body (`-  { teacup: … }` then `<>.`),
+    /// the gather's loose-end divert (`-> g-5`) appended by the weave resolver after
+    /// the dispatch is unreachable; appending it to the rejoin makes flow rejoin the
+    /// gather. A continuation that contains a weave or already diverts away threads
+    /// its own loose end, so no fall-through is added (symmetric with `lowerInline`).
     private static func registerContinuation(
         _ continuation: [InkStatement],
         endKey: String,
         keyPrefix: [String],
+        fallThrough: WeaveEmitter.FallThrough,
         named: inout [String: ContainerNode],
         lowerBranch: BranchLowerer
     ) {
         var endNamed: [String: ContainerNode] = [:]
-        let children = lowerBranch(continuation, keyPrefix + [endKey], &endNamed)
+        var children = lowerBranch(continuation, keyPrefix + [endKey], &endNamed)
         for (innerKey, container) in endNamed {
             named[innerKey] = container
+        }
+        if containsWeaveItem(continuation) == false, endsWithControlFlow(continuation) == false {
+            children.append(contentsOf: fallThroughNodes(fallThrough))
         }
         named[endKey] = ContainerNode(children: children, namedContent: [:], flags: 0, name: endKey)
     }
