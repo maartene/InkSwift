@@ -126,13 +126,25 @@ struct Compiler_TheInterceptProgressTests {
     ///      choice guards emit their eval-stack nodes. Without it every choice
     ///      lowered unguarded (all shown), so native offered `{not drugged}` choices
     ///      on the drugged path and picked the wrong nested branch.
-    /// The NEXT blocker is at index 40 (`harris_has_seen_it_before`, ink ~440+):
-    /// native splits a glue-joined line — NATIVE[40] = "Smart man," he replies.
-    /// "You wouldn't last. (then NATIVE[41] = "<> So why don't you tell me…")
-    /// where ORACLE[40] joins them: "…You wouldn't last. So why don't you tell me,
-    /// right now. Where is it?" — a `<>` leading-glue line-join defect for the
-    /// next step.
-    private static let floor = 40
+    /// Step 01-10 resolves the GATHER-LEAD LEADING-GLUE line-join, advancing native
+    /// 40 → 55 oracle-matching lines. The `tell_me_now` gather (`harris_has_seen_it_before`,
+    /// TheIntercept.ink ~481, `- (tell_me_now) <> So why don't you tell me…`) has an
+    /// outcome LEADING with `<>`. The choice bodies above it (`[Agree]` etc.) fall
+    /// through into the gather, so its leading glue must join the gather's content onto
+    /// the previous output line. `WeaveEmitter.inlineBodyStatements` lowered the whole
+    /// outcome as one `.text("<> So why…")`, echoing the marker as literal text and
+    /// starting a new line — `outcomeStatement` (unlike `appendContent`, step 01-05)
+    /// never split a LEADING marker. The fix adds a leading-`<>` branch to
+    /// `inlineBodyStatements` (symmetric with its trailing-`<>` branch): emit `.glue`
+    /// first, then the remainder VERBATIM (the source space after `<>` is literal
+    /// content inklecate preserves — oracle text node `^ So why…`, so trimming would
+    /// yield `last.So` instead of the oracle's `last. So`). The fix is in `Compiler/`.
+    /// The NEXT blocker is at index 55 (`paused` gather, ink ~542-545): the gather body
+    /// OPENS with a block conditional `{ not nope: That gives me pause… }`. Native
+    /// SKIPS that conditional's true-branch line (ORACLE[55] = "That gives me pause. I
+    /// hadn't thought of it as such…") and emits ORACLE[56] directly — a
+    /// block-conditional-at-gather-position / `nope` read-count defect for the next step.
+    private static let floor = 55
 
     @Test
     func `native TheIntercept plays past the opts gather, matching the oracle prefix`() throws {
