@@ -55,7 +55,18 @@ public enum InkParser {
         from start: Int,
         into statements: inout [InkStatement]
     ) throws -> Int? {
-        let trimmed = lines[start].trimmingCharacters(in: .whitespaces)
+        let rawTrimmed = lines[start].trimmingCharacters(in: .whitespaces)
+        // A gather may itself OPEN a multi-line block conditional: `-     { teacup:`
+        // (TheIntercept ~159). The gather marker run is consumed and the remaining
+        // `{ subject:` is parsed as the block opener; a gather header with an empty
+        // outcome is emitted FIRST (only once we have confirmed a real opener), then
+        // the block is lowered into the gather's body by `parseGather` (which
+        // collects the trailing `.conditionalBlock` statement). Without this, the
+        // gather's outcome was `{ teacup:` and the block body lines (assignment,
+        // glue+text, the bare `}`) leaked as separate statements — the `}` echoed as
+        // literal text.
+        let (afterMarkers, pendingGather) = gatherBlockOpener(rawTrimmed, at: start)
+        let trimmed = afterMarkers
         guard trimmed.hasPrefix("{"), trimmed.contains("}") == false else {
             return nil
         }
@@ -65,6 +76,11 @@ public enum InkParser {
         // otherwise this is a single-line `{expr}` that merely lacks a close brace.
         guard colonIndex != nil || afterBrace.trimmingCharacters(in: .whitespaces).isEmpty else {
             return nil
+        }
+        // Both opener guards passed — emit the gather header (if a gather marker
+        // prefixed the opener) so it is never orphaned by an early `nil` return.
+        if let pendingGather {
+            statements.append(pendingGather)
         }
         let position = SourcePosition(line: start + 1, column: leadingColumn(of: lines[start]))
         let subjectText: String
@@ -93,6 +109,38 @@ public enum InkParser {
         let statement = try buildConditionalBlock(subjectText: subjectText, bodyLines: bodyLines, position: position)
         statements.append(statement)
         return index
+    }
+
+    /// Strip a leading gather-marker run off a line that opens a multi-line block
+    /// conditional. Returns the text after the markers and, when a gather prefix was
+    /// present, the gather header statement to emit before the block (an empty
+    /// outcome — the block becomes the gather's body via `parseGather`). With no
+    /// gather prefix the line is returned unchanged and the pending gather is `nil`.
+    /// Only a `-` run followed by a `{` (not `->`) is treated as a gather opener.
+    private static func gatherBlockOpener(
+        _ trimmed: String,
+        at start: Int
+    ) -> (afterMarkers: String, pendingGather: InkStatement?) {
+        guard trimmed.first == "-" else {
+            return (trimmed, nil)
+        }
+        let (level, remainder) = consumeMarkers(trimmed, marker: "-")
+        guard level > 0, remainder.first == "{" else {
+            return (trimmed, nil)
+        }
+        let (label, outcome) = splitGatherLabel(remainder)
+        // A parenthesised gather label leaves a `{`-prefixed outcome; a labelless
+        // gather leaves the whole `{ subject:` remainder. Only treat it as a block
+        // opener when what follows the optional label still opens with `{`.
+        guard outcome.first == "{" else {
+            return (trimmed, nil)
+        }
+        let position = SourcePosition(line: start + 1, column: leadingColumn(of: trimmed))
+        let gather = InkStatement(
+            kind: .gather(level: level, label: label, outcome: ""),
+            position: position
+        )
+        return (outcome, gather)
     }
 
     /// Assemble a `.conditionalBlock` from the subject expression and the block's
@@ -589,6 +637,21 @@ public enum InkParser {
     ) throws {
         if trimmed == glueMarker {
             statements.append(InkStatement(kind: .glue, position: position))
+            return
+        }
+        // A line LEADING with `<>` glues to the preceding output (the block
+        // conditional body `<>, sipping…` and the post-block `<>.` in TheIntercept
+        // ~161/163): emit glue first, then lower the remainder so its prose joins
+        // the previous line on the same output line — instead of echoing `<>` as
+        // literal text. The remainder is re-dispatched through `appendContent` so a
+        // trailing-glue / brace-bearing remainder is still recognised.
+        if trimmed.hasPrefix(glueMarker), trimmed != glueMarker {
+            statements.append(InkStatement(kind: .glue, position: position))
+            let remainder = String(trimmed.dropFirst(glueMarker.count))
+                .trimmingCharacters(in: .whitespaces)
+            if remainder.isEmpty == false {
+                try appendContent(from: remainder, position: position, into: &statements)
+            }
             return
         }
         if trimmed.hasSuffix(glueMarker) {

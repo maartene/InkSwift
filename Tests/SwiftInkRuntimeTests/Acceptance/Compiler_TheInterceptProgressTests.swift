@@ -42,11 +42,26 @@ struct Compiler_TheInterceptProgressTests {
     ///      into the rejoin as literal prose. The rejoin now routes a weave-bearing
     ///      continuation through the WeaveEmitter (real choicePoints), nesting its
     ///      containers under the rejoin's own scope to avoid sibling collisions.
-    /// Native advances 15 → 16 oracle-matching lines. The NEXT blocker is at index 16:
-    /// native splits the gather line "…I reply, sipping at my tea…" and emits a literal
-    /// "}" — the multi-line block conditional `{ teacup: ~drugged=true <>, sipping… }`
-    /// with an embedded assignment + glue (ink ~159) is not yet lowered — next step.
-    private static let floor = 16
+    /// Step 01-05 resolves the gather-position multi-line block conditional at
+    /// TheIntercept.ink ~159, where native split the gather line and echoed a literal
+    /// "}". Two root causes, both in `Compiler/Parser/InkParser.swift`:
+    ///   1. GATHER-OPENED BLOCK — a gather may itself OPEN a multi-line block
+    ///      conditional (`-     { teacup:`). The opener detector only matched a line
+    ///      whose first char was `{`, so the gather's outcome captured `{ teacup:`
+    ///      and the block body (`~ drugged = true`, the glue+text, the bare `}`)
+    ///      leaked as separate statements — the `}` echoed as literal text. The
+    ///      detector now strips a leading gather-marker run, emits the gather header
+    ///      (empty outcome), and parses the block into the gather's body.
+    ///   2. LEADING GLUE — a content line LEADING with `<>` (the block body
+    ///      `<>, sipping…` and the post-block `<>.`) lowered the `<>` as literal
+    ///      text. `appendContent` now emits leading glue and re-lowers the remainder,
+    ///      so the block's continuation joins the gather line on one output line,
+    ///      matching inklecate's "…I reply, sipping at my tea…".
+    /// Native advances 16 → 17 oracle-matching lines. The NEXT blocker is at index 17:
+    /// native runs out (17 lines) after the teacup gather — it dead-ends at the
+    /// following weave's choice menu (ink ~165-174: `-` then `[Watch him]`/`[Wait]`/
+    /// `{not disagree} [Smile]`), producing no further output — next step.
+    private static let floor = 17
 
     @Test
     func `native TheIntercept plays past the opts gather, matching the oracle prefix`() throws {
