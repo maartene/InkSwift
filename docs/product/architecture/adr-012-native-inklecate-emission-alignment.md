@@ -2,11 +2,31 @@
 
 ## Status
 
-**Accepted** (DESIGN — native-compiler-emission-alignment feature, 2026-06-15; reviewed
-2026-06-15 by `nw-solution-architect-reviewer` — **APPROVED**, 0 blockers). Was Proposed.
-Supersedes the *scope* of ADR-011 (weave-label read-count addressing): ADR-011 solved one
-read-count shape (named-weave-label); this ADR reframes the whole native ↔ inklecate gap and
-decides, per divergence class, whether to align emission shape or assert execution-equivalence.
+**DELIVERED** (native-compiler-emission-alignment feature, 2026-06-16). Was Accepted (DESIGN,
+2026-06-15; reviewed 2026-06-15 by `nw-solution-architect-reviewer` — **APPROVED**, 0 blockers;
+was Proposed). Supersedes the *scope* of ADR-011 (weave-label read-count addressing): ADR-011
+solved one read-count shape (named-weave-label); this ADR reframes the whole native ↔ inklecate
+gap and decides, per divergence class, whether to align emission shape or assert
+execution-equivalence.
+
+**DELIVERY note (2026-06-16).** The emission-alignment program is **DELIVERED**: `TheIntercept.ink`
+now compiles natively and plays line-for-line / choice-for-choice identical to the inklecate oracle
+for all 80 lines along the fixed choice script — full-compile execution-equivalence ACHIEVED. It was
+closed by **15 probe-driven increments** (commits `4686262..5d3b27e` on `main`, gated by the
+DIAG_INTERCEPT2 playback probe with a ratchet AT pinning the rising matched-line floor). The
+behavioral root causes are all closed by **general** (not story-specific) compiler fixes: **#3b**
+(variable-text / weave continuation threading), **#4a** (implicit read-count coverage), and **#4b**
+(nested choice-label read-counts — flat-namespace resolution of labels nested at any depth). The
+cosmetic classes — **#1** conditional naming, **#2** flag breadth, **#3a** anonymous nesting —
+remained **D5-licensed** (untouched, confirmed harmless by the green e2e). The TheIntercept e2e is
+re-enabled and GREEN; zero `.disabled` ATs remain (the waived "zero `.disabled` at finalize"
+exception is discharged); full suite 334 green; runtime REUSE-AS-IS throughout (R1/R3/R5 held).
+
+**Methodology lesson (2026-06-16).** Synthetic minimal fixtures *false-greened* — local greens that
+did not advance the real e2e (the granular #4b/#3b miniatures passed while TheIntercept stayed dead
+at line 4). The honest gate was the **real-story playback probe** (DIAG_INTERCEPT2): driving fixes
+against the actual story complexity, ratcheting the matched-line floor only ever upward. The
+playback-probe-as-gate pattern is reusable for any compiler/transpiler execution-equivalence work.
 
 **Review notes (2026-06-15).** The load-bearing demand-flag claim (the 447-vs-7 container-flag
 gap is not a defect) was independently verified against the runtime: visit-count increment is

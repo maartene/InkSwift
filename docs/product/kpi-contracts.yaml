@@ -152,6 +152,32 @@ features:
         0 inklecate invocations — the read-count addressing diff is Compiler/-only; production Compiler/
         still references no Process/inklecate symbol and spawns no subprocess (holds).
 
+    measured_baselines_emission_alignment:
+      # Recorded at finalize of the native-compiler-emission-alignment feature (2026-06-16).
+      # 15 probe-driven increments on `main` (commits 4686262..5d3b27e), Compiler/ only, runtime
+      # REUSE-AS-IS. Full swift test: 334 tests, 0 failures. DES integrity 15/15 (exit 0).
+      as_of: 2026-06-16
+      scope: TheIntercept.ink full-story native-compile execution-equivalence (the north-star ceiling fixture)
+      kpi-1: >
+        MET. KPI #1's north-star ceiling — the flagship `TheIntercept.ink` full native-compile
+        end-to-end — is now ACHIEVED (previously DEFERRED across compiler-variable-text and the
+        weave-label slice). Native compiles TheIntercept and plays line-for-line / choice-for-choice
+        identical to the committed inklecate .ink.json oracle for all 80 lines along the fixed choice
+        script. The e2e oracle AT is RE-ENABLED and GREEN; zero `.disabled` ATs remain (the waived
+        finalize invariant is discharged). Closed by ~17 GENERAL compiler fixes (#3b variable-text/
+        weave continuation threading, #4a implicit read-count coverage, #4b nested choice-label
+        read-counts), gated by the DIAG_INTERCEPT2 real-story playback probe + a ratchet AT — NOT by
+        story-specific patches. The cosmetic divergence classes (#1/#2/#3a) remained D5-licensed
+        (untouched, confirmed harmless by the green e2e). With this, the supported-corpus North-Star
+        (% of supported-corpus stories compiling oracle-identical) reaches 100% including the ceiling
+        fixture.
+      kpi-2: >
+        unchanged — unsupported-construct rejection holds; this feature added no new constructs to the
+        supported or rejected set (it is emission-alignment of already-supported constructs).
+      kpi-4: >
+        0 inklecate invocations — the emission-alignment diff is Compiler/-only; production Compiler/
+        still references no Process/inklecate symbol and spawns no subprocess (holds).
+
     monitoring_model:
       runtime_telemetry: none           # library, not a service — no dashboards/alerts at runtime
       instrument_kind: ci-test-gate     # every KPI is a CI assertion

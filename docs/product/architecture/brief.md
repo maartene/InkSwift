@@ -261,21 +261,20 @@ Feature tiers follow inkle's own documentation structure:
 > runtime change**. Only shuffle (row 28) remains rejected (needs `RANDOM`). See
 > `docs/evolution/2026-06-15-compiler-variable-text.md` and ADR-010.
 >
-> **`TheIntercept.ink` still does NOT fully native-compile**, and the native-compile e2e remains
-> `.disabled` — but the blocker is **no longer variable text**. The line-86 once-only form now
-> compiles; an honest slice-04 RED (2026-06-15) **falsified** the earlier "line 86 is the sole
-> blocker" premise and surfaced two further, unrelated gaps: (1) the **`not` unary operator** — now
-> shipped (step 05-01); and (2) **dotted read-count addressing of named weave labels**
-> (`{harris_demands_component.cant_talk_right: …}` → a `CNT?` node addressing a named label), which
-> needs a whole weave-label addressing subsystem. **(2) has since SHIPPED** in the native-ink-compiler
-> **weave-label read-count addressing slice** (2026-06-15, ADR-011 Option B, commits `db4bcef..c47b2a0`) —
-> dotted read-counts to named weave labels AND knots/stitches now lower to `.readCount(resolvedPath)`;
-> 323 tests GREEN. **However TheIntercept's full native-compile e2e is STILL `.disabled`**: closing it
-> was found to need a THIRD subsystem (variable-text `{|…|}` at a gather-lead position threading back into
-> the gather's nested choices) plus unknown blockers past line 86 — a multi-subsystem FOLLOW-UP to be
-> designed afresh (user decision 2026-06-15), not chased per-blocker. The "no sequences" introductory
-> claim remains inaccurate (line 86 is a variable-text once-only form). See
-> `docs/evolution/native-ink-compiler-evolution.md` (weave-label milestone) and ADR-011.
+> **SHIPPED / GREEN (native-compiler-emission-alignment, 2026-06-16): `TheIntercept.ink` now FULLY
+> native-compiles and the native-compile e2e is GREEN.** The flagship full-compile
+> execution-equivalence e2e plays line-for-line / choice-for-choice identical to the inklecate oracle
+> for all 80 lines along the fixed choice script. It was closed by **15 probe-driven increments**
+> (commits `4686262..5d3b27e` on `main`, gated by the DIAG_INTERCEPT2 playback probe + a ratchet AT).
+> The behavioral root causes are all closed by **general** compiler fixes (~17 distinct parity
+> hardenings, not story patches): #3b variable-text/weave continuation threading, #4a implicit
+> read-count coverage, #4b nested choice-label read-counts (flat-namespace resolution at any depth);
+> the cosmetic classes #1/#2/#3a remained D5-licensed (untouched, confirmed harmless by the green
+> e2e). The e2e AT is re-enabled; **zero `.disabled` ATs remain** (the previously waived "zero
+> `.disabled` at finalize" exception is discharged); full suite **334 green**; runtime REUSE-AS-IS
+> throughout (R1/R3/R5 held). The "no sequences" introductory claim remains inaccurate (line 86 is a
+> variable-text once-only form). See `docs/evolution/native-ink-compiler-evolution.md`
+> (emission-alignment milestone), **ADR-012 (DELIVERED)**, and ADR-011.
 
 #### Implementation Roadmap by Tier
 
@@ -1032,13 +1031,13 @@ or minimal EXTEND.
 > after `TheIntercept.ink` was found to need knot.stitch read-counts too — ADR-011 amended accordingly. 5 steps
 > `db4bcef..c47b2a0`; full suite 323 tests GREEN; the dotted read-count RED-pin AT is GREEN; adversarial review
 > APPROVED; DES integrity exit 0.
-> **DEFERRED / FOLLOW-UP:** the flagship `TheIntercept.ink` full native-compile **e2e remains `.disabled`** —
-> closing it needs a THIRD subsystem beyond ADR-011 (variable-text `{|…|}` at a **gather-lead** position
-> threading back into the gather's nested choices), with further unknown blockers past line 86. Per the user
-> (2026-06-15) this is a multi-subsystem follow-up to be **designed afresh as an alternative closure strategy,
-> not chased per-blocker**; the "zero `.disabled` at finalize" invariant is consciously waived for this one e2e
-> AT. See `docs/evolution/native-ink-compiler-evolution.md` (weave-label milestone), ADR-011, and
-> `feature-delta.md`'s Upstream-Issues section.
+> **CLOSED (native-compiler-emission-alignment, 2026-06-16):** the flagship `TheIntercept.ink` full native-compile
+> **e2e is now GREEN** (was `.disabled`). The "THIRD subsystem" flagged here (variable-text/weave gather-lead
+> threading, #3b) plus implicit read-count coverage (#4a) and nested choice-label read-counts (#4b) were all
+> closed by general compiler fixes across **15 probe-driven increments** (`4686262..5d3b27e`, gated by the
+> DIAG_INTERCEPT2 playback probe). The "zero `.disabled` at finalize" invariant is now **met** — the waiver is
+> discharged. See `docs/evolution/native-ink-compiler-evolution.md` (emission-alignment milestone), **ADR-012
+> (DELIVERED)**, and ADR-011.
 
 #### Decisions (recommended; ADR-backed)
 
@@ -1249,19 +1248,15 @@ See ADR-010.
 > `InkParserExpressions` `not`-prefix + paren grouping → `CompilerAST.unary` → native postfix `!`.
 > Compiler-only diff; zero runtime/engine change (KPI #4 holds).
 >
-> **Deferred / Known gap (user-approved descope, 2026-06-15) — `TheIntercept.ink` does not yet
-> fully native-compile.** An honest slice-04 RED falsified the prior belief that line 86's
-> variable-text form was the sole e2e blocker. With variable text and `not` shipped, one gap
-> remains: **dotted read-count addressing of named weave labels**
-> (`{harris_demands_component.cant_talk_right: …}` → a `CNT?` node addressing a named weave label).
-> The step 06-01 investigation (commit `aa72e14`, RED-pinned + SCOPE-GUARD stop) found this needs a
-> whole **weave-label addressing subsystem** — choice `(label)` + `{condition}` parsing, label-keyed
-> choice containers, count-visits flagging, and a name→path resolution table. This is a
-> **`native-ink-compiler`** concern (not variable text) and is **DEFERRED there**. The
-> `TheIntercept.ink` native-compile e2e and the step 06-01 dotted-read-count RED test remain
-> `.disabled` (genuinely failing, honestly documented) as the explicit follow-up; the project's
-> "zero `.disabled` ATs at finalize" invariant is consciously **waived** for exactly these two ATs.
-> See `docs/evolution/2026-06-15-compiler-variable-text.md`.
+> **RESOLVED (native-compiler-emission-alignment, 2026-06-16) — `TheIntercept.ink` now fully
+> native-compiles and the e2e is GREEN.** The slice-04 RED correctly falsified the "line 86 is the
+> sole blocker" premise; the remaining behavioral surface (dotted read-count addressing of nested
+> weave labels #4b, implicit read-count coverage #4a, and variable-text/weave gather-lead threading
+> #3b) was closed by general compiler fixes across **15 probe-driven increments**
+> (`4686262..5d3b27e`). Both previously-`.disabled` ATs (the TheIntercept e2e and the dotted
+> read-count test) are now **re-enabled and GREEN**; the "zero `.disabled` ATs at finalize" invariant
+> is **met** — the waiver is discharged. See `docs/evolution/native-ink-compiler-evolution.md`
+> (emission-alignment milestone) and ADR-012 (DELIVERED).
 
 #### Lowering decisions (ground truth — verified against inklecate)
 

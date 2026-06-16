@@ -2,7 +2,7 @@
   "roadmap": {
     "project_id": "native-compiler-emission-alignment",
     "created_at": "2026-06-16T08:00:00Z",
-    "total_steps": 9
+    "total_steps": 15
   },
   "phases": [
     {
@@ -190,6 +190,118 @@
             "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_TheInterceptProgressTests.swift"
           ],
           "implementation_notes": "PROBE-DRIVEN. DONE (commit 72706bc): block-conditional rejoin weave-routing + rejoin choice guards (ConditionalEmitter lowerContinuation, mirroring lowerInline; lowerCondition threaded); native matched 29->40. Compiler/ only; no runtime change. Next blocker index 40: leading-glue line-join in harris_has_seen_it_before (~ink 440)."
+        },
+        {
+          "id": "01-10",
+          "name": "Advance native TheIntercept past the leading-glue line-join (probe-driven)",
+          "criteria": [
+            "Native advances past oracle index 40: leading-glue line-join in harris_has_seen_it_before is preserved (fragments joined, not split).",
+            "The ratchet AT N is bumped to the new achieved floor (> 40).",
+            "No regression in the full suite."
+          ],
+          "agent": "nw-software-crafter",
+          "deps": ["01-09"],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_TheInterceptProgressTests.swift",
+          "scenario_name": "native TheIntercept plays past the opts gather, matching the oracle prefix",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Compiler/Parser/InkParser.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/WeaveEmitter.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_TheInterceptProgressTests.swift"
+          ],
+          "implementation_notes": "PROBE-DRIVEN. DONE (commit 8105738): leading-glue line-join in inlineBodyStatements (join fragments across a leading <> instead of splitting the line); native matched 40->55. Compiler/ only; no runtime change."
+        },
+        {
+          "id": "01-11",
+          "name": "Advance native TheIntercept past the bare read-count local scope + gather-conditional routing (probe-driven)",
+          "criteria": [
+            "Native advances past oracle index 55: bare read-count resolves in the local-knot scope, and a gather-conditional-then-choices routes correctly.",
+            "The ratchet AT N is bumped to the new achieved floor (> 55).",
+            "No regression in the full suite."
+          ],
+          "agent": "nw-software-crafter",
+          "deps": ["01-10"],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_TheInterceptProgressTests.swift",
+          "scenario_name": "native TheIntercept plays past the opts gather, matching the oracle prefix",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Compiler/Codegen/WeaveEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/RuntimeObjectEmitter.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_TheInterceptProgressTests.swift"
+          ],
+          "implementation_notes": "PROBE-DRIVEN. DONE (commit 5356f26): bare read-count local-knot scope resolution + gather-conditional-then-choices routing; native matched 55->63. Compiler/ only; no runtime change."
+        },
+        {
+          "id": "01-12",
+          "name": "Advance native TheIntercept past the guarded-if/else vs switch discriminator (probe-driven)",
+          "criteria": [
+            "Native advances past oracle index 63: a guarded-if/else block is discriminated from a switch via opensWithArm, routing to the correct lowering.",
+            "The ratchet AT N is bumped to the new achieved floor (> 63).",
+            "No regression in the full suite."
+          ],
+          "agent": "nw-software-crafter",
+          "deps": ["01-11"],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_TheInterceptProgressTests.swift",
+          "scenario_name": "native TheIntercept plays past the opts gather, matching the oracle prefix",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Compiler/Codegen/ConditionalEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Parser/InkParser.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_TheInterceptProgressTests.swift"
+          ],
+          "implementation_notes": "PROBE-DRIVEN. DONE (commit 2fbc378): guarded-if/else vs switch discriminator via opensWithArm; native matched 63->73. Compiler/ only; no runtime change."
+        },
+        {
+          "id": "01-13",
+          "name": "Advance native TheIntercept past the forceful inline conditional (probe-driven)",
+          "criteria": [
+            "Native advances past oracle index 73: a forceful inline conditional lowers via BodyLowering sub-container nesting.",
+            "The ratchet AT N is bumped to the new achieved floor (> 73).",
+            "No regression in the full suite."
+          ],
+          "agent": "nw-software-crafter",
+          "deps": ["01-12"],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_TheInterceptProgressTests.swift",
+          "scenario_name": "native TheIntercept plays past the opts gather, matching the oracle prefix",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Compiler/Codegen/ConditionalEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/RuntimeObjectEmitter.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_TheInterceptProgressTests.swift"
+          ],
+          "implementation_notes": "PROBE-DRIVEN. DONE (commit 78a4e38): forceful inline conditional via BodyLowering sub-container nesting; resumed after a mid-commit crash; native matched 73->76. Compiler/ only; no runtime change."
+        },
+        {
+          "id": "01-14",
+          "name": "Advance native TheIntercept to full equivalence — post-block leading-glue verbatim (probe-driven)",
+          "criteria": [
+            "Native advances past oracle index 76 to FULL equivalence (80/80): post-block leading-glue is preserved verbatim (inter-fragment space kept).",
+            "The ratchet AT N reaches the full oracle line count (80).",
+            "No regression in the full suite."
+          ],
+          "agent": "nw-software-crafter",
+          "deps": ["01-13"],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_TheInterceptProgressTests.swift",
+          "scenario_name": "native TheIntercept plays past the opts gather, matching the oracle prefix",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Compiler/Codegen/WeaveEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/RuntimeObjectEmitter.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_TheInterceptProgressTests.swift"
+          ],
+          "implementation_notes": "PROBE-DRIVEN. DONE (commit fdfa78f): post-block leading-glue preserved verbatim (inter-fragment space); native matched 76->80 = FULL execution-equivalence. Compiler/ only; no runtime change."
+        },
+        {
+          "id": "01-15",
+          "name": "Re-enable the TheIntercept full-compile e2e (capstone)",
+          "criteria": [
+            "The TheIntercept full-compile execution-equivalence e2e AT is re-enabled (.disabled trait removed) and GREEN.",
+            "Zero .disabled ATs remain in the acceptance suite (discharges the waived 'zero .disabled at finalize' exception).",
+            "No regression in the full suite."
+          ],
+          "agent": "nw-software-crafter",
+          "deps": ["01-14"],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_S4_CeilingTests.swift",
+          "scenario_name": "The Intercept compiles natively and plays identical to the inklecate oracle",
+          "files_to_modify": [
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_S4_CeilingTests.swift"
+          ],
+          "implementation_notes": "CAPSTONE. DONE (commit 5d3b27e): re-enabled the TheIntercept e2e (removed .disabled); GREEN at full 80-line equivalence; discharges the waived 'zero .disabled at finalize' exception carried from compiler-variable-text slice-04 / weave-label slice. Compiler/ only; no runtime change."
         }
       ]
     }

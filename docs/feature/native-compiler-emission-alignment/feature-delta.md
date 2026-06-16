@@ -346,3 +346,51 @@ User authorized one batch as an acceleration test (does per-increment yield rise
 **Trajectory across all 3 batches:** batch 1 +3.7/inc, batch 2 +1.3/inc (dense interrogation scene), batch 3 **+3 → +7 → +11 (accelerating)**. Native now matches **40 / 80** oracle lines (plays 60); 0 unresolved dotted refs; full suite 334 green; all fixes in `Compiler/` (no runtime change); DES integrity 9/9.
 
 **Verdict on convergence:** the dense interrogation scene was the construct-debt-heavy core; once tunnels + block-conditional-rejoin weaving landed, large linear sections opened in single increments (+11 last step). This refutes the "infinite whack-a-mole" worry — yield rises as the distinct-construct debt is paid. Remaining: 40 → 80 (next blocker: leading-glue line-join in harris_has_seen_it_before, ~ink 440). At the recovered rate, full equivalence is plausibly ~3-6 more increments, not dozens.
+
+---
+
+## Wave: DELIVER / [REF] TheIntercept e2e CLOSED (2026-06-16)
+
+**Flagship goal ACHIEVED.** Native `TheIntercept.ink` compiles and plays line-for-line / choice-for-choice identical to the inklecate oracle for all **80 lines** along the fixed choice script. The full-compile execution-equivalence e2e is **re-enabled and GREEN**; **zero `.disabled` ATs remain** (the waived "zero `.disabled` at finalize" exception — carried from `compiler-variable-text` slice-04 and the weave-label slice — is fully discharged).
+
+### The 15-step probe-driven climb
+
+| Step | Commit | Blocker cleared / fix | matched floor |
+|---|---|---|---|
+| 01-01 | `4686262` | opts-gather loose-end stitch-local divert qualification | 4 → 6 |
+| 01-02 | `64aa56f` | deep nested-label read-count resolution (folded labels under flat knot-namespace) | 6 → 11 |
+| 01-03 | `4d25dbf` | pushes_cup path: deeper-gather parsing, sibling-body ordinal, weave-label divert, mid-line divert/glue | 11 → 15 |
+| 01-04 | `e674fa5` | inline-conditional fall-through + bare-label read-count + weave-in-continuation | 15 → 16 |
+| 01-05 | `89e532c` | gather-opened block conditional + leading glue (parser) | 16 → 17 |
+| 01-06 | `5f4fc4f` | block-conditional fall-through into rejoin + read-count path reconciliation | 17 → 19 |
+| 01-07 | `58e908b` | tunnel chain `-> A -> B` (tunnelDivert + divert) | 19 → 22 |
+| 01-08 | `ae4eb6b` | bare `->->` tunnel-return recognition | 22 → 29 |
+| 01-09 | `72706bc` | block-conditional-opened guarded menu (rejoin weave-routing + guards) | 29 → 40 |
+| 01-10 | `8105738` | leading-glue line-join in inlineBodyStatements | 40 → 55 |
+| 01-11 | `5356f26` | bare read-count local-knot scope + gather-conditional-then-choices routing | 55 → 63 |
+| 01-12 | `2fbc378` | guarded-if/else vs switch discriminator (opensWithArm) | 63 → 73 |
+| 01-13 | `78a4e38` | forceful inline conditional (BodyLowering sub-container nesting); resumed after a mid-commit crash | 73 → 76 |
+| 01-14 | `fdfa78f` | post-block leading-glue verbatim (preserve inter-fragment space) | 76 → **80 (full equivalence)** |
+| 01-15 | `5d3b27e` | re-enable the TheIntercept e2e (capstone; discharges the waived `.disabled` exception) | 80 |
+
+### Acceleration
+
+Per-increment line-yield was **non-monotonic but ultimately accelerating**: batch 1 ~+3.7/inc (opening structural blockers) → batch 2 ~+1.3/inc (the construct-dense interrogation scene) → batch 3+ accelerating to **+15** in a single increment (01-10) once the distinct-construct debt was paid and large linear sections opened. This confirms the "yield rises as construct debt is paid" read, refuting the infinite-whack-a-mole worry.
+
+### Final state
+
+- e2e **GREEN** (TheIntercept full native↔inklecate equivalence, 80/80 lines)
+- full suite **334 green**, 0 regressions
+- **0 `.disabled` ATs** (finalize invariant met)
+- DES integrity **15/15 steps complete traces (exit 0)**
+- ~17 general compiler fixes (all general parity hardening, not story-specific); runtime **REUSE-AS-IS** throughout (R1/R3/R5 held)
+
+### Retained diagnostic harnesses (durable regression instruments — NOT removed)
+
+- **DIAG_INTERCEPT** (structural divergence census) — `Tests/SwiftInkRuntimeTests/Diagnostics/TheInterceptDivergenceDiagnostic.swift`
+- **DIAG_INTERCEPT2** (real-story playback probe — the honest gate) — `Tests/SwiftInkRuntimeTests/Diagnostics/TheInterceptPlaybackProbe.swift`
+- the **ratchet progress AT** — `Tests/SwiftInkRuntimeTests/Acceptance/Compiler_TheInterceptProgressTests.swift`
+
+### Methodology lesson
+
+Synthetic minimal fixtures **false-greened** — the granular #4b/#3b miniatures passed while TheIntercept stayed dead at line 4. The honest gate was the **real-story playback probe (DIAG_INTERCEPT2)**: drive fixes against actual story complexity, ratchet the matched-line floor only ever upward. The playback-probe-as-gate pattern is reusable for any compiler/transpiler execution-equivalence work.

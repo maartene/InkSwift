@@ -191,3 +191,69 @@ Per the user (2026-06-15: "cut losses; find an alternative approach"), this is a
 | Architecture brief (Component Inventory) | `docs/product/architecture/brief.md` |
 | KPI contracts (kpi-1 ceiling note) | `docs/product/kpi-contracts.yaml` |
 | Compiler sources | `Sources/SwiftInkRuntime/Compiler/` |
+
+---
+
+## Milestone — Native↔inklecate Emission Alignment / TheIntercept e2e Closed
+
+**Date**: 2026-06-16
+**Milestone scope**: close the full-story native-compile execution-equivalence gap for the flagship `TheIntercept.ink` — the north-star ceiling fixture that survived as the project's one consciously-`.disabled` AT across `compiler-variable-text` and the weave-label slice. Implements **ADR-012 (Track A behavioral fixes; Track B cosmetic assertions)**, now **DELIVERED**.
+**Commits**: `4686262..5d3b27e` on `main` (15 probe-driven steps 01-01..01-15 — trunk-based, committed step-by-step as each went green)
+**Test result**: native `TheIntercept.ink` plays **80/80** oracle lines line-for-line / choice-for-choice; the full-compile e2e is **re-enabled and GREEN**; full suite **334 tests GREEN**; **0 `.disabled` ATs remain** (finalize invariant met)
+**Quality gates**: SwiftLint `--strict` boundary rules R1/R3/R5 held throughout (`Compiler/` only; runtime REUSE-AS-IS); DES integrity **15/15 steps complete RED/GREEN/COMMIT traces (exit 0)**; mutation testing disabled project-wide (CLAUDE.md)
+
+### Milestone Summary
+
+The flagship goal is **ACHIEVED**: `TheIntercept.ink` compiles natively and plays identical to the inklecate oracle for all 80 lines along the fixed choice script. The behavioral root causes ADR-012 enumerated are all closed by **general** compiler fixes (~17 distinct parity hardenings, not story patches): **#3b** variable-text / weave continuation threading, **#4a** implicit read-count coverage, and **#4b** nested choice-label read-counts (flat-namespace resolution of labels nested at any depth). The cosmetic divergence classes — **#1** conditional naming, **#2** flag breadth, **#3a** anonymous nesting — remained **D5-licensed** (untouched, confirmed harmless by the green e2e).
+
+The 15-step climb, with the achieved oracle-matching floor after each:
+
+| Step | Commit | Fix | floor |
+|---|---|---|---|
+| 01-01 | `4686262` | opts-gather loose-end stitch-local divert qualification | 4 → 6 |
+| 01-02 | `64aa56f` | deep nested-label read-count (folded labels under flat knot-namespace) | 6 → 11 |
+| 01-03 | `4d25dbf` | pushes_cup path: deeper-gather parse, sibling-body ordinal, weave-label divert, mid-line divert/glue | 11 → 15 |
+| 01-04 | `e674fa5` | inline-conditional fall-through + bare-label read-count + weave-in-continuation | 15 → 16 |
+| 01-05 | `89e532c` | gather-opened block conditional + leading glue (parser) | 16 → 17 |
+| 01-06 | `5f4fc4f` | block-conditional fall-through into rejoin + read-count path reconciliation | 17 → 19 |
+| 01-07 | `58e908b` | tunnel chain `-> A -> B` | 19 → 22 |
+| 01-08 | `ae4eb6b` | bare `->->` tunnel-return recognition | 22 → 29 |
+| 01-09 | `72706bc` | block-conditional-opened guarded menu (rejoin weave-routing + guards) | 29 → 40 |
+| 01-10 | `8105738` | leading-glue line-join in inlineBodyStatements | 40 → 55 |
+| 01-11 | `5356f26` | bare read-count local-knot scope + gather-conditional-then-choices routing | 55 → 63 |
+| 01-12 | `2fbc378` | guarded-if/else vs switch discriminator (opensWithArm) | 63 → 73 |
+| 01-13 | `78a4e38` | forceful inline conditional (BodyLowering sub-container nesting) | 73 → 76 |
+| 01-14 | `fdfa78f` | post-block leading-glue verbatim (preserve inter-fragment space) | 76 → **80** |
+| 01-15 | `5d3b27e` | re-enable the TheIntercept e2e (capstone; discharges the waived `.disabled` exception) | 80 |
+
+### Probe-Driven Methodology + Acceleration Data
+
+The gate was the **DIAG_INTERCEPT2 real-story playback probe** with a **ratchet AT** pinning the matched-line floor, only ever rising. Per-increment line-yield was non-monotonic but ultimately accelerating: batch 1 ~+3.7/inc (opening structural blockers) → batch 2 ~+1.3/inc (the construct-dense interrogation scene) → batch 3+ accelerating to **+15** in a single increment (01-10) once distinct-construct debt was paid and large linear sections opened. This confirmed yield rises as construct debt is paid — refuting the infinite-whack-a-mole worry that earlier slices had raised.
+
+### The General-Parity Lesson
+
+Every one of the ~17 fixes was a **general** compiler defect repair (scoping, keying, divert qualification, conditional rejoin, read-count path resolution, glue preservation) — real parity hardening, not story-specific patches. The flagship story is a *discovery instrument* that surfaces latent general gaps; fixing them generally (rather than special-casing TheIntercept) is what made the green durable and the suite regression-free.
+
+### Cross-Feature Signal — the playback-probe-as-gate pattern
+
+**Synthetic minimal fixtures false-greened.** Across `compiler-variable-text` and the weave-label slice, granular miniatures passed while TheIntercept stayed dead at line 4 — local greens that did not advance the real e2e. The honest gate turned out to be a **real-story playback probe** (DIAG_INTERCEPT2): drive fixes against actual story complexity and ratchet the matched-line floor upward, one real blocker at a time. **This playback-probe-as-gate pattern is reusable for any compiler/transpiler execution-equivalence work** — when a deep end-to-end fixture keeps unmasking latent subsystems, gate on the real fixture's progress (a monotonic ratchet), not on synthetic proxies that can pass without moving the real target.
+
+### Retained Diagnostic Harnesses (durable regression instruments)
+
+| Harness | Path | Role |
+|---|---|---|
+| DIAG_INTERCEPT (structural census) | `Tests/SwiftInkRuntimeTests/Diagnostics/TheInterceptDivergenceDiagnostic.swift` | structural tree-diff census (cosmetic-vs-behavioral) |
+| DIAG_INTERCEPT2 (playback probe) | `Tests/SwiftInkRuntimeTests/Diagnostics/TheInterceptPlaybackProbe.swift` | the honest gate — real-story matched-line probe |
+| ratchet progress AT | `Tests/SwiftInkRuntimeTests/Acceptance/Compiler_TheInterceptProgressTests.swift` | pins the achieved oracle-matching floor (now full 80) |
+
+### Source-of-Truth Pointers (this milestone)
+
+| Artifact | Path |
+|---|---|
+| ADR-012 (DELIVERED) | `docs/product/architecture/adr-012-native-inklecate-emission-alignment.md` |
+| Feature delta (DELIVER batches + e2e CLOSED) | `docs/feature/native-compiler-emission-alignment/feature-delta.md` |
+| Roadmap (15-step plan) | `docs/feature/native-compiler-emission-alignment/deliver/roadmap.json` |
+| Execution log (step history) | `docs/feature/native-compiler-emission-alignment/deliver/execution-log.json` |
+| Architecture brief (Feature Coverage Matrix + Component Inventory) | `docs/product/architecture/brief.md` |
+| KPI contracts (kpi-1 MET) | `docs/product/kpi-contracts.yaml` |
+| Compiler sources | `Sources/SwiftInkRuntime/Compiler/` |
