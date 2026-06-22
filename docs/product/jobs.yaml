@@ -3,7 +3,20 @@
 # Maintainer: nw-product-owner
 # Format: Jobs-to-Be-Done (JTBD) job statements
 
-schema_version: 1
+schema_version: 2
+
+changelog:
+  - version: 2
+    date: "2026-06-22"
+    feature: "state-blueprint-compatibility"
+    note: >
+      Added job-state-durability (DIVERGE wave): preserving per-player saved state as the
+      shared Ink blueprint evolves. DIVERGE recommends a compile-time blueprint identity
+      stamp + loud restore guard, composing with a tolerant best-effort restore result.
+  - version: 1
+    date: "2026-06-10"
+    feature: "story-testability"
+    note: "Seeded the jobs register (story-testability DISCUSS wave)."
 
 jobs:
   - id: "job-story-logic-verification"
@@ -97,3 +110,41 @@ jobs:
       - "Every unsupported Ink construct produces a clear, located compile error naming the construct — zero silent wrong output"
       - "A published supported/unsupported feature reference lets authors stay inside the supported set without trial and error"
       - "No dependency on the external inklecate binary for compiling supported stories"
+
+  - id: "job-state-durability"
+    status: "active"
+    persona: "Maarten — Swift app developer embedding Ink stories"
+    related_jobs:
+      - id: "job-story-playback"
+        relationship: >
+          Playback persists per-player StoryState against a shared blueprint. This job
+          owns what happens to that state when the blueprint itself evolves post-release.
+    statement: >
+      When I have shipped an Ink-driven game whose blueprint I must keep editing while
+      players hold long-lived saves, I want each player's accumulated narrative state to
+      remain restorable against the evolving blueprint — or to be told unambiguously when
+      it cannot be — so I can patch the story without silently corrupting or discarding
+      player progress.
+    forces:
+      push: >
+        Saved StoryState couples to the blueprint via variable names, dot-joined container
+        paths, and positional index path-components; no identity stamp exists, and a stale
+        path silently degrades to root (navigateAbsolute(...) ?? root) — drift surfaces only
+        as a runtime restore failure seen first by the player.
+      pull: >
+        Edit a published story safely: detect blueprint/save drift before shipping or loudly
+        at restore, and recover as much player progress as possible.
+    features:
+      - id: "state-blueprint-compatibility"
+        contribution: >
+          DIVERGE recommends a two-track direction: (Detect) a CI/CD blueprint-compatibility
+          check — D-1 content-hash warning of last-shipped vs new blueprint, then D-2 a
+          structure-relevant diff reporting only save-breaking changes — plus (Remediate) a
+          tolerant runtime restore returning an explicit RestoreResult (replacing the silent
+          root fallback). A runtime identity-hash guard is folded into D-1 + the restore
+          result rather than shipped standalone. Pending DISCUSS convergence.
+        status: "in DIVERGE wave"
+    outcome_kpis:
+      - "A blueprint/save mismatch is detected and reported (never silently degraded to root)"
+      - "A restore against an edited blueprint reports which state survived and which was dropped"
+      - "Save-breaking blueprint changes are surfaced to the developer before reaching a player"
