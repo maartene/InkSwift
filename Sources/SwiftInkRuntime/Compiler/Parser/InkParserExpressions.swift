@@ -28,18 +28,24 @@ public enum InkExpressionParseError: Error, Equatable {
 /// precedence climbing.
 public enum InkExpressionParser {
 
-    /// Binding power of the comparison group (`> < >= <= == !=`) — the lowest
-    /// precedence handled here (binds looser than arithmetic).
-    private static let comparisonPrecedence = 1
+    /// Binding power of the logical-or group (`||`) — the lowest precedence
+    /// handled here (binds looser than everything else, matching Ink/C order).
+    private static let logicalOrPrecedence = 1
+    /// Binding power of the logical-and group (`&&`) — binds tighter than `||`
+    /// but looser than comparison.
+    private static let logicalAndPrecedence = 2
+    /// Binding power of the comparison group (`> < >= <= == !=`) — binds tighter
+    /// than the logical operators but looser than arithmetic.
+    private static let comparisonPrecedence = 3
     /// Binding power of the additive group.
-    private static let additivePrecedence = 2
+    private static let additivePrecedence = 4
     /// Binding power of the multiplicative group — binds tighter than additive.
-    private static let multiplicativePrecedence = 3
+    private static let multiplicativePrecedence = 5
 
     /// Parse a single arithmetic/comparison expression from `source`.
     public static func parse(_ source: String) throws -> InkExpression {
         var tokens = ExpressionTokenizer(source)
-        let expression = try parseExpression(minimumPrecedence: comparisonPrecedence, from: &tokens)
+        let expression = try parseExpression(minimumPrecedence: logicalOrPrecedence, from: &tokens)
         if let leftover = tokens.peek() {
             throw InkExpressionParseError.unexpectedToken(leftover.text)
         }
@@ -76,7 +82,7 @@ public enum InkExpressionParser {
         // full expression up to the matching `)`. Needed so `not (a == b)` binds
         // the whole comparison under the prefix `!`.
         if token.text == "(" {
-            let grouped = try parseExpression(minimumPrecedence: comparisonPrecedence, from: &tokens)
+            let grouped = try parseExpression(minimumPrecedence: logicalOrPrecedence, from: &tokens)
             guard let closing = tokens.next(), closing.text == ")" else {
                 throw InkExpressionParseError.unexpectedToken(")")
             }
@@ -108,7 +114,7 @@ public enum InkExpressionParser {
             return .functionCall(name: name, arguments: arguments)
         }
         while true {
-            arguments.append(try parseExpression(minimumPrecedence: comparisonPrecedence, from: &tokens))
+            arguments.append(try parseExpression(minimumPrecedence: logicalOrPrecedence, from: &tokens))
             guard let separator = tokens.next() else {
                 throw InkExpressionParseError.unexpectedEndOfInput
             }
@@ -145,6 +151,8 @@ public enum InkExpressionParser {
     /// Left binding power for an operator token; nil for non-operators.
     private static func bindingPower(of token: ExpressionToken?) -> Int? {
         switch token?.text {
+        case "||": return logicalOrPrecedence
+        case "&&": return logicalAndPrecedence
         case ">", "<", ">=", "<=", "==", "!=": return comparisonPrecedence
         case "+", "-": return additivePrecedence
         case "*", "/", "%": return multiplicativePrecedence
@@ -222,6 +230,9 @@ private struct ExpressionTokenizer {
         if let comparison = scanComparisonOperator(from: index) {
             return comparison
         }
+        if let logical = scanLogicalOperator(from: index) {
+            return logical
+        }
         if isPunctuation(characters[index]) {
             return (ExpressionToken(text: String(characters[index])), index + 1)
         }
@@ -271,6 +282,22 @@ private struct ExpressionTokenizer {
             return (ExpressionToken(text: symbol), index + 2)
         }
         guard character == ">" || character == "<" else { return nil }
+        return (ExpressionToken(text: String(character)), index + 1)
+    }
+
+    /// Scan a logical operator (`&&` / `||`) beginning at `index`. The doubled
+    /// forms are recognised as a single two-character token. A LONE `&` or `|`
+    /// is not a valid Ink operator: it is emitted as a single-character token so
+    /// the parser raises `unexpectedToken` for it, rather than the character
+    /// being silently dropped (which previously truncated the whole expression).
+    /// Returns `nil` when the character at `index` is neither `&` nor `|`.
+    private func scanLogicalOperator(from index: Int) -> (token: ExpressionToken, endIndex: Int)? {
+        let character = characters[index]
+        guard character == "&" || character == "|" else { return nil }
+        if index + 1 < characters.count, characters[index + 1] == character {
+            let symbol = String(character) + String(character)
+            return (ExpressionToken(text: symbol), index + 2)
+        }
         return (ExpressionToken(text: String(character)), index + 1)
     }
 

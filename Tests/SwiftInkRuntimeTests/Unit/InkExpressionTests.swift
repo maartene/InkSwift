@@ -61,6 +61,81 @@ struct InkExpressionParserTests {
     }
 }
 
+@Suite("InkExpressionParser — logical operators && and ||")
+struct InkExpressionParserLogicalTests {
+
+    // L1 — `&&` binds tighter than `||`: `a || b && c` parses as
+    // `a || (b && c)`, so the `||` is the root and its right operand is the
+    // `&&` sub-expression (standard Ink/C precedence: || loosest, then &&).
+    @Test func `parses logical-and binding tighter than logical-or`() throws {
+        let expression = try InkExpressionParser.parse("a || b && c")
+        #expect(expression == .binary(
+            op: "||",
+            left: .variableReference("a"),
+            right: .binary(op: "&&", left: .variableReference("b"), right: .variableReference("c"))
+        ))
+    }
+
+    // L2 — comparison binds tighter than `&&`: `a == 1 && b == 2` parses as
+    // `(a == 1) && (b == 2)`. This is the exact shape of the reproduced defect.
+    @Test func `parses comparison binding tighter than logical-and`() throws {
+        let expression = try InkExpressionParser.parse("a == 1 && b == 2")
+        #expect(expression == .binary(
+            op: "&&",
+            left: .binary(op: "==", left: .variableReference("a"), right: .intLiteral(1)),
+            right: .binary(op: "==", left: .variableReference("b"), right: .intLiteral(2))
+        ))
+    }
+
+    // L3 — parentheses override precedence: `(a || b) && c` parses with the
+    // `&&` as root and the grouped `||` as its left operand.
+    @Test func `parses parenthesised logical-or under logical-and`() throws {
+        let expression = try InkExpressionParser.parse("(a || b) && c")
+        #expect(expression == .binary(
+            op: "&&",
+            left: .binary(op: "||", left: .variableReference("a"), right: .variableReference("b")),
+            right: .variableReference("c")
+        ))
+    }
+
+    // L4 — `&&` is left-associative: `a && b && c` parses as `(a && b) && c`.
+    @Test func `parses left-associative logical-and chain`() throws {
+        let expression = try InkExpressionParser.parse("a && b && c")
+        #expect(expression == .binary(
+            op: "&&",
+            left: .binary(op: "&&", left: .variableReference("a"), right: .variableReference("b")),
+            right: .variableReference("c")
+        ))
+    }
+
+    // L5 — the two-character operators tokenize without surrounding whitespace:
+    // `a&&b||c` parses identically to the spaced form `(a && b) || c`.
+    @Test func `tokenizes adjacent logical operators without whitespace`() throws {
+        let expression = try InkExpressionParser.parse("a&&b||c")
+        #expect(expression == .binary(
+            op: "||",
+            left: .binary(op: "&&", left: .variableReference("a"), right: .variableReference("b")),
+            right: .variableReference("c")
+        ))
+    }
+
+    // L6 — a lone `&` is not a valid Ink operator: it must raise a hard parse
+    // error rather than be silently dropped (the contributing factor that hid
+    // this defect at compile time).
+    @Test func `throws on a lone ampersand operator`() throws {
+        #expect(throws: InkExpressionParseError.self) {
+            _ = try InkExpressionParser.parse("a & b")
+        }
+    }
+
+    // L7 — a lone `|` likewise raises a hard parse error.
+    @Test func `throws on a lone pipe operator`() throws {
+        #expect(throws: InkExpressionParseError.self) {
+            _ = try InkExpressionParser.parse("a | b")
+        }
+    }
+}
+
 @Suite("RuntimeObjectEmitter — arithmetic expression lowering")
 struct RuntimeObjectEmitterExpressionTests {
 
