@@ -276,6 +276,32 @@ enum ConditionalEmitter {
                 : unconditionalDivert(to: [target]))
             return ContainerNode(children: children, namedContent: [:], flags: 0, name: key)
         }
+        // A branch carrying a glue marker `<>` must tokenize it into a glue control
+        // command rather than echo it as literal text (block conditionals, gathers,
+        // and weaves already do this — inline-conditional branches were the gap).
+        // Drop ONLY the marker and keep the remaining prose VERBATIM: the source
+        // whitespace adjacent to `<>` is literal content inklecate preserves (the
+        // trailing space in `true text <>` is the separator that survives the glued
+        // join), so trimming it would collapse `text should` into `textshould`.
+        let glueMarker = "<>"
+        if trimmed.hasPrefix(glueMarker), trimmed != glueMarker {
+            children.append(.controlCommand("<>"))
+            let remainder = String(trimmed.dropFirst(glueMarker.count))
+            if remainder.trimmingCharacters(in: .whitespaces).isEmpty == false {
+                children.append(.text(remainder))
+            }
+            children.append(unconditionalDivert(to: endPath))
+            return ContainerNode(children: children, namedContent: [:], flags: 0, name: key)
+        }
+        if trimmed.hasSuffix(glueMarker) {
+            let prose = String(trimmed.dropLast(glueMarker.count))
+            if prose.isEmpty == false {
+                children.append(.text(prose))
+            }
+            children.append(.controlCommand("<>"))
+            children.append(unconditionalDivert(to: endPath))
+            return ContainerNode(children: children, namedContent: [:], flags: 0, name: key)
+        }
         if text.isEmpty == false {
             children.append(.text(text))
         }
