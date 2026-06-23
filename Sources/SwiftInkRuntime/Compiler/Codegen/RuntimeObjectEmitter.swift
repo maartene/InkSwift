@@ -87,7 +87,20 @@ enum RuntimeObjectEmitter {
         // names no real container against the actually-emitted container whose path
         // ends with that label inside the same knot, when exactly one such container
         // exists (uniqueness avoids cross-scope mis-resolution).
-        let root = reconcilingReadCountPaths(builtRoot)
+        // Divert-target path reconciliation (Cass softlock fix): a bare named
+        // weave-point divert (`-> cass_ask_what_he_needs_information_gathering`)
+        // is emitted by `qualifiedDivertTarget` using the discovery pre-pass's
+        // PREDICTED FLAT path. When the enclosing knot opens with block
+        // conditionals, the whole weave is physically nested under that line's
+        // `cond{N}-end` continuation container(s), so the real container path
+        // (`cass.cond0-end.cond0-end.cass_opening.…`) does not match the flat
+        // predicted path — the runtime's absolute-from-root navigation dead-ends
+        // and the choice stack exhausts (softlock). Reconcile each `.divert`
+        // whose absolute target names no real container against the unique
+        // actually-emitted container whose path ends with that label inside the
+        // same knot, exactly as the read-count reconciler does. choicePoint
+        // targets are already correct and are left untouched.
+        let root = reconcilingDivertPaths(reconcilingReadCountPaths(builtRoot))
         // CountVisits flagging (ADR-011 EXTEND, generalised WL-D4): set the runtime's
         // 0x1 CountVisits flag on EXACTLY the read-count-referenced targets — labelled
         // weave containers AND referenced knots/stitches. The set of referenced
@@ -178,6 +191,91 @@ enum RuntimeObjectEmitter {
         var rebuiltNamed: [String: ContainerNode] = [:]
         for (key, child) in container.namedContent {
             rebuiltNamed[key] = rewritingReadCounts(child, rewrites: rewrites)
+        }
+        return ContainerNode(
+            children: children, namedContent: rebuiltNamed, flags: container.flags, name: container.name
+        )
+    }
+
+    // MARK: - Divert-target path reconciliation
+
+    /// Rewrite every `.divert` whose ABSOLUTE target names no existing container
+    /// to the actually-emitted container path, when a unique reconciling target
+    /// exists. Mirrors `reconcilingReadCountPaths`: the reconciliation target is a
+    /// container whose absolute path ENDS with the dangling target's final label
+    /// segment AND shares its leading knot segment; uniqueness within that knot
+    /// prevents cross-scope mis-resolution. Only absolute, non-END,
+    /// non-function-call, currently-dangling targets are considered — a relative
+    /// (`.^.`), END, function (`f():`), or already-resolving target is untouched.
+    private static func reconcilingDivertPaths(_ root: ContainerNode) -> ContainerNode {
+        var containerPaths: Set<String> = []
+        collectContainerPaths(root, prefix: [], into: &containerPaths)
+        var rewrites: [String: String] = [:]
+        for target in danglingDivertTargets(in: root, existing: containerPaths) {
+            if let resolved = reconciledPath(for: target, among: containerPaths) {
+                rewrites[target] = resolved
+            }
+        }
+        guard rewrites.isEmpty == false else { return root }
+        return rewritingDivertTargets(root, rewrites: rewrites)
+    }
+
+    /// Every `.divert` target eligible for reconciliation that does NOT match an
+    /// existing container: absolute (no leading `.`), not `END`, not a
+    /// function-call (`f():`) target, and currently dangling.
+    private static func danglingDivertTargets(
+        in container: ContainerNode, existing: Set<String>
+    ) -> Set<String> {
+        var targets: Set<String> = []
+        collectDivertTargets(container, into: &targets)
+        return targets
+            .filter { isReconcilableDivertTarget($0) }
+            .subtracting(existing)
+    }
+
+    /// True when a divert target is a candidate for path reconciliation: it must
+    /// be absolute (no leading `.` relative form), not the `END` sentinel, and not
+    /// a function-call target (which the runtime intercepts by its `f():` prefix).
+    private static func isReconcilableDivertTarget(_ target: String) -> Bool {
+        target.hasPrefix(".") == false
+            && target != "END"
+            && target.hasPrefix(functionCallTargetPrefix) == false
+    }
+
+    /// Collect every `.divert` target anywhere in the tree. `.choicePoint` targets
+    /// are deliberately excluded — they are already emitted correctly.
+    private static func collectDivertTargets(_ container: ContainerNode, into targets: inout Set<String>) {
+        for child in container.children {
+            if case .divert(let target, _, _) = child { targets.insert(target) }
+            if case .container(let nested) = child { collectDivertTargets(nested, into: &targets) }
+        }
+        for nested in container.namedContent.values {
+            collectDivertTargets(nested, into: &targets)
+        }
+    }
+
+    /// Rebuild the tree replacing each `.divert` whose target is in `rewrites` with
+    /// the reconciled target (preserving its `isConditional`/`isVariable` flags);
+    /// all other nodes — including `.choicePoint` — are preserved verbatim.
+    private static func rewritingDivertTargets(
+        _ container: ContainerNode, rewrites: [String: String]
+    ) -> ContainerNode {
+        let children = container.children.map { child -> NodeKind in
+            switch child {
+            case .divert(let target, let isConditional, let isVariable):
+                return .divert(
+                    target: rewrites[target] ?? target,
+                    isConditional: isConditional, isVariable: isVariable
+                )
+            case .container(let nested):
+                return .container(rewritingDivertTargets(nested, rewrites: rewrites))
+            default:
+                return child
+            }
+        }
+        var rebuiltNamed: [String: ContainerNode] = [:]
+        for (key, child) in container.namedContent {
+            rebuiltNamed[key] = rewritingDivertTargets(child, rewrites: rewrites)
         }
         return ContainerNode(
             children: children, namedContent: rebuiltNamed, flags: container.flags, name: container.name

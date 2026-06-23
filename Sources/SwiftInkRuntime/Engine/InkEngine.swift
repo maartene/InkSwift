@@ -973,28 +973,6 @@ final class InkEngine {
 
     // MARK: - Choice handling
 
-    /// Returns true when the choice continuation's first absolute divert targets an
-    /// ancestor of the continuation itself (a "loop-back" pattern like `* [Leave] -> café`
-    /// inside the `café` knot). Loop-back choices are never tracked in `chosenChoiceTargets`
-    /// because they are intended to remain available on every visit.
-    private func continuationLoopsBackToAncestor(_ choice: ChoiceData) -> Bool {
-        guard let lastFrame = choice.continuationFrames.last,
-              let continuationContainer = navigateAbsolute(lastFrame.pathFromRoot) else { return false }
-        let continuationPath = lastFrame.pathFromRoot
-        for node in continuationContainer.children {
-            guard case .divert(let target, _, _) = node else { continue }
-            guard !target.hasPrefix(".") else { continue }
-            let targetComponents = target.split(separator: ".").map(String.init)
-            // A loop-back: targetComponents is a proper prefix of continuationPath
-            // (meaning the divert goes to a containing ancestor of this continuation).
-            if targetComponents.count < continuationPath.count,
-               continuationPath.starts(with: targetComponents) {
-                return true
-            }
-        }
-        return false
-    }
-
     func chooseChoice(at index: Int) throws {
         guard index >= 0 && index < state.currentChoices.count else {
             throw StoryError.invalidChoiceIndex(index)
@@ -1002,12 +980,13 @@ final class InkEngine {
         let choice = state.currentChoices[index]
         if choice.flags.contains(.isOnceOnly) {
             // Record the absolute path of the chosen target so the suppression
-            // check in stepToNextLine can match it reliably across contexts.
-            // Exception: do NOT track loop-back choices — continuations that divert
-            // directly back to an ancestor knot (e.g. `* [Leave] -> café` inside café).
-            // Such choices are intended to be available on every visit.
-            if let absolutePath = choice.continuationFrames.last?.pathFromRoot.joined(separator: "."),
-               !continuationLoopsBackToAncestor(choice) {
+            // check in stepToNextLine can match it reliably across contexts. A
+            // once-only `*` choice is ALWAYS suppressed once chosen — including
+            // when its body diverts back to its own enclosing gather (the Cass /
+            // The-Intercept `(think) -> opts` pattern). Sticky `+` choices, which
+            // are meant to remain available on every visit, never carry the
+            // `.isOnceOnly` flag and so never reach this branch.
+            if let absolutePath = choice.continuationFrames.last?.pathFromRoot.joined(separator: ".") {
                 state.chosenChoiceTargets.insert(absolutePath)
             }
         }
