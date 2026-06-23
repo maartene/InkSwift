@@ -278,29 +278,28 @@ enum ConditionalEmitter {
         }
         // A branch carrying a glue marker `<>` must tokenize it into a glue control
         // command rather than echo it as literal text (block conditionals, gathers,
-        // and weaves already do this — inline-conditional branches were the gap).
-        // Drop ONLY the marker and keep the remaining prose VERBATIM: the source
-        // whitespace adjacent to `<>` is literal content inklecate preserves (the
-        // trailing space in `true text <>` is the separator that survives the glued
-        // join), so trimming it would collapse `text should` into `textshould`.
-        let glueMarker = "<>"
-        if trimmed.hasPrefix(glueMarker), trimmed != glueMarker {
-            children.append(.controlCommand("<>"))
-            let remainder = String(trimmed.dropFirst(glueMarker.count))
+        // and weaves already do this via `GlueMarker` — inline-conditional branches
+        // were the gap). Keep the remaining prose VERBATIM: the source whitespace
+        // adjacent to `<>` is literal content inklecate preserves (the trailing
+        // space in `true text <>` is the separator that survives the glued join),
+        // so trimming it would collapse `text should` into `textshould`.
+        switch GlueMarker.edge(of: trimmed) {
+        case .leading(let remainder):
+            children.append(.controlCommand(GlueMarker.marker))
             if remainder.trimmingCharacters(in: .whitespaces).isEmpty == false {
                 children.append(.text(remainder))
             }
             children.append(unconditionalDivert(to: endPath))
             return ContainerNode(children: children, namedContent: [:], flags: 0, name: key)
-        }
-        if trimmed.hasSuffix(glueMarker) {
-            let prose = String(trimmed.dropLast(glueMarker.count))
+        case .trailing(let prose):
             if prose.isEmpty == false {
                 children.append(.text(prose))
             }
-            children.append(.controlCommand("<>"))
+            children.append(.controlCommand(GlueMarker.marker))
             children.append(unconditionalDivert(to: endPath))
             return ContainerNode(children: children, namedContent: [:], flags: 0, name: key)
+        case .none:
+            break
         }
         if text.isEmpty == false {
             children.append(.text(text))

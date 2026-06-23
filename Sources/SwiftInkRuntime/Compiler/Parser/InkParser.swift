@@ -13,7 +13,6 @@ public enum InkParser {
 
     private static let knotMarker = "=="
     private static let divertMarker = "->"
-    private static let glueMarker = "<>"
     private static let endTarget = "END"
     private static let varMarker = "VAR"
     private static let constMarker = "CONST"
@@ -763,29 +762,26 @@ public enum InkParser {
         position: SourcePosition,
         into statements: inout [InkStatement]
     ) throws {
-        if trimmed == glueMarker {
-            statements.append(InkStatement(kind: .glue, position: position))
-            return
-        }
-        // A line LEADING with `<>` glues to the preceding output (the block
-        // conditional body `<>, sipping…` and the post-block `<>.` in TheIntercept
-        // ~161/163): emit glue first, then lower the remainder so its prose joins
-        // the previous line on the same output line — instead of echoing `<>` as
-        // literal text.
+        // A line carrying a glue marker `<>` on either edge: emit a glue statement
+        // in the marker's place (see `GlueMarker`, the shared edge splitter).
         //
-        // The source whitespace AFTER `<>` is literal content inklecate preserves
-        // (the post-block `<> You scientists."` at TheIntercept.ink ~1685 lowers to
-        // the oracle text node `^ You scientists.`, a LEADING space). Trimming it
-        // would yield `affairs.You` instead of the oracle's `affairs. You`. So for a
-        // plain-prose remainder, drop ONLY the marker and keep the rest VERBATIM. A
-        // brace-/divert-/glue-bearing remainder still re-dispatches through
-        // `appendContent` (which trims) so those constructs are still recognised —
-        // symmetric with `WeaveEmitter.inlineBodyStatements`' leading-`<>` branch.
-        if trimmed.hasPrefix(glueMarker), trimmed != glueMarker {
+        // LEADING `<>` glues to the preceding output (the block conditional body
+        // `<>, sipping…` and the post-block `<>.` in TheIntercept ~161/163): emit
+        // glue first, then lower the remainder so its prose joins the previous
+        // output line instead of echoing `<>` as literal text. The source
+        // whitespace AFTER `<>` is literal content inklecate preserves (the
+        // post-block `<> You scientists."` at TheIntercept.ink ~1685 lowers to the
+        // oracle text node `^ You scientists.`, a LEADING space). Trimming it would
+        // yield `affairs.You` instead of the oracle's `affairs. You`. So for a
+        // plain-prose remainder, keep the rest VERBATIM; a brace-/divert-/glue-
+        // bearing remainder still re-dispatches through `appendContent` (which
+        // trims) so those constructs are still recognised — symmetric with
+        // `WeaveEmitter.inlineBodyStatements`' leading-`<>` branch.
+        switch GlueMarker.edge(of: trimmed) {
+        case .leading(let remainder):
             statements.append(InkStatement(kind: .glue, position: position))
-            let remainder = String(trimmed.dropFirst(glueMarker.count))
             if remainder.contains("{") || remainder.contains("#")
-                || remainder.contains(divertMarker) || remainder.hasSuffix(glueMarker) {
+                || remainder.contains(divertMarker) || remainder.hasSuffix(GlueMarker.marker) {
                 let dispatchable = remainder.trimmingCharacters(in: .whitespaces)
                 if dispatchable.isEmpty == false {
                     try appendContent(from: dispatchable, position: position, into: &statements)
@@ -794,13 +790,13 @@ public enum InkParser {
                 statements.append(InkStatement(kind: .text(remainder), position: position))
             }
             return
-        }
-        if trimmed.hasSuffix(glueMarker) {
-            let text = String(trimmed.dropLast(glueMarker.count))
-                .trimmingCharacters(in: .whitespaces)
+        case .trailing(let prose):
+            let text = prose.trimmingCharacters(in: .whitespaces)
             statements.append(InkStatement(kind: .text(text), position: position))
             statements.append(InkStatement(kind: .glue, position: position))
             return
+        case .none:
+            break
         }
         if trimmed.contains("{") || trimmed.contains("#") {
             if trimmed.contains("{") {

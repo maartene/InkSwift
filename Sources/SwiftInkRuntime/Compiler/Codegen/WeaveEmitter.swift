@@ -596,27 +596,26 @@ private enum WeaveParser {
         // executes; plain prose stays `.text`. The arrow path below still handles
         // `- -> target` (including a leading prose prefix).
         guard let arrowRange = body.range(of: "->") else {
-            // A gather/choice outcome ending in `<>` (`… He pushes one mug: <>`)
-            // carries trailing glue: strip the marker, lower the prose, and append a
-            // glue statement so the outcome glues to its loose-end divert target
-            // (the next gather's first content joins on the same output line, matching
-            // inklecate) instead of echoing `<>` as literal text.
-            let glueMarker = "<>"
-            // A gather/choice outcome LEADING with `<>` (the `tell_me_now` gather at
-            // TheIntercept.ink ~481, `(tell_me_now) <> So why don't you tell me…`)
-            // carries leading glue: emit glue FIRST, then lower the remainder, so the
-            // outcome joins the previous output line (the choice body falling through
-            // into the gather) instead of echoing `<>` as literal text. Symmetric with
-            // the trailing-`<>` branch below; `outcomeStatement` itself does not split
-            // a leading marker, so the split lives here at the body-lowering boundary.
-            if body.hasPrefix(glueMarker), body != glueMarker {
-                // Drop ONLY the `<>` marker — the source whitespace after it is literal
-                // content inklecate preserves (the oracle text node is `^ So why…`, a
-                // leading space). Trimming it would yield `last.So` instead of the
-                // oracle's `last. So`. A brace-bearing remainder still routes through
-                // `outcomeStatement` (which trims), but the common prose case keeps the
-                // verbatim remainder so the glued join matches inklecate exactly.
-                let remainder = String(body.dropFirst(glueMarker.count))
+            // A gather/choice outcome carrying a glue marker `<>` on either edge
+            // emits a glue statement in its place (see `GlueMarker`, the shared edge
+            // splitter) so the outcome joins the adjacent output line instead of
+            // echoing `<>` as literal text.
+            //
+            // LEADING `<>` (the `tell_me_now` gather at TheIntercept.ink ~481,
+            // `(tell_me_now) <> So why don't you tell me…`): emit glue FIRST, then
+            // lower the remainder so the outcome joins the previous output line (the
+            // choice body falling through into the gather). Drop ONLY the marker —
+            // the source whitespace after it is literal content inklecate preserves
+            // (the oracle text node is `^ So why…`, a leading space); trimming would
+            // yield `last.So` instead of `last. So`. A brace-bearing remainder still
+            // routes through `outcomeStatement` (which trims), but the common prose
+            // case keeps the verbatim remainder so the glued join matches inklecate.
+            //
+            // TRAILING `<>` (`… He pushes one mug: <>`): lower the prose, then append
+            // glue so the outcome glues to its loose-end divert target (the next
+            // gather's first content joins on the same output line).
+            switch GlueMarker.edge(of: body) {
+            case .leading(let remainder):
                 var statements: [InkStatement] = [InkStatement(kind: .glue, position: position)]
                 if remainder.contains("{") || remainder.contains("->") {
                     if let proseStatement = try? InkParser.outcomeStatement(remainder, at: position) {
@@ -626,17 +625,18 @@ private enum WeaveParser {
                     statements.append(InkStatement(kind: .text(remainder), position: position))
                 }
                 return statements
-            }
-            if body.hasSuffix(glueMarker) {
-                let prose = String(body.dropLast(glueMarker.count)).trimmingCharacters(in: .whitespaces)
+            case .trailing(let prose):
+                let trimmedProse = prose.trimmingCharacters(in: .whitespaces)
                 var statements: [InkStatement] = []
-                if let proseStatement = try? InkParser.outcomeStatement(prose, at: position) {
+                if let proseStatement = try? InkParser.outcomeStatement(trimmedProse, at: position) {
                     statements.append(proseStatement)
-                } else if prose.isEmpty == false {
-                    statements.append(InkStatement(kind: .text(prose), position: position))
+                } else if trimmedProse.isEmpty == false {
+                    statements.append(InkStatement(kind: .text(trimmedProse), position: position))
                 }
                 statements.append(InkStatement(kind: .glue, position: position))
                 return statements
+            case .none:
+                break
             }
             if let statement = try? InkParser.outcomeStatement(body, at: position) {
                 return [statement]
