@@ -54,35 +54,37 @@ import Foundation
         #expect(nativeText == oracleText)
     }
 
-    // MARK: - Bug A (DEFERRED) — top-level single-`=` stitch dropped at codegen
+    // MARK: - Bug A (FIXED) — top-level single-`=` stitch dropped at codegen
 
     /// A SEPARATE defect surfaced while fixing Bug B: a top-level single-`=` stitch
-    /// (declared at file scope, outside any knot) is dropped during codegen, so a
-    /// divert to it never resolves and the story produces empty output. This is the
+    /// (declared at file scope, outside any knot) was dropped during codegen — it
+    /// never became a `namedContent` container, so a `{ cond: -> end_game }` divert
+    /// to it found no target and the story produced EMPTY output (and a plain
+    /// fall-through over-produced, flattening the stitch body inline). This is the
     /// original minimal reproduction. It is a DIFFERENT root cause from Bug B (here
-    /// the target container is never emitted; in Bug B it exists but the divert was
-    /// unqualified), and is tracked for a dedicated session — hence disabled so it
-    /// does not block the trunk gate until that fix lands.
-    let topLevelStitchInk =
-    """
-    VAR accepted_borrowed_light = true
-    VAR found_story = true
+    /// the target container was never emitted; in Bug B it existed but the divert was
+    /// unqualified). The fix groups top-level stitches into the root's named content,
+    /// reusing the same stitch-emission machinery a knot uses.
+    ///
+    /// Anchored to the inklecate oracle: native compile and the committed oracle JSON
+    /// are played through the SAME runtime and must produce identical output.
+    @Test func `story follows an inline conditional divert into a top-level stitch matching the oracle`() throws {
+        let source = try CompilerOracle.source("TopLevelStitchDivert")
+        let oracleJSON = try CompilerOracle.oracleJSON("TopLevelStitchDivert")
 
-    { accepted_borrowed_light && found_story: -> end_game }
+        let native = Story(blueprint: try InkCompiler.compile(source: source))
+        let oracle = try Story(json: oracleJSON)
 
-    = end_game
-    Cass is at the counter, and he sees your face and lights up before you've said a word - that half-beat-early warmth, landing the way it always lands. *(if `read_borrowed_light`:* You catch the timing of it now. You can't quite un-see it.*)*
-    -> END
+        let nativeText = native.continueMaximally()
+        let oracleText = oracle.continueMaximally()
 
-    """
-
-    @Test(.disabled("pending Bug A: top-level single-= stitch dropped at codegen — tracked for a dedicated session"))
-    func `story follows a divert into a top-level stitch`() throws {
-        let blueprint = try InkCompiler.compile(source: topLevelStitchInk)
-        let story = Story(blueprint: blueprint)
-
-        let text = story.continueMaximally()
-
-        #expect(text.contains("Cass is at the counter, and he sees your face and lights up before you've said a word"))
+        // The top-level `= end_game` stitch is a resolvable divert target.
+        #expect(nativeText.contains(
+            "Cass is at the counter, and he sees your face and lights up before you've said a word"
+        ))
+        // The conditional took the divert, so the post-conditional line is skipped.
+        #expect(nativeText.contains("You should never reach this line.") == false)
+        // Line-for-line execution-equivalence with the inklecate oracle.
+        #expect(nativeText == oracleText)
     }
 }

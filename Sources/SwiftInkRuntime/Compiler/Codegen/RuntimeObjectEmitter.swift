@@ -33,7 +33,7 @@ enum RuntimeObjectEmitter {
     static func emitRoot(statements: [InkStatement]) throws -> ContainerNode {
         let constants = collectConstants(statements)
         let functions = collectFunctionSignatures(statements)
-        let (rootBody, knots, functionDefinitions) = partitionTopLevel(statements)
+        let (rootBody, rootStitches, knots, functionDefinitions) = partitionTopLevel(statements)
         // Discovery pre-pass (ADR-011 EXTEND #3): record the labelled weave-point
         // paths before lowering so read-count references resolve order-independently.
         // Weave labels live in the root body AND inside knot/stitch bodies (e.g.
@@ -44,19 +44,29 @@ enum RuntimeObjectEmitter {
         for knot in knots {
             mergeWeaveLabelPaths(of: knot, into: &weaveLabelPaths)
         }
+        // A top-level stitch is a root section, so its weave labels are keyed by the
+        // bare stitch name prefix (`[stitch]`) — the same way a knot's own body
+        // labels are keyed by `[knot]` — so a read-count reference into one resolves.
+        for stitch in rootStitches {
+            for (key, path) in WeaveEmitter.discoverLabelPaths(stitch.body, keyPrefix: [stitch.name]) {
+                weaveLabelPaths[key] = path
+            }
+        }
         // Bare-name local resolution (step 01-04): a read-count subject spelled by
         // its BARE label (`{lift_up_cup:he|Harris}` referencing the `(lift_up_cup)`
         // choice in the same stitch) resolves in inklecate's local scope. Register
         // each bare label that is UNIQUE story-wide so the bare reference resolves;
         // duplicated bare labels (e.g. `opts`/`yes` reused across knots) stay
         // dotted-only — registering them would mis-resolve to the last knot's path.
-        mergeUniqueBareLabels(rootBody: rootBody, knots: knots, into: &weaveLabelPaths)
+        mergeUniqueBareLabels(
+            rootBody: rootBody, rootStitches: rootStitches, knots: knots, into: &weaveLabelPaths
+        )
         // Knot/stitch read-count addressing (ADR-011 EXTEND #2): record every
         // knot's and stitch's already-built namedContent path so a dotted
         // read-count subject (`knot.stitch`) resolves to its container path,
         // reusing the SAME path arithmetic emitKnot/emitStitch address by — never
         // re-derived. The runtime resolves the dotted key as-is against visitCounts.
-        let knotStitchPaths = collectKnotStitchPaths(knots)
+        let knotStitchPaths = collectKnotStitchPaths(knots, rootStitches: rootStitches)
         let context = LoweringContext(
             constants: constants, functions: functions,
             weaveLabelPaths: weaveLabelPaths, knotStitchPaths: knotStitchPaths
@@ -65,6 +75,9 @@ enum RuntimeObjectEmitter {
         var namedContent: [String: ContainerNode] = [:]
         let rootChildren = try lowerRootBody(rootBody, context: context, named: &namedContent)
 
+        for stitch in rootStitches {
+            namedContent[stitch.name] = try emitStitch(stitch, keyPrefix: [stitch.name], context: context)
+        }
         for knot in knots {
             namedContent[knot.name] = try emitKnot(knot, context: context)
         }
@@ -442,6 +455,7 @@ enum RuntimeObjectEmitter {
     /// A bare name occurring in two or more bodies is left dotted-only (ambiguous).
     private static func mergeUniqueBareLabels(
         rootBody: [InkStatement],
+        rootStitches: [StitchGroup],
         knots: [KnotGroup],
         into table: inout [String: [String]]
     ) {
@@ -452,6 +466,9 @@ enum RuntimeObjectEmitter {
             }
         }
         collect(rootBody, keyPrefix: [])
+        for stitch in rootStitches {
+            collect(stitch.body, keyPrefix: [stitch.name])
+        }
         for knot in knots {
             collect(knot.body, keyPrefix: [knot.name])
             for stitch in knot.stitches {
@@ -467,13 +484,21 @@ enum RuntimeObjectEmitter {
     /// addressed by `[knot.name]`; a stitch nested under it by `[knot.name,
     /// stitch.name]` — the same namedContent path `emitKnot`/`emitStitch` key their
     /// containers by. The dotted source name (`knot.stitch`) is the lookup key.
-    private static func collectKnotStitchPaths(_ knots: [KnotGroup]) -> [String: [String]] {
+    private static func collectKnotStitchPaths(
+        _ knots: [KnotGroup], rootStitches: [StitchGroup]
+    ) -> [String: [String]] {
         var paths: [String: [String]] = [:]
         for knot in knots {
             paths[knot.name] = [knot.name]
             for stitch in knot.stitches {
                 paths["\(knot.name).\(stitch.name)"] = [knot.name, stitch.name]
             }
+        }
+        // A top-level stitch is addressed by its bare name (`[stitch]`) directly under
+        // root — so a `-> stitch` divert (or `knot.stitch`-style read-count) resolves
+        // to the container `emitRoot` keys it by.
+        for stitch in rootStitches {
+            paths[stitch.name] = [stitch.name]
         }
         return paths
     }
@@ -788,34 +813,52 @@ enum RuntimeObjectEmitter {
         let body: [InkStatement]
     }
 
-    /// Split the flat stream into the pre-knot root body, the ordered knots, and
-    /// the ordered function definitions. Knot and function headers both terminate
-    /// the preceding group; a function definition consumes its body lines like a
-    /// knot but is lowered with its own parameter/return convention.
+    /// Split the flat stream into the pre-stitch root body, the ordered TOP-LEVEL
+    /// stitches, the ordered knots, and the ordered function definitions. Knot and
+    /// function headers terminate the preceding group; a top-level stitch header
+    /// (`= name` before the first knot) opens an addressable root section whose body
+    /// runs until the next stitch/knot/function header — mirroring how `readKnot`
+    /// groups a knot's own stitches, so a `-> name` divert resolves to a real
+    /// container instead of dead-ending in the flattened root body.
     private static func partitionTopLevel(
         _ statements: [InkStatement]
-    ) -> (rootBody: [InkStatement], knots: [KnotGroup], functions: [FunctionGroup]) {
+    ) -> (rootBody: [InkStatement], rootStitches: [StitchGroup], knots: [KnotGroup], functions: [FunctionGroup]) {
         var rootBody: [InkStatement] = []
+        var rootStitches: [StitchGroup] = []
         var knots: [KnotGroup] = []
         var functions: [FunctionGroup] = []
+        var pendingStitch: (name: String, body: [InkStatement])?
         var index = 0
         while index < statements.count {
             if case .functionDefinition(let name, let parameters, _) = statements[index].kind {
+                appendStitch(pendingStitch, into: &rootStitches); pendingStitch = nil
                 let (body, nextIndex) = readDefinitionBody(after: index, in: statements)
                 functions.append(FunctionGroup(name: name, parameters: parameters, body: body))
                 index = nextIndex
                 continue
             }
-            guard case .knot(let name) = statements[index].kind else {
-                rootBody.append(statements[index])
+            if case .knot(let name) = statements[index].kind {
+                appendStitch(pendingStitch, into: &rootStitches); pendingStitch = nil
+                let (knot, nextIndex) = readKnot(named: name, after: index, in: statements)
+                knots.append(knot)
+                index = nextIndex
+                continue
+            }
+            if case .stitch(let stitchName) = statements[index].kind {
+                appendStitch(pendingStitch, into: &rootStitches)
+                pendingStitch = (stitchName, [])
                 index += 1
                 continue
             }
-            let (knot, nextIndex) = readKnot(named: name, after: index, in: statements)
-            knots.append(knot)
-            index = nextIndex
+            if pendingStitch != nil {
+                pendingStitch?.body.append(statements[index])
+            } else {
+                rootBody.append(statements[index])
+            }
+            index += 1
         }
-        return (rootBody, knots, functions)
+        appendStitch(pendingStitch, into: &rootStitches)
+        return (rootBody, rootStitches, knots, functions)
     }
 
     /// Read one knot starting just after its header at `headerIndex`, consuming
@@ -899,14 +942,8 @@ enum RuntimeObjectEmitter {
         let knotContext = context.inKnotScope(knot.name)
         var named: [String: ContainerNode] = [:]
         for stitch in knot.stitches {
-            var stitchNamed: [String: ContainerNode] = [:]
-            let children = try lowerBodyRoutingWeave(
-                stitch.body, context: knotContext,
-                keyPrefix: [knot.name, stitch.name], named: &stitchNamed,
-                terminateFlatBodyWithDone: false
-            )
-            named[stitch.name] = ContainerNode(
-                children: children, namedContent: stitchNamed, flags: 0, name: stitch.name
+            named[stitch.name] = try emitStitch(
+                stitch, keyPrefix: [knot.name, stitch.name], context: knotContext
             )
         }
         var knotNamed = named
@@ -915,6 +952,25 @@ enum RuntimeObjectEmitter {
             terminateFlatBodyWithDone: false
         )
         return ContainerNode(children: children, namedContent: knotNamed, flags: 0, name: knot.name)
+    }
+
+    /// Emit one stitch container: lower its body under `keyPrefix` (the path
+    /// `emitKnot`/`emitRoot` key it by) in the supplied scope. Used for both
+    /// knot-nested stitches (`[knot, stitch]` under a knot-scoped context) and
+    /// TOP-LEVEL stitches declared before the first knot (`[stitch]` under the root
+    /// context) — the latter are addressable root sections in ink, so they must
+    /// become real `namedContent` containers rather than flattening into the root
+    /// body (where a `-> stitch` divert would find no container to resolve).
+    private static func emitStitch(
+        _ stitch: StitchGroup, keyPrefix: [String], context: LoweringContext
+    ) throws -> ContainerNode {
+        var stitchNamed: [String: ContainerNode] = [:]
+        let children = try lowerBodyRoutingWeave(
+            stitch.body, context: context,
+            keyPrefix: keyPrefix, named: &stitchNamed,
+            terminateFlatBodyWithDone: false
+        )
+        return ContainerNode(children: children, namedContent: stitchNamed, flags: 0, name: stitch.name)
     }
 
     /// Emit a function container: bind the call's pushed arguments to per-frame
