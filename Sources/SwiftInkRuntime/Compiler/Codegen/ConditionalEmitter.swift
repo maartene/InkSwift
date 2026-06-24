@@ -106,7 +106,8 @@ enum ConditionalEmitter {
         named: inout [String: ContainerNode],
         lowerBranch: BranchLowerer,
         lowerContinuation: BranchLowerer? = nil,
-        lowerExpression: ExpressionLowerer
+        lowerExpression: ExpressionLowerer,
+        qualifyDivertTarget: (String) -> String = { $0 }
     ) -> [NodeKind] {
         let ordinal = nextOrdinal(in: named)
         let endKey = key(ordinal, "end")
@@ -114,8 +115,12 @@ enum ConditionalEmitter {
         let trueKey = key(ordinal, "b0")
         let falseKey = key(ordinal, "b1")
 
-        named[trueKey] = inlineBranchContainer(trueText, key: trueKey, endPath: endPath)
-        named[falseKey] = inlineBranchContainer(falseText, key: falseKey, endPath: endPath)
+        named[trueKey] = inlineBranchContainer(
+            trueText, key: trueKey, endPath: endPath, qualifyDivertTarget: qualifyDivertTarget
+        )
+        named[falseKey] = inlineBranchContainer(
+            falseText, key: falseKey, endPath: endPath, qualifyDivertTarget: qualifyDivertTarget
+        )
 
         var dispatch: [NodeKind] = [.controlCommand("ev")]
         dispatch.append(contentsOf: lowerExpression(condition))
@@ -258,13 +263,24 @@ enum ConditionalEmitter {
         named[endKey] = ContainerNode(children: children, namedContent: endNamed, flags: 0, name: endKey)
     }
 
-    private static func inlineBranchContainer(_ text: String, key: String, endPath: [String]) -> ContainerNode {
+    private static func inlineBranchContainer(
+        _ text: String, key: String, endPath: [String],
+        qualifyDivertTarget: (String) -> String = { $0 }
+    ) -> ContainerNode {
         var children: [NodeKind] = []
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         // An inline-conditional branch whose body is a divert (`{c: -> target}`)
         // emits a real divert and diverts AWAY — it does not rejoin the shared
         // continuation. Any leading prose before the `->` still renders. A non-divert
         // branch renders its text (if any) then falls through to the continuation.
+        //
+        // The bare target is resolved against the enclosing knot scope via
+        // `qualifyDivertTarget` (a sibling stitch `end_game` → `cass.end_game`, a
+        // weave label → its absolute path) — symmetric with how a PLAIN divert is
+        // lowered through `LoweringContext.qualifiedDivertTarget`. Without this the
+        // raw bare name reached the runtime's absolute-from-root resolver, which
+        // cannot find a knot-nested stitch, so `{cond: -> end_game}` silently
+        // no-op'd instead of diverting.
         if let arrowRange = trimmed.range(of: "->") {
             let prose = String(trimmed[..<arrowRange.lowerBound]).trimmingCharacters(in: .whitespaces)
             if prose.isEmpty == false {
@@ -273,7 +289,7 @@ enum ConditionalEmitter {
             let target = String(trimmed[arrowRange.upperBound...]).trimmingCharacters(in: .whitespaces)
             children.append(target == "END"
                 ? .controlCommand("end")
-                : unconditionalDivert(to: [target]))
+                : unconditionalDivert(to: [qualifyDivertTarget(target)]))
             return ContainerNode(children: children, namedContent: [:], flags: 0, name: key)
         }
         // A branch carrying a glue marker `<>` must tokenize it into a glue control

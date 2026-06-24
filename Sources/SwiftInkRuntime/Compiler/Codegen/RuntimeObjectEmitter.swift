@@ -1149,7 +1149,8 @@ enum RuntimeObjectEmitter {
             lowerContinuation: inlineConditionalContinuationLowerer(
                 context: context, enclosingKeyPrefix: keyPrefix, fallThrough: fallThrough
             ),
-            lowerExpression: { lowerExpression($0, context: context) }
+            lowerExpression: { lowerExpression($0, context: context) },
+            qualifyDivertTarget: { context.qualifiedDivertTarget($0) }
         ))
         return children
     }
