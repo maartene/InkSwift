@@ -78,7 +78,7 @@ C4Component
     Component(engine, "InkEngine", "Engine/ layer", "final class. Owns var state: StoryState. Drives tree-walker. Enforces execution invariants. Internal only.")
     Component(storystate, "StoryState", "Engine/ layer", "struct, Codable. Holds callstack, visitCounts, currentPointer, variablesState, outputStream, returnStack. Owned by InkEngine.")
     Component(walker, "TreeWalker", "Engine/ layer", "Recursive node visitor. Reads NodeKind, advances pointer, pushes output. Internal only.")
-    Component(decoder, "InkDecoder", "Decoder/ layer", "Converts raw JSON (via JSONSerialization) into ContainerNode tree. The only layer permitted to call JSONSerialization. Internal only.")
+    Component(decoder, "InkDecoder", "Decoder/ layer", "Converts raw Ink JSON into ContainerNode tree via JSONDecoder + a custom Decodable typing Bool->Int->Double (platform-stable; formerly JSONSerialization + CoreFoundation type identity — ADR-013). The only layer permitted to perform Ink-format JSON decoding. Internal only.")
     Component(nodetypes, "Node Types (ContainerNode, NodeKind)", "Decoder/ layer", "Value types representing parsed Ink AST. NodeKind is internal. ContainerNode is internal. NodeKind includes pushDivertTarget and isVariable-flagged divert for call/return support.")
     Component(tagparser, "TagParser", "Engine/ layer", "Pure function. Parses raw tag strings (\"key: value\" or bare \"key\") into [String: String]. Internal only.")
   }
@@ -106,7 +106,7 @@ Sources/
 
   SwiftInkRuntime/             ← new module
     Decoder/
-      InkDecoder.swift         ← JSONSerialization entry point (ONLY file that may call JSONSerialization)
+      InkDecoder.swift         ← Ink-JSON decode entry point (ONLY file that decodes .ink.json — JSONDecoder + custom Decodable per ADR-013; formerly JSONSerialization)
       ContainerNode.swift      ← parsed AST node types
       NodeKind.swift           ← internal enum, never public
     Engine/
@@ -121,7 +121,7 @@ Tests/
   InkSwiftTests/               ← existing test target, unchanged
   SwiftInkRuntimeTests/        ← new test target
     Unit/
-    Integration/               ← may import InkSwift as oracle
+    Integration/               ← may import InkSwift as oracle (.macOS-conditioned; JS-bridge is Apple-only). Linux verification is fixture-based (inklecate-generated committed golden transcripts + decode-parity asserts — ADR-014), never the JS-bridge.
 ```
 
 ---
@@ -136,7 +136,7 @@ Tests/
 |------|------------|
 | **R1 — Dependency direction**: `Facade/` may import `Engine/` and `Decoder/`. `Engine/` may import `Decoder/`. `Decoder/` imports nothing from `Engine/` or `Facade/`. | SourceKit-based import checker in CI; SwiftLint custom rule candidate |
 | **R2 — NodeKind stays internal**: `NodeKind` enum carries no `public` modifier. Any `public` on `NodeKind` is a build-time error. | Swift access control; verified by `swift build` |
-| **R3 — JSONSerialization boundary**: `JSONSerialization` may only be called from `Decoder/` files. Any call site outside `Decoder/` is a CI violation. | SwiftLint `custom_rules` regex on import/call site, run in CI |
+| **R3 — Ink-format JSON decoding boundary**: Ink `.ink.json` decoding (`JSONSerialization`/`JSONDecoder` for the raw-bytes → node-tree substrate) may only occur in `Decoder/` files. Any Ink-decoding call site outside `Decoder/` is a CI violation. **Exception**: `Engine/InkEngine` save/restore uses `JSONDecoder`/`JSONEncoder` for `StoryState` Codable (ADR-003), which is *not* Ink-format parsing and stays permitted. | SwiftLint `custom_rules` regex on import/call site, run in CI. **Generalized for ADR-013** (JSONSerialization → JSONDecoder): the `r3_jsonserialization_boundary` regex must be updated so the boundary keeps binding against the new API — scope any `JSONDecoder` clause to `Facade/`+`Compiler/` only (NOT `Engine/`, to avoid a false positive on the ADR-003 StoryState save/restore at `InkEngine.swift:1056`). Flagged as a DELIVER task. |
 
 **Earned Trust — adapter probe requirement**: `InkDecoder` is the driven adapter for the filesystem/JSON substrate. The design requires it to expose a `probe()` function exercised at composition startup. The probe must:
 1. Attempt to decode a minimal known-good Ink JSON fixture embedded in the test bundle.
@@ -182,11 +182,11 @@ The oracle pattern in tests is a one-directional import: `SwiftInkRuntimeTests` 
 
 **Testability**: `InkEngine` and `TreeWalker` are internal but accessible to the test target via `@testable import`. The `InkDecoder` is independently testable from the engine — it produces a pure data structure with no side effects.
 
-**Correctness**: The `InkStory` (JS bridge) serves as a continuously-exercised oracle. Integration tests drive both implementations against the same `.ink.json` fixture and assert output equality line by line.
+**Correctness**: On macOS, the `InkStory` (JS bridge) serves as a continuously-exercised oracle — integration tests drive both implementations against the same `.ink.json` fixture and assert output equality line by line. **Cross-platform (native-runtime-linux, ADR-014)**: the authoritative oracle for the fixture corpus is now **inklecate-generated committed fixtures** — golden played transcripts (text + choices) plus targeted float/int/bool decode-parity assertions, captured offline and diffed identically by the macOS *and* Linux native runtimes. The JS-bridge `InkStory` remains a **macOS-only** oracle and is **not** the ground truth for this corpus (JXKit/JavaScriptCore is Apple-only); inklecate is a **capture-time-only** dependency and never runs in Linux CI.
 
 **Debuggability**: Tree-walker model (Decision 3) allows a test to stop the walker at any node and inspect `StoryState` directly. No opaque stack-machine bytecode to decode during debugging.
 
-**Portability**: No JavaScript engine dependency in `SwiftInkRuntime`. Compiles on any platform where Swift + Foundation are available (Linux, WASM targets in future).
+**Portability**: No JavaScript engine dependency in `SwiftInkRuntime`. **Corrected (native-runtime-linux, ADR-013)**: this previously claimed the module "compiles on any platform where Swift + Foundation are available (Linux, WASM)" — that was *false* while `InkDecoder.classifyNumber` relied on CoreFoundation type identity (`CFGetTypeID`/`CFBooleanGetTypeID`/`CFNumberGetType`), which is unreliable under swift-corelibs-foundation and silently mistypes numbers/booleans on Linux. It is made true by classifying scalars via `JSONDecoder` + a custom `Decodable` (Bool→Int→Double), whose typing is driven by the JSON token grammar (identical across Foundation implementations), not CF runtime type identity. `SwiftInkRuntime` then builds and plays identically on Linux and macOS (WASM remains a future target). The Apple-only legacy `InkSwift` JS-bridge is out of scope and stays `.macOS`-conditioned.
 
 **Reliability — Earned Trust**: The `InkDecoder.probe()` requirement means a malformed JSON runtime environment (corrupted bundle, wrong file format version) is caught at story initialisation time, not mid-playback.
 
@@ -664,6 +664,8 @@ The component responsibility annotations are updated:
 | [ADR-004](./adr-004-callreturn-mechanism.md) | Call/Return Mechanism: Return Address Stack in StoryState | Accepted |
 | [ADR-005](./adr-005-moveto-knot-jump-strategy.md) | moveToKnot Jump Strategy: Reset and Stack Installation | Accepted |
 | [ADR-010](./adr-010-variable-text-lowering.md) | Variable-Text Lowering (sequence / cycle / once-only) | Accepted |
+| [ADR-013](./adr-013-portable-number-bool-classification.md) | Portable JSON Number/Bool Classification (JSONDecoder + custom Decodable) | Accepted |
+| [ADR-014](./adr-014-cross-platform-equivalence-oracle.md) | Cross-Platform Equivalence Oracle (inklecate-generated committed fixtures) | Accepted |
 
 ---
 
@@ -751,6 +753,132 @@ Updated component responsibility annotations:
 2. `applyDivert` with an absolute dotted-path string (no leading `.`) follows the `navigateAbsolute` branch and sets `containerStack` to a fresh single-element array. This is the same code path exercised by all absolute diverts in the engine.
 3. The oracle comparison test must account for the JS-bridge auto-continue: `InkStory.moveToKnitStitch` calls `continueStory()` internally, producing the first line. The native `Story.moveToKnot` does not. The oracle test must call `story.continue()` once after `moveToKnot` to get the first line on the native side.
 4. `lastCompletedLine` (a non-`StoryState` field on `InkEngine`) is NOT explicitly cleared by the jump. Its value becomes stale but is overwritten by the first `step()` call after the jump. This is acceptable because `story.currentText` (which reads `engine.currentText` which reads `lastCompletedLine`) is only meaningful after `continue()` — the AC for US-01 does not assert on `currentText` before the first post-jump `continue()`.
+
+---
+
+### native-runtime-linux (Feature Addition)
+
+This subsection records the concrete architectural decisions for the
+`native-runtime-linux` feature: make the pure-Swift `SwiftInkRuntime` (runtime +
+native compiler) build, test, and run on **Linux**, producing output identical to
+macOS. **Parity only — no new Ink features.** The legacy `InkSwift` JS-bridge is OUT
+of scope (Apple-only, already `.macOS`-conditioned in `Package.swift:67`).
+
+**Zero new production components.** The only production change is the number/bool
+classification path inside `InkDecoder` (EXTEND). Everything else is test-support,
+fixtures, and CI. See ADR-013 (portable classification) and ADR-014 (cross-platform
+oracle).
+
+#### Quality Attributes (ranked by priority for this feature)
+
+1. **Correctness** — platform-identical int/float/bool value typing (the CF-drift
+   silent bug is the feature's central risk; KPI-3 = zero misclassifications).
+2. **Portability** — `SwiftInkRuntime` + `SwiftInkRuntimeTestSupport` build and play
+   identically on Linux and macOS (KPI-1).
+3. **Testability / Reliability** — a committed, hard-asserting, platform-portable
+   oracle; the decoder probe refuses to start on a mistyping platform.
+4. **Maintainability** — single code path (no `#if os`), boundary rules stay enforced
+   against the new API.
+
+Time-to-market is low priority; no scalability/security change. Conway: single
+maintainer — architecture trivially aligned with org structure. Paradigm:
+object-oriented (unchanged, per CLAUDE.md).
+
+#### Changed Assumptions vs Prior Brief
+
+| Original (quoted) | Replacement | Rationale |
+|---|---|---|
+| Portability (~L189): "Compiles on any platform where Swift + Foundation are available (Linux, WASM targets in future)." | "Made true by classifying scalars via `JSONDecoder` + custom `Decodable` (Bool→Int→Double), token-driven not CF-driven." | The claim was *false* while `classifyNumber` used CoreFoundation type identity (unreliable under swift-corelibs-foundation). ADR-013 makes it true and names the mechanism. |
+| Correctness (~L185): "The `InkStory` (JS bridge) serves as a continuously-exercised oracle." | Cross-platform ground truth = inklecate-generated committed fixtures (golden transcripts + decode-parity asserts); JS-bridge is macOS-only, not the corpus ground truth. | JXKit/JavaScriptCore is Apple-only and cannot run in Linux CI. ADR-014. |
+| R3 (~L139): "**JSONSerialization boundary**: `JSONSerialization` may only be called from `Decoder/`." | "**Ink-format JSON decoding boundary**: `JSONSerialization`/`JSONDecoder` for the `.ink.json`→node-tree substrate confined to `Decoder/`", with an explicit ADR-003 StoryState save/restore exception. | ADR-013 replaces JSONSerialization with JSONDecoder; the rule would go vacuous if not generalized. `.swiftlint.yml` regex edit is a DELIVER task. |
+| Module Layout (~L124): "`Integration/ — may import InkSwift as oracle`." | Same, annotated `.macOS`-conditioned; Linux verification is fixture-based, never the JS-bridge. | The JS-bridge oracle is Apple-only; Linux parity is certified by committed fixtures. |
+
+#### Reuse Analysis
+
+Per the project's **principle 12 (Effect Isolation)** convention, each overlapping
+component declares its **contract shape · mutation universe** (mirrors the
+`compiler-variable-text` / `native-ink-compiler` Reuse tables). No component is
+`unbounded-preservation`; none performs unbounded effects.
+
+| Existing Component | File / Location | Overlap | Decision | Contract shape · universe | Justification |
+|---|---|---|---|---|---|
+| `InkDecoder` | `Decoder/InkDecoder.swift` (`:24-36` decode, `:123-138` classifyNumber) | JSON→node-tree parsing incl. number/bool classification | **EXTEND** | **bounded-change** · universe: Ink-JSON scalar classification (returns a `ContainerNode` value tree); delta: CF type-identity → JSONDecoder token-driven. Assertion = oracle + decode-parity asserts. | Swap the classify path (JSONSerialization+CF → JSONDecoder+custom Decodable, Bool→Int→Double) inside `Decoder/`. Do NOT create a new decoder — the node-tree contract, probe, and all downstream consumers are unchanged (ADR-013). |
+| `InkDecoder.probe()` | `Decoder/InkDecoder.swift:38-47` | Startup adapter probe (Bundle.module resource + root-has-children) | **EXTEND** | **bounded-change** · universe: startup validation, returns void / throws `decoderProbeFailure`; no state beyond the throw. | Earned-Trust (DD-4): embedded probe fixture gains a float/bool/int triple and the probe asserts their node tags, so a mistyping platform fails `Story.init` with `decoderProbeFailure` — the specific substrate lie (CF-drift) is exercised, not assumed. |
+| Golden-fixture corpus + resources | `Tests/SwiftInkRuntimeTests/Fixtures/` (already `.process`-bundled) | Committed `.ink`/`.ink.json` test fixtures | **EXTEND** | **bounded-change** · universe: static committed test data (no runtime behaviour). | Add committed golden **transcript** files + the KPI-3 decode sample to the existing bundled resource dir; no Package.swift change (`.process("Fixtures")` already covers it). |
+| Fixture-transcript oracle harness | new `FixtureTranscriptOracle` in `Sources/SwiftInkRuntimeTestSupport/` | loads a golden transcript, plays the committed story, hard-asserts line/choice equality | **CREATE NEW (type) inside existing target** | **bounded-change** · universe: test-local — loads a static golden transcript, plays a story (mutates test-local engine state), hard-asserts equality; no I/O beyond bundled reads. | Evidence, not "complexity": no existing oracle is BOTH platform-portable AND hard-asserting on a static artifact. The JS-bridge oracle is macOS-only (JXKit); `OracleDivergenceProbe`/`OracleDiagnostics` is a green-always *diagnostic* (by design it passes even when play throws — see the equivalence runbook), not an assertion. A small hard-asserting static-golden differ is genuinely absent. It lives in the **existing** `SwiftInkRuntimeTestSupport` target — **NO new SPM target** (contrast story-testability, which needed a new target for redistribution; here the existing one suffices). |
+| `OracleDiagnostics` / `OracleDivergenceProbe` | `Tests/SwiftInkRuntimeTests/Diagnostics/` | native↔inklecate divergence diagnosis | **REUSE AS-IS** | **diagnostic utility** · green-always by design (passes even when play throws); not a gate. Unchanged. | Retained as the incremental *diagnosis* driver (runbook); not the parity gate. Unchanged. |
+| Linux CI job | `.forgejo/workflows/tests.yml` (currently `test-macos` + `lint`) | CI workflow | **EXTEND** | **bounded-change** · universe: CI config; observable output = pass/fail signal. | Add a `test-linux` `swift test` job over the committed-fixture oracle (US-04). Runner provisioning / toolchain image is a DEVOPS concern. |
+| `.swiftlint.yml` R3 rule | `.swiftlint.yml:58-63` | R3 boundary regex | **EXTEND (DELIVER task)** | **boundary enforcement** · universe: static-analysis rule confining Ink-format JSON decoding to `Decoder/`. | Generalize `r3_jsonserialization_boundary` to keep binding against `JSONDecoder`, scoped to avoid the `Engine/` StoryState save/restore false positive (ADR-013 DD-5). |
+
+**Outcome Collision Check**: `nwave-ai outcomes check-delta …` — **correctly skipped**:
+`docs/product/outcomes/registry.yaml` does not exist in this repo (registry not
+bootstrapped). Not bootstrapping it. Recorded as skipped, proceeding.
+
+#### Design Decisions
+
+| ID | Decision | ADR |
+|---|---|---|
+| DD-1 | Portable number/bool classification: `JSONDecoder` + custom `Decodable`, Bool→Int→Double, confined to `Decoder/`. | ADR-013 |
+| DD-2 | Hybrid oracle: golden played-transcript files (primary, KPI-2) + targeted float/int/bool decode-parity asserts (secondary, KPI-3). No node-tree snapshots. | ADR-014 |
+| DD-3 | Ground truth = inklecate at capture time; committed fixtures diffed on both platforms; inklecate never a Linux-runtime/CI dependency. | ADR-014 |
+| DD-4 | Earned-Trust probe extension: `InkDecoder.probe()` exercises the CF-drift lie (float/bool/int classification) → `decoderProbeFailure` on a mistyping platform. | ADR-013 |
+| DD-5 | R3 generalized to "Ink-format JSON decoding confined to `Decoder/`"; `.swiftlint.yml` regex updated (DELIVER), scoped to avoid the ADR-003 StoryState save/restore false positive in `Engine/`. | ADR-013 |
+
+#### Component Decomposition
+
+| Component | Path | Change |
+|---|---|---|
+| `InkDecoder` (number/bool classify + probe) | `Sources/SwiftInkRuntime/Decoder/InkDecoder.swift` | EXTEND (only production change) |
+| `FixtureTranscriptOracle` (test-support harness) | `Sources/SwiftInkRuntimeTestSupport/` | CREATE NEW (existing target) |
+| Golden transcript + decode-sample fixtures | `Tests/SwiftInkRuntimeTests/Fixtures/` | EXTEND |
+| Linux `test-linux` CI job | `.forgejo/workflows/tests.yml` | EXTEND |
+| R3 enforcement regex | `.swiftlint.yml` | EXTEND (DELIVER task) |
+
+#### Ports and Adapters
+
+**Driving ports** (reused from DISCUSS — all exist today, observable on Linux):
+`swift build` / `swift test` on Linux; `StoryBlueprint(json:)` + `Story` playback
+(`continue()`, `chooseChoice(at:)`, `continueMaximally()`);
+`InkCompiler.compile(source:) -> StoryBlueprint`; `git push` → forgejo Linux job.
+
+**Driven ports + adapters**:
+
+| Driven port (substrate) | Adapter | Probe / fault-injection (Earned Trust) |
+|---|---|---|
+| Ink-JSON decode substrate (Foundation `JSONDecoder`) | `InkDecoder` (Decoder/) | `probe()` decodes an embedded float/bool/int fixture and asserts `.floatValue`/`.boolValue`/`.intValue` — exercises the swift-corelibs-foundation CF-drift lie; failure → `decoderProbeFailure`, story refuses to start. |
+| Filesystem / bundle resources (`Bundle.module`, golden files) | `InkDecoder.probe()` (test.ink.json) + `FixtureTranscriptOracle` (golden files) | Probe resolves `Bundle.module` on Linux (US-02); the golden-transcript reads are the static committed artifact both local + CI diff. |
+| CI execution substrate (Linux runner) | `test-linux` forgejo job | Regression fault-injection is US-04's own AC: a deliberate Linux-only misclassification must red the Linux job while macOS stays green. |
+
+#### C4 — Diagram Impact
+
+The mandatory-diagram check is satisfied by the **existing L1/L2 + the updated L3**
+component diagram. **No new topology diagram is needed**: the feature adds **zero new
+production components** and no new container, actor, data store, or external system —
+it changes only the *internal mechanism* of the existing `InkDecoder` component (whose
+L3 annotation is updated: Ink JSON now decoded via `JSONDecoder` + custom `Decodable`,
+not `JSONSerialization` + CoreFoundation). inklecate is already modelled as a
+TEST-ONLY oracle in the native-ink-compiler C4 delta; it remains capture-time-only and
+introduces no new runtime relationship.
+
+#### Technology Choices
+
+| Choice | License | Rationale |
+|---|---|---|
+| `JSONDecoder` + custom `Decodable` (Foundation) | Apple APSL (macOS) / Apache 2.0 (swift-corelibs-foundation, Linux) | Already present; token-driven typing is platform-stable. No new runtime dependency. |
+| Swift toolchain (Linux) | Apache 2.0 | Package `swift-tools-version` floor unchanged; the exact Linux CI toolchain version pin is a DEVOPS open question. |
+| inklecate (capture-time only) | MIT | Canonical Ink reference; generates golden fixtures offline. Version pinned at capture (matching supported inkVersion 21). Never a Linux-runtime/CI dependency. |
+
+#### Open Questions deferred to DISTILL / DELIVER / DEVOPS
+
+1. **(DISTILL/DELIVER)** Exact fixture-corpus capture mechanics — golden-transcript
+   file format, capture command, and REGEN discipline for The Intercept + compiler
+   sample + float/bool decode sample.
+2. **(DELIVER)** `.swiftlint.yml` R3 regex edit — generalize to bind against
+   `JSONDecoder` while excluding the ADR-003 StoryState save/restore in `Engine/`
+   (`InkEngine.swift:1056`). Verify no false positive before commit.
+3. **(DEVOPS)** Swift-on-Linux toolchain version pin for the `test-linux` CI runner
+   and the runner/container image (KPI-4). `Package.swift platforms:` needs no Linux
+   entry (SPM implies Linux).
 
 ---
 

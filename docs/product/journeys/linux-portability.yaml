@@ -1,0 +1,136 @@
+schema_version: 1
+
+# Single Source of Truth: Linux Portability Journey
+# Created by: native-runtime-linux DISCUSS wave (2026-07-15)
+# Maintainer: nw-product-owner
+# Depth: LIGHTWEIGHT (orchestrator Decision 3) — happy-path focus, minimal error paths.
+
+persona:
+  name: "Nadia"
+  role: "Server-side Swift developer running Ink on Linux"
+  persona_file: "docs/product/personas/nadia.md"
+  description: >
+    Runs Swift services and CI on Linux (no Mac in the loop). Wants to embed Ink
+    stories server-side and run the whole test suite on a Linux runner, trusting
+    that output matches macOS byte-for-byte.
+
+primary_job:
+  id: "job-linux-portability"
+  statement: >
+    When I run Swift services and CI on Linux and want to embed Ink stories
+    server-side, I want the pure-Swift Ink runtime and compiler to build, test, and
+    play identically on Linux as on macOS, so I can ship Ink-driven backends and run
+    the whole test suite in my Linux CI without needing a Mac or a JavaScript engine.
+
+journey:
+  name: "Build, Test, and Play Ink on Linux"
+  goal: "Clone → swift build → swift test → green, with story output identical to macOS"
+  persona: "Nadia"
+  emotional_arc:
+    start: "Skeptical / wary — 'pure Swift, but will it actually build and behave on Linux?'"
+    middle: "Cautiously engaged — build compiles, first fixture proves a real story matches"
+    end: "Confident / trusting — full suite green on Linux CI, parity guarded on every push"
+
+mental_model:
+  - "swift build / swift test are the whole interface — no Xcode, no Mac."
+  - "A story's numbers carry type: 2 is an int, 2.5 is a float, true is a bool — and text output depends on it."
+  - "Parity is proven by comparing against a committed golden file (fixture), not a live language bridge."
+  - "If a test is green on a Linux CI runner, the platform is trustworthy."
+  - "The JS-bridge module is Apple-only and irrelevant to me — I never touch it."
+
+steps:
+  - id: 1
+    name: "Build on Linux"
+    command: "swift build"
+    expected_output: "Build complete! — SwiftInkRuntime + SwiftInkRuntimeTestSupport compile with no CoreFoundation errors."
+    shared_artifacts:
+      - name: "swift-toolchain-version"
+        source: "Package.swift (swift-tools-version) + Linux Swift install"
+        displayed_as: "${swift_version}"
+        consumers: ["local build", "Linux CI job"]
+    emotional_state:
+      entry: "Skeptical — expects a CoreFoundation compile error"
+      exit: "Relieved — it compiles as plain Swift"
+    failure_modes:
+      - "Missing or incompatible Swift toolchain on the Linux host (build cannot start)."
+      - "Source-level CoreFoundation API unavailable/divergent under swift-corelibs-foundation."
+
+  - id: 2
+    name: "Decode a real story with correct number types"
+    command: "swift test --filter Decode (decode-parity fixture)"
+    expected_output: "A float variable renders 2.5 (not 2); a bool renders true (not 1); an int renders 2 — identical to the committed macOS fixture."
+    shared_artifacts:
+      - name: "number-classification-behaviour"
+        source: "InkDecoder number/bool classification (single source of truth for node typing)"
+        displayed_as: "int / float / bool node tags"
+        consumers: ["engine value rendering", "variable print output", "fixture-oracle diff"]
+    emotional_state:
+      entry: "Wary — this is the known CF divergence point"
+      exit: "Reassured — the highest-risk area matches macOS"
+    failure_modes:
+      - "CF-drift: swift-corelibs-foundation classifies 2.5 as an int → story prints 2 instead of 2.5."
+      - "CF-drift: a JSON true classifies as int 1 → a boolean condition/print renders wrong."
+
+  - id: 3
+    name: "Play and compile a real story on Linux"
+    command: "swift test (runtime + compiler fixture-oracle)"
+    expected_output: "The Intercept plays line-for-line and choice-for-choice identical to the committed macOS fixture; InkCompiler.compile(source:) output plays identically too."
+    shared_artifacts:
+      - name: "committed-fixture-oracle"
+        source: "Committed expected-output fixtures under Tests/.../Fixtures (captured on macOS ground truth)"
+        displayed_as: "${expected_playthrough}"
+        consumers: ["Linux runtime oracle", "Linux compiler oracle", "Linux CI"]
+    emotional_state:
+      entry: "Hopeful"
+      exit: "Confident — a real 28-knot story is provably identical on Linux"
+    failure_modes:
+      - "Bundle.module resource (test.ink.json) fails to resolve under SPM on Linux."
+      - "A supported construct plays differently on Linux than the committed fixture."
+
+  - id: 4
+    name: "Guard parity in CI"
+    command: "git push (triggers Linux swift-test CI job)"
+    expected_output: "The forgejo workflow reports a green Linux job alongside macOS; a Linux-only regression turns the job red before merge."
+    shared_artifacts:
+      - name: "committed-fixture-oracle"
+        source: "same as step 3"
+        displayed_as: "${expected_playthrough}"
+        consumers: ["Linux CI job"]
+    emotional_state:
+      entry: "Confident locally"
+      exit: "Trusting — parity is continuously guarded, no Mac needed to prove it"
+    failure_modes:
+      - "A change green on macOS silently breaks Linux (the exact gap this step closes)."
+
+integration_validation:
+  shared_artifact_consistency:
+    - artifact: "number-classification-behaviour"
+      must_match_across: [2, 3, 4]
+      failure_message: "Linux number/bool classification diverges from macOS → story text and choices differ from the committed fixture."
+    - artifact: "committed-fixture-oracle"
+      must_match_across: [3, 4]
+      failure_message: "The fixture the Linux suite compares against must be the SAME committed golden file the CI job runs — one source of truth, captured on macOS."
+
+gherkin:
+  happy_path: |
+    Scenario: A real story plays identically on Linux
+      Given Nadia has cloned InkSwift on a Linux host with a supported Swift toolchain
+      And the committed fixture captures The Intercept's expected macOS playthrough
+      When she runs "swift test" on Linux
+      Then SwiftInkRuntime and SwiftInkRuntimeTestSupport build with no CoreFoundation errors
+      And The Intercept plays line-for-line and choice-for-choice identical to the committed fixture
+      And the test suite reports green
+
+  cf_drift_error_path: |
+    Scenario: Float and boolean values keep their type on Linux
+      Given an Ink story declares "VAR health = 2.5" and "VAR alive = true"
+      And on macOS the story renders "Health 2.5, alive true"
+      When the story is decoded and played on Linux via "swift test"
+      Then the float variable renders "2.5" (never "2")
+      And the boolean variable renders "true" (never "1")
+      And the Linux output equals the committed macOS fixture exactly
+
+changelog:
+  - date: "2026-07-15"
+    feature: "native-runtime-linux"
+    change: "Created lightweight Linux build/test/play journey for new persona Nadia (job-linux-portability)."

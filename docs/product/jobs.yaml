@@ -3,9 +3,19 @@
 # Maintainer: nw-product-owner
 # Format: Jobs-to-Be-Done (JTBD) job statements
 
-schema_version: 2
+schema_version: 3
 
 changelog:
+  - version: 3
+    date: "2026-07-15"
+    feature: "native-runtime-linux"
+    note: >
+      Added job-linux-portability (DISCUSS wave) and a NEW persona Nadia — a
+      server-side Swift / CI-focused developer running Ink on Linux, distinct from
+      the Apple-platform persona Maarten. The job extends the reach of
+      job-story-playback (RUN side) and job-native-compilation (BUILD side) onto
+      Linux without changing what the runtime or compiler do. Scope excludes the
+      legacy InkSwift JS-bridge module (Apple-only by construction).
   - version: 2
     date: "2026-06-22"
     feature: "state-blueprint-compatibility"
@@ -148,3 +158,71 @@ jobs:
       - "A blueprint/save mismatch is detected and reported (never silently degraded to root)"
       - "A restore against an edited blueprint reports which state survived and which was dropped"
       - "Save-breaking blueprint changes are surfaced to the developer before reaching a player"
+
+  - id: "job-linux-portability"
+    status: "active"
+    persona: "Nadia — server-side Swift developer running Ink on Linux"
+    persona_file: "docs/product/personas/nadia.md"
+    related_jobs:
+      - id: "job-story-playback"
+        relationship: >
+          job-story-playback made playback pure-Swift so it could run on any Apple
+          platform without a JavaScript engine. This job extends that SAME runtime's
+          correct-execution reach to Linux — same engine, new platform and audience
+          (server-side / CI). It does not change what the runtime does, only where it
+          runs identically.
+      - id: "job-native-compilation"
+        relationship: >
+          job-native-compilation removed the external inklecate binary from the BUILD
+          side for Apple developers. This job carries that pure-Swift compile+run
+          toolchain onto Linux, where installing a separate compiler binary is even
+          more awkward (containers, CI runners). Extends reach, does not change the
+          compiler's behaviour.
+    statement: >
+      When I run Swift services and CI on Linux and want to embed Ink stories
+      server-side, I want the pure-Swift Ink runtime and compiler to build, test,
+      and play identically on Linux as they do on macOS, so I can ship Ink-driven
+      backends and run the whole test suite in my Linux CI without needing a Mac or
+      a JavaScript engine.
+    forces:
+      push: >
+        SwiftInkRuntime is pure Swift but does not build/behave correctly on Linux.
+        InkDecoder.classifyNumber relies on CoreFoundation identity
+        (CFGetTypeID/CFBooleanGetTypeID + CFNumberGetType); under
+        swift-corelibs-foundation's JSONSerialization on Linux, NSNumber's CF type
+        identity is unreliable, so bool-vs-int and int-vs-float classification can
+        silently diverge from macOS. There is no Linux CI job, and no macOS-only
+        JS-bridge oracle to compare against on Linux.
+      pull: >
+        One codebase that builds, tests green, and plays/compiles Ink identically on
+        Linux and macOS; a committed-fixture oracle that verifies parity without the
+        macOS-only JS-bridge; and Linux CI that guards that parity on every push.
+      anxiety: >
+        "Will number/bool classification silently diverge on Linux — a 2.5 read as 2,
+        or true read as 1 — so a story plays differently than on my Mac, a
+        platform-specific correctness bug I can't see locally? And without the
+        JS-bridge oracle on Linux, how do I trust the committed expected outputs are
+        actually correct?"
+      habit: >
+        Develops and tests on macOS, trusting "it works on my Mac" and the live
+        JS-bridge oracle. CI runs only macOS-arm64.
+    opportunity_score:
+      importance: 9
+      satisfaction: 2
+      score: 16      # importance + max(importance - satisfaction, 0) = 9 + (9-2)
+      band: "extreme (>15) — underserved, high-value; the runtime literally does not run for this persona today"
+    features:
+      - id: "native-runtime-linux"
+        contribution: >
+          Makes SwiftInkRuntime + SwiftInkRuntimeTestSupport build, test, and run on
+          Linux: portable number/bool classification that reproduces macOS
+          int/float/bool tagging, Linux-safe resource loading, a committed-fixture
+          oracle replacing the macOS-only JS-bridge comparison, and a Linux swift-test
+          CI job. Scope excludes the legacy InkSwift JS-bridge module (Apple-only by
+          construction; already conditionalized to .macOS in Package.swift).
+        status: "in DISCUSS wave"
+    outcome_kpis:
+      - "SwiftInkRuntime + SwiftInkRuntimeTestSupport build and the full test suite passes on Linux (0% → 100%)"
+      - "Every supported story in the committed fixture corpus plays line-for-line / choice-for-choice identical on Linux and macOS"
+      - "Zero int/float/bool/bool-vs-int misclassifications on Linux across the fixture corpus"
+      - "A Linux swift-test CI job runs on every push, catching Linux parity regressions before merge"
