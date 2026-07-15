@@ -28,7 +28,23 @@ jobs:
     runs-on: ubuntu-latest
     container: swift:6.3.3
     steps:
-      - uses: actions/checkout@v5
+      # The swift image ships no Node, and this runner does not inject one into
+      # container jobs, so JS actions (actions/checkout) cannot run. Clone with
+      # plain git instead — no Node, no checkout-action Node-version matching.
+      - name: Checkout (node-free)
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config --global --add safe.directory '*'
+          server="${GITHUB_SERVER_URL:-https://git.embersescape.party}"
+          url="${server}/${GITHUB_REPOSITORY}.git"
+          if [ -n "${TOKEN}" ]; then
+            auth="$(printf 'x-access-token:%s' "${TOKEN}" | base64 | tr -d '\n')"
+            git -c http.extraheader="Authorization: Basic ${auth}" clone "${url}" .
+          else
+            git clone "${url}" .
+          fi
+          git checkout -q "${GITHUB_SHA}"
       - run: swift test
 
   lint:
