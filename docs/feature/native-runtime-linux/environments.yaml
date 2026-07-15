@@ -1,0 +1,39 @@
+# environments.yaml — native-runtime-linux (DEVOPS wave)
+# Consumed by DISTILL for environmental realism. This feature is a Swift LIBRARY,
+# not a deployed service: the "deployment target" is the CI test matrix. The
+# observable for every KPI is a CI test-job pass/fail (see kpi-contracts.yaml).
+
+target_environments:
+  - name: clean-macos
+    description: "swift test on macOS (existing gate)"
+    platform: [macos]
+    preconditions: ["Swift 6.3.3 toolchain (macos-arm64 runner)"]
+  - name: clean-linux
+    description: "swift test on Linux — the parity gate this feature adds (US-04)"
+    platform: [linux]
+    preconditions: ["Swift 6.3.3 toolchain via container: swift:6.3.3"]
+
+coexistence_matrix:
+  - tool: pre-commit hook (.githooks/pre-commit)
+    must_not_break: true
+    note: "Runs SwiftLint boundary rules + full swift test on macOS; unchanged by this feature."
+  - tool: test-macos CI job
+    must_not_break: true
+    note: "Existing macos-arm64 swift test job stays green (guardrail KPI)."
+  - tool: lint CI job (SwiftLint R1/R3/R4/R5)
+    must_not_break: true
+    note: "Existing macos-arm64 job; unchanged."
+  - tool: inklecate (~/.local/bin/inklecate)
+    must_not_break: true
+    note: "Capture-time only for golden fixtures — NEVER invoked in CI or on the Linux runner."
+
+platform_coverage:
+  macOS: [14.x]                 # macos-arm64 runner, Swift 6.3.3
+  Linux: ["swift:6.3.3 (Ubuntu-based official image), aarch64/x86_64 multi-arch"]
+  CI: ["Forgejo — macos-arm64 (existing) + self-hosted Linux runner (new)"]
+
+deployment_assumptions:
+  - "No deployment — library published as an SPM package; CI is the delivery gate."
+  - "The Linux job pins Swift 6.3.3 to match the macOS toolchain exactly (no version-drift variable)."
+  - "inklecate is a capture-time dependency only; the Linux runner image needs neither inklecate nor a JS engine."
+  - "swift test on Linux builds SwiftInkRuntime AND (with JXKit 3.6.0) the InkSwift JS-bridge; only Combine-dependent tests are macOS-only."

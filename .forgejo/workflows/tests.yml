@@ -9,14 +9,28 @@ jobs:
     name: macOS
     runs-on: macos-arm64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - run: swift test
+
+  # Linux parity gate (feature native-runtime-linux, US-04). Runs the same
+  # `swift test` inside the official Swift 6.3.3 image — pinned to match the
+  # macos-arm64 toolchain exactly, so any divergence is a real portability bug,
+  # not a version gap. No inklecate and no JS engine are provisioned: the golden
+  # oracle fixtures are committed, and JXKit (>=3.6.0) supplies its own Linux JS
+  # backend for the InkSwift bridge target.
+  test-linux:
+    name: Linux
+    runs-on: ubuntu-latest
+    container: swift:6.3.3
+    steps:
+      - uses: actions/checkout@v5
       - run: swift test
 
   lint:
     name: SwiftLint (architecture boundary rules)
     runs-on: macos-arm64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       # SwiftLint may not be preinstalled on the runner; install it if absent.
       - name: Ensure SwiftLint is available
         run: |

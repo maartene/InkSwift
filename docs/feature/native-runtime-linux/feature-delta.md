@@ -832,3 +832,87 @@ them on Linux* without regressing macOS.
 - Linux verification environment: `podman exec swiftdev` (Swift 6.3.3 aarch64, repo bind-mounted at same path). Toolchain matches macOS 6.3.3 — DEVOPS should pin `swift:6.3.3` for CI.
 - inklecate present for offline fixture (re)generation; never invoked on Linux/CI.
 - DELIVER (dispatch `@nw-software-crafter` per CLAUDE.md): implement DD-1 (`JSONDecoder`+custom `Decodable`, Bool→Int→Double) in `InkDecoder`; keep macOS green (pre-commit gate); verify the 4 parity ATs + full Linux-runnable suite pass in `swiftdev`; enrich `probe()` fixture (DD-4); the `.swiftlint.yml` R3 regex edit (open Q 2). US-04 (Linux CI) deferred to DEVOPS by user's chosen sequence (DELIVER first, DEVOPS from green).
+
+---
+
+## Wave: DEVOPS / [REF] Scope & Locked Context
+
+Library feature — no service deployment. Most DEVOPS decisions are N/A; the rest are
+project-locked, so only the Linux-runner mechanics were open:
+
+| Decision | Value | Source |
+|---|---|---|
+| Deployment target | N/A (SPM library; "target" = CI test matrix) | — |
+| Container orchestration | None (single containerized CI job) | — |
+| CI/CD platform | **Forgejo** (existing `.forgejo/workflows/tests.yml`) | repo |
+| Existing infra | Existing CI/CD only (macOS + lint jobs present) | repo |
+| Observability | CI job pass/fail is the only signal (it's a test suite) | — |
+| Deployment strategy | N/A | — |
+| Branching | **Trunk-based** | CLAUDE.md (locked) |
+| Mutation testing | **Disabled** (oracle suite is the quality bar) | CLAUDE.md (locked) |
+| Linux runner | **self-hosted custom label**, `container: swift:6.3.3` | user (DEVOPS) |
+
+## Wave: DEVOPS / [REF] Environment Matrix
+
+See `environments.yaml`. Two environments, both `clean`: `clean-macos` (existing gate)
+and `clean-linux` (new, US-04). Swift 6.3.3 both sides — no version-drift variable.
+
+## Wave: DEVOPS / [REF] CI/CD Pipeline Outline
+
+Forgejo workflow `Tests`, triggered on `push` + `pull_request`:
+
+| Job | Runner | Purpose | Status |
+|---|---|---|---|
+| `test-macos` | `macos-arm64` | `swift test` (full suite incl. JS-bridge + Combine) | existing, unchanged |
+| `lint` | `macos-arm64` | SwiftLint boundary rules R1/R3/R4/R5 | existing, unchanged |
+| **`test-linux`** | **self-hosted linux label**, `container: swift:6.3.3` | `swift test` on Linux — parity gate | **NEW (US-04)** |
+
+The Linux job runs the same `swift test`; no inklecate, no JS engine provisioning
+required. All three jobs run on every push/PR; the two macOS jobs are the guardrail
+(must stay green).
+
+## Wave: DEVOPS / [REF] Monitoring Contracts (KPI → instrument)
+
+Every KPI is a CI test assertion (library, not a service — no runtime telemetry):
+
+| KPI | Instrument | Gate |
+|---|---|---|
+| KPI-1 (Linux suite green) | `test-linux` job exit status | blocking on Linux runner |
+| KPI-2 (fixture-corpus transcript parity) | committed inklecate-oracle tests, run by `test-linux` | blocking |
+| KPI-3 (zero int/float/bool misclassification) | `NativeRuntimeLinux_NumberTypeParityTests` + `Milestone1`, run on both platforms | blocking |
+| KPI-4 (Linux CI on every push, 0 breaking merges) | presence + green of `test-linux` on push/PR | blocking |
+| Guardrail (macOS unaffected) | `test-macos` + `lint` stay green | blocking |
+
+## Wave: DEVOPS / [REF] Deployment / Observability / Mutation
+
+- **Deployment strategy**: N/A (no runtime deployment; SPM consumers pull the package).
+- **Observability stack**: CI job status (red/green) is the sole signal — no logs/metrics/traces.
+- **Mutation testing**: **disabled** (CLAUDE.md; execution-equivalence oracle suite + boundary lint are the quality bar). No CLAUDE.md change needed — already recorded.
+- **Branching**: trunk-based; the Linux job runs on every push to `main` and every PR.
+
+## Wave: DEVOPS / [REF] Coexistence Matrix
+
+`test-macos`, `lint`, the `.githooks/pre-commit` gate, and capture-time `inklecate` all
+continue to work unchanged. The new job is additive — it neither modifies the macOS jobs
+nor introduces a runtime dependency.
+
+## Wave: DEVOPS / [REF] Changed Assumptions vs DISCUSS/DESIGN
+
+- **Original (DISCUSS Out-of-Scope, ~feature-delta L85)**: "The legacy InkSwift JS-bridge …
+  Inherently Apple-only … Linux CI simply does not build this target."
+  **Corrected**: with **JXKit 3.6.0** (bumped for Linux resolution), InkSwift **does** build
+  and test on Linux (`Build of target: 'InkSwift' complete`; `InkSwiftTests`/`CompilerTests`
+  run there). JXKit 3.6.0 ships a Linux JS backend. **Rationale/impact**: the Linux
+  `test-linux` job therefore exercises the *full* suite, not a SwiftInkRuntime-only subset —
+  strictly more parity coverage. The macOS↔Linux test delta (350 vs 335) is the
+  `#if canImport(Combine)` set (Combine is macOS-only), NOT "the JS-bridge suite." US-04
+  AT scenario 3 ("Linux job … not the JS-bridge target") is superseded by this finding; the
+  scenario's *intent* (Linux job green) holds — the mechanism (exclusion) does not apply.
+
+## Wave: DEVOPS / [REF] Pre-requisites & Handoff
+
+- A **self-hosted Linux runner** registered in the Forgejo instance (custom label) able to
+  run `container: swift:6.3.3`. This is the only external provisioning this feature needs.
+- The `test-linux` job is added to `.forgejo/workflows/tests.yml` (below).
+- Validation (US-04 AT): after the job lands, a scratch-branch commit that breaks Linux-only
+  behaviour must turn `test-linux` red while `test-macos` stays green.
