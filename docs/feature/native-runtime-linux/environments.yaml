@@ -35,5 +35,5 @@ platform_coverage:
 deployment_assumptions:
   - "No deployment — library published as an SPM package; CI is the delivery gate."
   - "The Linux job pins Swift 6.3.3 to match the macOS toolchain exactly (no version-drift variable)."
-  - "inklecate is a capture-time dependency only; the Linux runner image needs neither inklecate nor a JS engine."
-  - "swift test on Linux builds SwiftInkRuntime AND (with JXKit 3.6.0) the InkSwift JS-bridge; only Combine-dependent tests are macOS-only."
+  - "inklecate is a capture-time dependency only; the Linux runner needs no inklecate. The pure-Swift SwiftInkRuntime itself needs no JS engine."
+  - "swift test on Linux builds SwiftInkRuntime AND (with JXKit 3.6.0) the InkSwift JS-bridge. The bridge is deliberately KEPT on Linux (not excluded) so existing Linux consumers of the InkSwift product are not broken — JXKit historically supported Linux. Its JavaScriptCoreGTK system dependency (libjavascriptcoregtk-4.1-dev) is installed by the test-linux CI step. Only Combine-dependent tests remain macOS-only."

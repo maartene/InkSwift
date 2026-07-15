@@ -45,6 +45,14 @@ jobs:
             git clone "${url}" .
           fi
           git checkout -q "${GITHUB_SHA}"
+      # The InkSwift JS-bridge (JXKit) links JavaScriptCoreGTK on Linux. The bridge
+      # stays supported on Linux for downstream consumers, so install its system
+      # dependency here (auto-pulls libglib2.0-dev + gir bindings; pkg-config is
+      # already in the image). The pure-Swift SwiftInkRuntime itself needs none of it.
+      - name: Install JavaScriptCoreGTK (JXKit Linux backend)
+        run: |
+          apt-get update -qq
+          apt-get install -y --no-install-recommends libjavascriptcoregtk-4.1-dev
       - run: swift test
 
   lint:
