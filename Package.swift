@@ -25,7 +25,7 @@ let package = Package(
     dependencies: [
         // Dependencies declare other packages that this package depends on.
         // .package(url: /* package url */, from: "1.0.0"),
-        .package(url: "https://github.com/jectivex/JXKit.git", .upToNextMajor(from: "3.0.0")),
+        .package(url: "https://github.com/jectivex/JXKit.git", .upToNextMajor(from: "3.6.0")),
         .package(url: "https://github.com/neallester/JSONEquality.git", branch: "master"),
     ],
     targets: [
