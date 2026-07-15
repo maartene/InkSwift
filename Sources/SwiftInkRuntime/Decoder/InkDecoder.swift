@@ -22,14 +22,19 @@ struct InkDecoder {
     // MARK: - Public API
 
     func decode(_ data: Data) throws -> ContainerNode {
-        let rawObject = try JSONSerialization.jsonObject(with: data, options: [])
-        guard let topLevel = rawObject as? [String: Any] else {
+        let topValue: InkJSONValue
+        do {
+            topValue = try JSONDecoder().decode(InkJSONValue.self, from: data)
+        } catch {
             throw InkDecodeError.malformedJSON
         }
-        if let inkVersion = topLevel["inkVersion"] as? Int, inkVersion < 20 {
+        guard case .object(let topLevel) = topValue else {
+            throw InkDecodeError.malformedJSON
+        }
+        if case .int(let inkVersion)? = topLevel["inkVersion"], inkVersion < 20 {
             throw InkDecodeError.unsupportedInkVersion(inkVersion)
         }
-        guard let rootArray = topLevel["root"] as? [Any] else {
+        guard case .array(let rootArray)? = topLevel["root"] else {
             throw InkDecodeError.malformedJSON
         }
         return parseContainer(rootArray)
@@ -48,10 +53,15 @@ struct InkDecoder {
 
     // MARK: - Container parsing
 
-    private func parseContainer(_ array: [Any]) -> ContainerNode {
-        guard let metaDict = array.last as? [String: Any] else {
+    private func parseContainer(_ array: [InkJSONValue]) -> ContainerNode {
+        guard case .object(let metaDict)? = array.last else {
             // Last element is absent, null, or not a dict — treat all elements as content
-            let contentItems = array.last is NSNull ? Array(array.dropLast()) : array
+            let contentItems: [InkJSONValue]
+            if case .null? = array.last {
+                contentItems = Array(array.dropLast())
+            } else {
+                contentItems = array
+            }
             let children = contentItems.compactMap { classify($0) }
             // Named sequential children are accessible by name (mirrors C# TryAddNamedContent).
             var namedContent: [String: ContainerNode] = [:]
@@ -64,8 +74,8 @@ struct InkDecoder {
         }
 
         let contentItems = Array(array.dropLast())
-        let flags = metaDict["#f"] as? Int ?? 0
-        let name = metaDict["#n"] as? String
+        let flags = metaDict["#f"]?.intValue ?? 0
+        let name = metaDict["#n"]?.stringValue
         var namedContent = parseNamedContent(from: metaDict)
         let children = contentItems.compactMap { classify($0) }
         // Named sequential children are accessible by name (mirrors C# TryAddNamedContent).
@@ -79,10 +89,10 @@ struct InkDecoder {
         return ContainerNode(children: children, namedContent: namedContent, flags: flags, name: name)
     }
 
-    private func parseNamedContent(from metaDict: [String: Any]) -> [String: ContainerNode] {
+    private func parseNamedContent(from metaDict: [String: InkJSONValue]) -> [String: ContainerNode] {
         var named: [String: ContainerNode] = [:]
         for (key, value) in metaDict where key != "#f" && key != "#n" {
-            if let subArray = value as? [Any] {
+            if case .array(let subArray) = value {
                 named[key] = parseContainer(subArray)
             }
         }
@@ -91,20 +101,22 @@ struct InkDecoder {
 
     // MARK: - Node classification
 
-    private func classify(_ element: Any) -> NodeKind? {
+    private func classify(_ element: InkJSONValue) -> NodeKind? {
         switch element {
-        case is NSNull:
+        case .null:
             return nil
-        case let string as String:
+        case .string(let string):
             return classifyString(string)
-        case let number as NSNumber:
-            return classifyNumber(number)
-        case let array as [Any]:
+        case .bool(let value):
+            return .boolValue(value)
+        case .int(let value):
+            return .intValue(value)
+        case .double(let value):
+            return .floatValue(value)
+        case .array(let array):
             return .container(parseContainer(array))
-        case let dict as [String: Any]:
+        case .object(let dict):
             return classifyDict(dict)
-        default:
-            return nil
         }
     }
 
@@ -120,65 +132,141 @@ struct InkDecoder {
         return .text(string)
     }
 
-    private func classifyNumber(_ number: NSNumber) -> NodeKind {
-        // JSON booleans arrive as NSNumber backed by CFBoolean — detect before integer check
-        // because CFBooleanGetTypeID differs from CFNumberGetTypeID.
-        if CFGetTypeID(number) == CFBooleanGetTypeID() {
-            return .boolValue(number.boolValue)
-        }
-        let cfType = CFNumberGetType(number as CFNumber)
-        switch cfType {
-        case .sInt8Type, .sInt16Type, .sInt32Type, .sInt64Type,
-             .charType, .shortType, .intType, .longType, .longLongType,
-             .nsIntegerType, .cfIndexType:
-            return .intValue(number.intValue)
-        default:
-            return .floatValue(number.doubleValue)
-        }
-    }
-
-    private func classifyDict(_ dict: [String: Any]) -> NodeKind {
-        if let path = dict["^->"] as? String {
+    private func classifyDict(_ dict: [String: InkJSONValue]) -> NodeKind {
+        if let path = dict["^->"]?.stringValue {
             return .pushDivertTarget(path)
         }
-        if let target = dict["->t->"] as? String {
+        if let target = dict["->t->"]?.stringValue {
             return .tunnelDivert(target: target)
         }
-        if let target = dict["->"] as? String {
-            let isConditional = dict["c"] as? Bool ?? false
+        if let target = dict["->"]?.stringValue {
+            let isConditional = dict["c"]?.boolValue ?? false
             let isVariable = dict["var"] != nil
             return .divert(target: target, isConditional: isConditional, isVariable: isVariable)
         }
-        if let target = dict["f()"] as? String {
+        if let target = dict["f()"]?.stringValue {
             // Function-call divert: tagged with "f():" prefix so the engine
             // knows to push a return address before jumping.
             return .divert(target: "f():" + target, isConditional: false, isVariable: false)
         }
-        if let target = dict["*"] as? String {
-            let rawFlags = dict["flg"] as? Int ?? 0
+        if let target = dict["*"]?.stringValue {
+            let rawFlags = dict["flg"]?.intValue ?? 0
             return .choicePoint(target: target, flags: ChoiceFlags(rawValue: rawFlags))
         }
-        if let name = dict["VAR="] as? String {
+        if let name = dict["VAR="]?.stringValue {
             return .variableAssignment(name: name, isGlobal: dict["re"] != nil)
         }
-        if let name = dict["temp="] as? String {
+        if let name = dict["temp="]?.stringValue {
             return .variableAssignment(name: name, isGlobal: false)
         }
-        if let name = dict["VAR?"] as? String {
+        if let name = dict["VAR?"]?.stringValue {
             return .variableReference(name: name)
         }
         if dict["#n"] != nil {
             // Named-container reference marker (e.g., {"#n":"$r1"}) — treated as a no-op node
             return .controlCommand("#n")
         }
-        if let key = dict["CNT?"] as? String {
+        if let key = dict["CNT?"]?.stringValue {
             return .readCount(key)
         }
-        if let name = dict["^var"] as? String, let contextIndex = dict["ci"] as? Int {
+        if let name = dict["^var"]?.stringValue, let contextIndex = dict["ci"]?.intValue {
             return .variablePointer(name: name, contextIndex: contextIndex)
         }
         // Unknown dict node — surface the first key for diagnostics
         return .controlCommand(dict.keys.first ?? "?")
+    }
+}
+
+// MARK: - Portable Ink JSON value model
+
+/// A platform-stable, `Decodable` representation of the heterogeneous Ink JSON
+/// tree. Scalar typing is driven by decode-success ORDER — Bool → Int → Double —
+/// never by CoreFoundation type identity (`CFGetTypeID`/`CFNumberGetType`), which
+/// is unavailable under swift-corelibs-foundation on Linux (ADR-013 / DD-1).
+///
+/// The ordering is load-bearing: a JSON `true`/`false` decodes as `.bool` before
+/// `Int` is attempted; a whole number `42` decodes as `.int` before `Double` is
+/// attempted; a fractional `2.5` fails `Int` and lands on `.double`.
+private indirect enum InkJSONValue: Decodable {
+    case bool(Bool)
+    case int(Int)
+    case double(Double)
+    case string(String)
+    case array([InkJSONValue])
+    case object([String: InkJSONValue])
+    case null
+
+    init(from decoder: Decoder) throws {
+        // Keyed/unkeyed containers first so structural JSON (objects, arrays) is
+        // modelled directly; scalars fall through to the single-value container.
+        if let keyed = try? decoder.container(keyedBy: DynamicKey.self) {
+            var object: [String: InkJSONValue] = [:]
+            for key in keyed.allKeys {
+                object[key.stringValue] = try keyed.decode(InkJSONValue.self, forKey: key)
+            }
+            self = .object(object)
+            return
+        }
+        if var unkeyed = try? decoder.unkeyedContainer() {
+            var array: [InkJSONValue] = []
+            if let count = unkeyed.count {
+                array.reserveCapacity(count)
+            }
+            while !unkeyed.isAtEnd {
+                array.append(try unkeyed.decode(InkJSONValue.self))
+            }
+            self = .array(array)
+            return
+        }
+
+        let single = try decoder.singleValueContainer()
+        if single.decodeNil() {
+            self = .null
+        } else if let value = try? single.decode(Bool.self) {
+            self = .bool(value)
+        } else if let value = try? single.decode(Int.self) {
+            self = .int(value)
+        } else if let value = try? single.decode(Double.self) {
+            self = .double(value)
+        } else if let value = try? single.decode(String.self) {
+            self = .string(value)
+        } else {
+            throw DecodingError.dataCorruptedError(
+                in: single,
+                debugDescription: "Unsupported Ink JSON scalar"
+            )
+        }
+    }
+
+    var stringValue: String? {
+        if case .string(let value) = self { return value }
+        return nil
+    }
+
+    var intValue: Int? {
+        if case .int(let value) = self { return value }
+        return nil
+    }
+
+    var boolValue: Bool? {
+        if case .bool(let value) = self { return value }
+        return nil
+    }
+
+    /// Coding key that accepts any JSON object key (Ink dictionaries are open-keyed).
+    private struct DynamicKey: CodingKey {
+        let stringValue: String
+        let intValue: Int?
+
+        init(stringValue: String) {
+            self.stringValue = stringValue
+            self.intValue = nil
+        }
+
+        init?(intValue: Int) {
+            self.stringValue = String(intValue)
+            self.intValue = intValue
+        }
     }
 }
 
@@ -188,4 +276,3 @@ enum InkDecodeError: Error {
     case malformedJSON
     case unsupportedInkVersion(Int)
 }
-
