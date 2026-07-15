@@ -51,7 +51,12 @@ jobs:
       # already in the image). The pure-Swift SwiftInkRuntime itself needs none of it.
       - name: Install JavaScriptCoreGTK (JXKit Linux backend)
         run: |
-          apt-get update -qq
+          # libjavascriptcoregtk-4.1-dev lives in noble / noble-updates (universe),
+          # NOT in backports. Drop the unneeded noble-backports suite so a flaky or
+          # unreachable ports.ubuntu.com backports index can't fail the whole update,
+          # and retry transient fetch blips.
+          sed -i 's/ noble-backports//' /etc/apt/sources.list.d/ubuntu.sources || true
+          apt-get -o Acquire::Retries=5 update -qq
           apt-get install -y --no-install-recommends libjavascriptcoregtk-4.1-dev
       - run: swift test
 
