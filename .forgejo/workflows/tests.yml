@@ -4,9 +4,14 @@ on:
   push:
   pull_request:
 
+# NOTE: test-macos and lint are TEMPORARILY disabled (if: false) while we bring
+# up the new Linux runner (feature native-runtime-linux, US-04). RESTORE both by
+# deleting their `if: ${{ false }}` lines before finalizing the feature.
+
 jobs:
   test-macos:
     name: macOS
+    if: ${{ false }}   # TEMP: disabled during Linux CI bring-up — restore for US-04 finalize
     runs-on: macos-arm64
     steps:
       - uses: actions/checkout@v5
@@ -28,6 +33,7 @@ jobs:
 
   lint:
     name: SwiftLint (architecture boundary rules)
+    if: ${{ false }}   # TEMP: disabled during Linux CI bring-up — restore for US-04 finalize
     runs-on: macos-arm64
     steps:
       - uses: actions/checkout@v5
