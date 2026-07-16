@@ -18,6 +18,7 @@ protocol ObservableObject { }
 /// The InkStory class allows you to run Ink stories from Swift applications.
 ///
 /// InkStory conforms to `ObservableObject`, so it's very easy to integrate into `SwiftUI`.
+@available(*, deprecated, message: "InkStory (the JavaScriptCore bridge) is legacy and will be removed in v3.0.0. Migrate to SwiftInkRuntime's Story / InkCompiler — see the migration guide: docs/how-to/migrate-from-js-bridge.md")
 public final class InkStory: ObservableObject {
     struct SaveState: Codable {
         let jsonState: String
