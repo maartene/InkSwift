@@ -1,11 +1,39 @@
 ![Swift 5.6](https://img.shields.io/badge/swift-5.6-orange.svg)
 # InkSwift
 
-🚧 Now also contains an experimental Swift native runner in SwiftInkRuntime. No need for JavaScriptCore or JXKit. Plays the first 100 lines of the Intercept story exactly as the JavaScript version does. More details to follow as this matures.
+Swift support for the [Ink](https://www.inklestudios.com/ink/) narrative scripting language.
 
-Swift wrapper for the Ink narrative scripting language. Based on InkJS.
+## Which runtime should I use?
 
-## Supported features
+**For new projects we recommend `SwiftInkRuntime` — the native runtime.** It is pure
+Swift with its own native Ink compiler, needs **no JavaScriptCore or JXKit**, executes
+[The Intercept](https://github.com/inkle/the-intercept) fully, and runs on both Apple
+platforms and Linux.
+
+The original `InkStory` runtime (the JavaScriptCore/inkjs **JS-bridge**) is now the
+**legacy** path. It remains fully functional and is scheduled for removal in **v3.0.0**.
+See the [migration guide](docs/how-to/migrate-from-js-bridge.md) to move an existing
+`InkStory`-based app to the native runtime.
+
+### Known gaps vs the JS-bridge
+
+The native runtime does not yet cover every JS-bridge capability, so this is not a claim
+of complete parity. Known gaps include `LIST`, `RANDOM` / `SEED_RANDOM`, threads,
+`EXTERNAL` functions, shuffle variable-text (`{~a|b}`), and Combine-based variable
+observation. If your story needs one of these, stay on the JS-bridge for now. The
+complete, maintained list is the
+[supported-parity / known-gaps statement](docs/reference/js-bridge-vs-native-parity.md).
+
+---
+
+## Legacy: the JavaScriptCore JS-bridge (`InkStory`)
+
+> The sections below document the **legacy** `InkStory` JS-bridge. It is deprecated and
+> will be removed in **v3.0.0**. New projects should use `SwiftInkRuntime` (see above);
+> existing projects should follow the
+> [migration guide](docs/how-to/migrate-from-js-bridge.md).
+
+### Supported features
 
 - Apple and Linux platforms (using [JXKit](https://github.com/jectivex/JXKit)). If you want to use the JavaScriptCore version (Apple platforms only), use release 0.0.4.
 - Loading compiled Ink stories `loadStory(json: String)` as well as Ink directly `loadStory(ink: String)`;
