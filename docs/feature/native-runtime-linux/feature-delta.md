@@ -81,8 +81,11 @@ Linux CI job.
 ## Wave: DISCUSS / [REF] Out of Scope
 
 - **The legacy `InkSwift` JS-bridge module** (JXKit + bundled `ink-full.js` + Combine).
-  Inherently Apple-only; already conditionalized to `.macOS` in `Package.swift:67`.
-  **Do not port it.** Linux CI simply does not build this target.
+  Assumed here to be Apple-only. **Do not port or change it.** *[Delivery correction:
+  with JXKit 3.6.0 the JS-bridge in fact builds and tests on Linux; it is deliberately
+  KEPT (not excluded) so existing Linux consumers of the `InkSwift` product are not
+  broken. Its JavaScriptCoreGTK system dep is installed in the Linux CI step. See the
+  DEVOPS Changed Assumptions section.]*
 - **Changing the supported Ink feature set** — this feature is *parity only* (same
   behaviour, new platform), not new constructs.
 - **Prescribing the portable-classification implementation** — DESIGN owns *how*
@@ -433,8 +436,10 @@ oracle suite on every push and pull_request, reporting pass/fail visibly.
 #### Domain Examples
 1. **Green path** — A PR that preserves Linux parity shows a green Linux job alongside green macOS.
 2. **Regression caught** — A change that misclassifies a float on Linux turns the Linux job red while macOS stays green, before merge.
-3. **JS-bridge excluded (boundary)** — The Linux job builds SwiftInkRuntime but not the
-   `.macOS`-conditioned `InkSwift` JS-bridge target; its absence does not fail the Linux job.
+3. **JS-bridge on Linux (boundary)** — The Linux job builds SwiftInkRuntime; the `InkSwift`
+   JS-bridge **also builds on Linux via JXKit 3.6.0** (only Combine-specific tests are
+   macOS-only), and neither breaks the Linux job. *[Delivery correction — the original
+   "excluded" wording is superseded; see DEVOPS Changed Assumptions.]*
 
 #### UAT Scenarios (BDD)
 ```gherkin
@@ -448,11 +453,17 @@ Scenario: A Linux-only regression is caught before merge
   When the workflow runs
   Then the Linux job reports red while the macOS job reports green
 
-Scenario: The Apple-only JS-bridge does not break Linux CI
-  Given the InkSwift JS-bridge target is conditioned to .macOS
+Scenario: The JS-bridge does not break Linux CI
+  Given the InkSwift JS-bridge builds on Linux via JXKit 3.6.0
   When the Linux job builds and tests
-  Then it excludes that target and still reports a valid pass/fail
+  Then it includes that target (Combine-only tests aside) and still reports a valid pass/fail
 ```
+
+> **Delivery correction**: this scenario originally assumed the JS-bridge was *excluded*
+> on Linux. JXKit 3.6.0 (bumped for Linux dependency resolution) in fact builds the bridge
+> on Linux; it is deliberately **kept** so existing Linux consumers of the `InkSwift`
+> product are not broken. The scenario *intent* (Linux job reports valid pass/fail) is
+> unchanged. See the DEVOPS `Changed Assumptions` section.
 
 #### Acceptance Criteria
 - [ ] A Linux `swift test` job exists in `.forgejo/workflows/tests.yml`, triggered on push and pull_request.
@@ -850,7 +861,7 @@ project-locked, so only the Linux-runner mechanics were open:
 | Deployment strategy | N/A | — |
 | Branching | **Trunk-based** | CLAUDE.md (locked) |
 | Mutation testing | **Disabled** (oracle suite is the quality bar) | CLAUDE.md (locked) |
-| Linux runner | **self-hosted custom label**, `container: swift:6.3.3` | user (DEVOPS) |
+| Linux runner | **`runs-on: ubuntu-latest`** (a self-hosted Mac-mini Forgejo runner labelled `ubuntu-latest`), `container: swift:6.3.3` | user (DEVOPS) |
 
 ## Wave: DEVOPS / [REF] Environment Matrix
 
@@ -865,11 +876,25 @@ Forgejo workflow `Tests`, triggered on `push` + `pull_request`:
 |---|---|---|---|
 | `test-macos` | `macos-arm64` | `swift test` (full suite incl. JS-bridge + Combine) | existing, unchanged |
 | `lint` | `macos-arm64` | SwiftLint boundary rules R1/R3/R4/R5 | existing, unchanged |
-| **`test-linux`** | **self-hosted linux label**, `container: swift:6.3.3` | `swift test` on Linux — parity gate | **NEW (US-04)** |
+| **`test-linux`** | **`ubuntu-latest`** (self-hosted Mac-mini), `container: swift:6.3.3` | `swift test` on Linux — parity gate | **NEW (US-04)** |
 
-The Linux job runs the same `swift test`; no inklecate, no JS engine provisioning
-required. All three jobs run on every push/PR; the two macOS jobs are the guardrail
-(must stay green).
+The Linux job runs the same `swift test` (no inklecate — golden fixtures are committed).
+All three jobs run on every push/PR; the two macOS jobs are the guardrail (must stay green).
+
+**Delivery notes** (operational realities surfaced during the Linux runner bring-up; kept
+in sync with `.forgejo/workflows/tests.yml`):
+- **Node-free checkout** — the `swift:6.3.3` image ships no Node.js, and the runner does not
+  inject one into container jobs, so `actions/checkout` (a JS action) cannot run. The job uses
+  a plain `git clone` + `git checkout $GITHUB_SHA` instead. Do not "restore" `actions/checkout`.
+- **JS engine system dep** — `swift test` builds the `InkSwift` JS-bridge on Linux (JXKit 3.6.0),
+  which links JavaScriptCoreGTK, so the job runs `apt-get install libjavascriptcoregtk-4.1-dev`
+  before testing. The pure-Swift `SwiftInkRuntime` itself needs none of this.
+- **apt / mirror fragility (known risk)** — that install depends on `ports.ubuntu.com` being
+  reachable *every run* (a confirmed Canonical outage on 2026-07-15 red-ed the job). Mitigations
+  in the step: drop the unneeded `noble-backports` suite + `Acquire::Retries=5`. It self-heals when
+  the mirror returns. Durable option if flakiness persists: pre-bake `swift:6.3.3` + the JSC lib
+  into a registry image and switch `container:` to it (removes apt from every run). Deferred — the
+  maintainer accepts the ~30s install for now.
 
 ## Wave: DEVOPS / [REF] Monitoring Contracts (KPI → instrument)
 
@@ -911,8 +936,10 @@ nor introduces a runtime dependency.
 
 ## Wave: DEVOPS / [REF] Pre-requisites & Handoff
 
-- A **self-hosted Linux runner** registered in the Forgejo instance (custom label) able to
-  run `container: swift:6.3.3`. This is the only external provisioning this feature needs.
-- The `test-linux` job is added to `.forgejo/workflows/tests.yml` (below).
-- Validation (US-04 AT): after the job lands, a scratch-branch commit that breaks Linux-only
-  behaviour must turn `test-linux` red while `test-macos` stays green.
+- A **self-hosted Forgejo runner** (a headless Mac mini) labelled `ubuntu-latest` and able to
+  run `container: swift:6.3.3`. *[Delivered & green — the runner is registered and `test-linux`
+  passes. One-time host fix during bring-up: remove `credsStore: osxkeychain` from the runner's
+  `~/.docker/config.json` so the public swift image pulls without a missing credential helper.]*
+- The `test-linux` job is in `.forgejo/workflows/tests.yml`.
+- Validation (US-04 AT): a scratch-branch commit that breaks Linux-only behaviour must turn
+  `test-linux` red while `test-macos` stays green.

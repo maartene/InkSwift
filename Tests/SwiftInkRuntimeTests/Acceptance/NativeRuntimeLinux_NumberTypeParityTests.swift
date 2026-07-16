@@ -16,6 +16,12 @@
 // not floatValue`; this suite adds the float and bool cases that the
 // CoreFoundation CFBoolean/CFNumber path distinguished and that JSONDecoder
 // must reproduce.
+//
+// SCOPE: these are white-box regression guards on the decoder's node-classification
+// (naming follows the existing Milestone1 decoder-test convention). The user-observable
+// journey — a story decoding, playing, and compiling identically — is verified end-to-end
+// by Milestone5b (committed oracle playthrough) and the Compiler_* oracle suite, which run
+// on Linux too. The DD-4 InkDecoder.probe() enforces the same classification at Story.init.
 
 import Testing
 @testable import SwiftInkRuntime

@@ -156,3 +156,15 @@ verification is fixture-based.
 (native↔inklecate emission alignment) from a macOS diagnostic into the committed,
 cross-platform, hard-asserting oracle for Linux parity. Does not change any runtime or
 compiler behaviour.
+
+---
+
+**Post-delivery correction (DEVOPS)**: the Context above states "JXKit/JavaScriptCore does
+not ship in a clean Linux container." That is now inaccurate — JXKit **3.6.0** (bumped for
+Linux dependency resolution) provides a Linux JavaScriptCoreGTK backend, so the JS-bridge
+does build and test on Linux (with `libjavascriptcoregtk-4.1-dev` installed in CI). This
+does **not** change the decision: the committed inklecate-generated fixtures remain the
+*primary, platform-neutral* parity oracle; the JS-bridge is not the ground truth and stays a
+macOS-authored oracle. It also validates rejecting Option B (JS-bridge-as-oracle) — even
+though the bridge now runs on Linux, coupling the parity gate to a JavaScriptCore engine is
+exactly the dependency the committed-fixture strategy avoids.
