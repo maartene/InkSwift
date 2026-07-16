@@ -22,6 +22,7 @@ included:
 only_rules:
   - r1_decoder_no_upward_import
   - r3_jsonserialization_boundary
+  - r3_jsondecoder_boundary
   - r4_no_setvisitcount_in_facade
   - r5_compiler_no_engine_import
   - r5_compiler_no_jsonserialization
@@ -60,6 +61,20 @@ custom_rules:
     included: "Sources/SwiftInkRuntime/(Engine|Facade|Compiler)/.*\\.swift"
     regex: "JSONSerialization"
     message: "R3: JSONSerialization may only be used in Decoder/. Compiler/ secondary JSON must use JSONEncoder/string building."
+    severity: error
+
+  # R3 (generalization — native-runtime-linux ADR-013 DD-5): after the decoder
+  # moved from JSONSerialization to JSONDecoder (portable classification), confine
+  # JSONDecoder to Decoder/ as well so Ink-format JSON decoding cannot leak into
+  # other layers. Scoped to Facade/ + Compiler/ ONLY: Decoder/ is its home, and
+  # Engine/InkEngine.swift legitimately uses JSONDecoder for StoryState save/restore
+  # (ADR-003) — a distinct, sanctioned concern, deliberately not matched here.
+  # Passes today: the only JSONDecoder call sites are Decoder/ and Engine/.
+  r3_jsondecoder_boundary:
+    name: "R3 JSONDecoder boundary"
+    included: "Sources/SwiftInkRuntime/(Facade|Compiler)/.*\\.swift"
+    regex: "JSONDecoder"
+    message: "R3: Ink-format JSON decoding (JSONDecoder) is confined to Decoder/. Facade/ and Compiler/ must not decode JSON. (Engine/ StoryState save/restore via JSONDecoder is the sanctioned ADR-003 exception.)"
     severity: error
 
   # R5 — Compiler-layer isolation (no Engine coupling): Compiler/ may construct

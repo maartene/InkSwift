@@ -49,6 +49,26 @@ struct InkDecoder {
         guard !root.children.isEmpty else {
             throw InkDecodeError.malformedJSON
         }
+
+        // Earned Trust (ADR-013 DD-4): exercise the number/bool classification
+        // substrate, which is exactly what differs across platforms — CoreFoundation
+        // type identity is unavailable under swift-corelibs-foundation, and the
+        // JSONDecoder path must reproduce macOS int/float/bool tagging. Decode a
+        // fixture carrying a float, a bool, and an int, and verify each keeps its
+        // type. On a platform whose JSON decoding misclassifies scalars this fails
+        // HERE — surfaced as StoryError.decoderProbeFailure at Story.init — rather
+        // than shipping a silently wrong story ("2.5" -> "2", "true" -> "1").
+        let scalarProbe = #"{"inkVersion":21,"root":[2.5,true,42,null],"listDefs":{}}"#
+        guard let scalarData = scalarProbe.data(using: .utf8) else {
+            throw InkDecodeError.malformedJSON
+        }
+        let scalarRoot = try decode(scalarData)
+        guard scalarRoot.children.count >= 3,
+              case .floatValue = scalarRoot.children[0],
+              case .boolValue = scalarRoot.children[1],
+              case .intValue = scalarRoot.children[2] else {
+            throw InkDecodeError.probeClassificationDrift
+        }
     }
 
     // MARK: - Container parsing
@@ -275,4 +295,8 @@ private indirect enum InkJSONValue: Decodable {
 enum InkDecodeError: Error {
     case malformedJSON
     case unsupportedInkVersion(Int)
+    // DD-4: the startup probe found a JSON scalar mis-typed on this platform
+    // (a float/bool/int did not classify to the expected NodeKind) — the story
+    // refuses to start rather than play with silently wrong values.
+    case probeClassificationDrift
 }

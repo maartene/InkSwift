@@ -33,6 +33,10 @@ public struct StoryBlueprint {
                 throw StoryError.unsupportedInkVersion(version)
             case .malformedJSON:
                 throw StoryError.invalidJSON
+            case .probeClassificationDrift:
+                // Probe-only failure (DD-4); decode() never throws it, but the
+                // switch must stay exhaustive. Surface as a probe failure.
+                throw StoryError.decoderProbeFailure(reason: "number/bool classification drift")
             }
         } catch {
             throw StoryError.invalidJSON
