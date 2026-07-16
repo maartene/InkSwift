@@ -43,7 +43,7 @@ C4Container
 
   Person(dev, "Swift Developer")
 
-  Container(inkswift, "InkSwift", "Swift module (existing, frozen)", "JS-bridge runtime via JXKit + inkjs. Public type: InkStory. No changes permitted.")
+  Container(inkswift, "InkSwift", "Swift module (existing, behaviorally frozen)", "JS-bridge runtime via JXKit + inkjs. Public type: InkStory (deprecated → v3.0.0, native-runtime-migration). Behaviorally frozen: no logic change; the sole permitted modification is a non-behavioral @available deprecation annotation.")
   Container(swiftinkruntime, "SwiftInkRuntime", "Swift module (new)", "Pure-Swift tree-walker runtime. Public type: Story. No JS dependency.")
   ContainerDb(inkjsonfile, "Ink JSON File", ".ink.json", "Compiled Ink story, inkVersion 21+")
   Container(inkswifte2etests, "InkSwiftTests", "XCTest target (existing)", "Regression suite for InkSwift module")
@@ -100,7 +100,7 @@ C4Component
 
 ```
 Sources/
-  InkSwift/                    ← existing module, frozen, no changes
+  InkSwift/                    ← existing module, behaviorally frozen (native-runtime-migration): no logic change; sole permitted edit is a non-behavioral @available deprecation on InkStory (→ v3.0.0)
     InkStory.swift
     ink-full.js
 
@@ -1539,3 +1539,145 @@ feature with no change. `VariableTextEmitter` lives in `Compiler/Codegen/`, cons
 | ADR | Title | Status |
 |-----|-------|--------|
 | [ADR-010](./adr-010-variable-text-lowering.md) | Variable-Text Lowering (sequence / cycle / once-only) | Accepted |
+
+---
+
+### native-runtime-migration (Feature Addition)
+
+The "nudge" increment: reposition the README toward the native `SwiftInkRuntime`, attach
+a non-breaking `@available` **deprecation** to the JS-bridge `InkStory` API pointing at a
+**v3.0.0** removal, and publish two Diataxis docs — an `InkStory → Story/InkCompiler`
+migration guide and an honest supported-parity / known-gaps statement. **Actual removal
+of the JS-bridge is OUT of scope** — a separate future feature (breaking major, v3.0.0);
+the deprecation *message* this feature ships names v3.0.0, but no code is removed.
+
+**Near-zero architecture surface.** One non-behavioral attribute on one existing public
+type + two new documentation files. No new module, target, port, adapter, or runtime
+dependency. Paradigm inherited: **object-oriented** (CLAUDE.md — not re-run).
+
+#### Intent & Quality Attributes (ranked)
+
+1. **Usability** — the consumer notices the legacy signal at the keyboard (compiler
+   warning) and can act (US-02); the guide/parity docs are findable and honest.
+2. **Reliability (guardrail)** — the deprecation is a **warning, not an error**; zero
+   consumer build breaks; macOS + Linux suites stay green; JS-bridge still plays (D-8).
+3. **Correctness / honesty** — the `removal-version` (v3.0.0) and the gaps list read
+   identically across every surface; no "full parity" over-claim; no misleading `renamed:`
+   fix-it (ADR-015).
+4. **Maintainability** — the change to the (behaviorally) frozen `InkSwift` module is a
+   single, purely non-behavioral annotation; the parity list is a *living backlog*
+   (each gap-closing feature prunes at finalize — D-7).
+
+No scalability/security/performance change. Conway: single maintainer — architecture
+trivially aligned. External integrations: none (contract testing N/A).
+
+#### Changed Assumptions — the "frozen `InkSwift`" reconciliation (MANDATORY)
+
+The `native-runtime` brief (D8) and ADR-002 lock `InkSwift` as frozen. This feature must
+edit `InkStory.swift`, so the invariant is **refined** (not violated, not overturned):
+
+| Original invariant (quoted, with source) | Refined invariant | Rationale |
+|---|---|---|
+| Container node (brief L46): *"InkSwift … existing, frozen … Public type: InkStory. **No changes permitted.**"* · Folder layout (brief L103): *"existing module, **frozen, no changes**"* · ADR-002 §3: *"**InkStory.swift is frozen — zero changes.** No logic is extracted …"* | **`InkSwift` is *behaviorally* frozen**: no logic / behavior / API-signature change. The **sole permitted modification** is a non-behavioral `@available(*, deprecated, message:)` annotation on `InkStory` (and optionally `Option`), which changes **zero runtime behavior**. | The freeze existed to protect (a) behavioral stability for published consumers and (b) the JS-bridge's role as the macOS execution oracle. A deprecation attribute preserves **both**: the bridge still plays identically (byte-for-byte oracle unchanged) and no consumer API is removed or altered. The refinement narrows "no changes" to "no *behavioral* changes", which is what the freeze was actually protecting. |
+
+- ADR-002 is **immutable** (ADRs supersede, never edit) — it is **refined**, not
+  modified. ADR-015 records the refinement in its Notes; ADR-002 stands.
+- The brief's frozen-language at L46 (Container node) and L103 (folder layout) IS updated
+  in-place to the refined invariant (per the back-propagation contract for the SSOT).
+- **No upstream story/AC change** is required: the DISCUSS guardrail (US-02 AC: "warning,
+  not error; no public API removed") already scopes this exactly. No
+  `design/upstream-changes.md` was created.
+
+#### Reuse Analysis (HARD GATE)
+
+Per principle 12, each overlapping component declares its **contract shape · mutation
+universe**. Zero unjustified CREATE NEW.
+
+| Component | File / Location | Overlap | Decision | Contract shape · universe | Justification |
+|---|---|---|---|---|---|
+| `InkStory` (public type) | `Sources/InkSwift/InkStory.swift` | The public JS-bridge API being deprecated | **EXTEND** (attach `@available`; ~3 lines) | **pure-annotation · universe: ∅ (zero runtime effect)** — a compile-time attribute; no method body, state, or behavior touched. Assertion = a compile that emits the warning AND succeeds (US-02). | A new type would be absurd — the goal is to *signal legacy on the existing type in place*. The attribute is the entire change; behavior is untouched (behaviorally-frozen invariant). |
+| `Option` (public struct) | `Sources/InkSwift/InkStory.swift` | Companion public type, reachable only via `InkStory.options` | **EXTEND (optional)** | **pure-annotation · universe: ∅** | May carry the same attribute for symmetry; not required for reach (its only access path is the already-deprecated `InkStory.options`). DELIVER decides. |
+| Migration guide | `docs/how-to/migrate-from-js-bridge.md` | — (new doc) | **CREATE NEW (doc, not code)** | **doc artifact · universe: static content** | Diataxis *how-to*. **Not a code component** — no module/target/port. Content authored in DELIVER; DESIGN locks the home + ownership. SSOT for the `api-mapping-table`. |
+| Parity statement | `docs/reference/js-bridge-vs-native-parity.md` | — (new doc) | **CREATE NEW (doc, not code)** | **doc artifact · universe: static content** | Diataxis *reference*. Aggregator/SSOT for **API gaps** (Combine observation, tag-shape, error-handling); **references** `docs/product/ink-feature-reference.md` for **construct gaps** (no duplication). Living backlog (D-7). |
+| README | `README.md` | Runtime recommendation + gaps note | **EXTEND (doc)** | **doc artifact · universe: static content** | Repositions native as recommended; links both new docs. Content authored in DELIVER. |
+
+**Outcome Collision Check**: **correctly skipped** — `docs/product/outcomes/registry.yaml`
+does not exist in this repo (registry not bootstrapped). Not bootstrapping it; CLI not run.
+
+#### The `@available` decision (propose mode) — see ADR-015
+
+DISCUSS fixed the warning-text CONTENT (names v3.0.0 + SwiftInkRuntime + migration guide);
+DESIGN chooses the attribute **FORM**. Three options were weighed:
+
+- **Option 1 (RECOMMENDED)** — type-level `@available(*, deprecated, message: …)` on
+  `InkStory`, `message:` only. Simplest (~3 lines), high reach (warns at every
+  construction / type-reference site), lowest noise, honest.
+- **Option 2** — type + every public entry point. Maximum coverage but ~20 noisy attribute
+  sites on a frozen file; near-zero marginal reach for this API (the type is always named).
+- **Option 3** — `renamed: "Story"`. **Rejected**: `Story` is in a *different module*
+  (`SwiftInkRuntime`) and is **not API-compatible** (per ADR-002 / US-03 mapping), so the
+  fix-it produces non-compiling / broken code — the opposite of this feature's honesty goal.
+
+**Axis**: `*, deprecated` (unconditional, all-platform) → **warning, not error**. Known
+edge: a consumer opting into warnings-as-errors sees an error — their opt-in, not our
+break; documented in the guide. **Status: Accepted — maintainer confirmed Option 1 (2026-07-16).**
+
+#### Diataxis doc homes & cross-links (Open Question 2 — confirmed)
+
+| Doc | Diataxis type | Home | Owns / SSOT for |
+|---|---|---|---|
+| Migration guide | how-to (task-oriented) | `docs/how-to/migrate-from-js-bridge.md` | the `InkStory → Story/InkCompiler` `api-mapping-table` |
+| Parity statement | reference | `docs/reference/js-bridge-vs-native-parity.md` | **API gaps** (Combine observation, tag-shape, error-handling); **references** `docs/product/ink-feature-reference.md` for construct gaps |
+| README | (product entry) | `README.md` | recommendation + gaps note; **links both** docs |
+
+- Confirmed: README (US-01) links both docs. Parity statement is the aggregator/SSOT for
+  the **API** gaps; construct gaps stay in `ink-feature-reference.md` (no duplication).
+- The maintainer folded the migration *playbook* into the how-to doc — **no separate
+  playbook doc**. Doc *content* is authored in DELIVER; DESIGN locks only structure/homes.
+
+#### C4 — Diagram Impact (one-line delta; no new topology)
+
+**No new System Context or Container diagram is warranted** — the feature adds zero
+production components, containers, actors, data stores, or external systems. The only C4
+change is a **note on the existing Container `InkSwift` node**: it becomes
+*behaviorally frozen* and its public type `InkStory` is *deprecated → v3.0.0*. The
+existing L1/L2/L3 diagrams otherwise stand unchanged. Updated node (delta only):
+
+```mermaid
+C4Container
+  title Container delta — native-runtime-migration (InkSwift node only; rest of L2 unchanged)
+  Person(dev, "Swift Developer")
+  Container(inkswift, "InkSwift", "Swift module (behaviorally frozen)", "JS-bridge via JXKit + inkjs. Public type: InkStory — @available(*, deprecated) → removal in v3.0.0; migrate to SwiftInkRuntime.Story. No behavior change.")
+  Container(swiftinkruntime, "SwiftInkRuntime", "Swift module (recommended)", "Pure-Swift runtime + native compiler. Public type: Story. README now recommends this for new projects.")
+  Rel(dev, inkswift, "Uses (legacy) — sees deprecation warning on build via")
+  Rel(dev, swiftinkruntime, "Recommended for new projects via")
+```
+
+Two new **docs** are not C4 containers (they are not deployable software units); they are
+tracked in the Reuse Analysis above.
+
+#### Technology Choices
+
+| Choice | License | Rationale |
+|---|---|---|
+| Swift `@available(*, deprecated, message:)` (language feature) | Apache 2.0 (Swift) | Native, zero-dependency deprecation mechanism; emits a compiler warning honored by `swift build` + Xcode. No new dependency. |
+| Markdown docs (Diataxis how-to + reference) | n/a | Plain repo docs; no tooling change. |
+
+No new runtime or dev dependency. Enforcement tooling: existing SwiftLint R1/R3/R5 +
+Swift access control cover the module unchanged; no new architecture rule needed (the
+`@available` edit introduces no boundary concern).
+
+#### Inherited constraints (flow to DISTILL/DELIVER)
+
+Swift Testing **backtick** test-name mandate; **trunk-based** dev (per-step green commit
+to `main`); new ATs authored **`.disabled(...)`** until their DELIVER step re-enables,
+**zero `.disabled` at finalize**; **mutation testing disabled** (test quality =
+execution-equivalence oracle + code review + CI boundary gates). Most ACs here are
+**documentation-accuracy audits**; US-02 needs a **compile that emits the expected
+warning WITHOUT erroring**.
+
+#### ADR
+
+| ADR | Title | Status |
+|-----|-------|--------|
+| [ADR-015](./adr-015-inkstory-deprecation-mechanics.md) | `InkStory` Deprecation Mechanics — type-level `@available` `message:`, no `renamed:` | **Accepted (Option 1, 2026-07-16)** |

@@ -1,0 +1,154 @@
+{
+  "roadmap": {
+    "project_id": "native-runtime-migration",
+    "created_at": "2026-07-16T00:00:00Z",
+    "total_steps": 4,
+    "phases": 1
+  },
+  "phases": [
+    {
+      "id": "01",
+      "name": "Nudge increment — deprecation signal + migration docs (right-sized, single crafter)",
+      "steps": [
+        {
+          "id": "01-01",
+          "name": "Parity/known-gaps statement (US-04) + doc-accuracy guard test",
+          "description": "Author docs/reference/js-bridge-vs-native-parity.md (Diataxis reference): recommends SwiftInkRuntime, lists known gaps, advises staying on the JS-bridge for them, makes NO 'full parity' claim; references docs/product/ink-feature-reference.md for construct gaps (does NOT duplicate them); lists the API gaps (Combine observation, tag shape [String:String]->[String], error handling currentErrors vs throws); documents the living-parity-backlog convention and names the v3.0.0 endpoint. Author the guard test FIRST (RED): it fails because the doc is absent, then goes GREEN once the doc exists and is consistent with the SSOT.",
+          "acceptance_criteria": [
+            "docs/reference/js-bridge-vs-native-parity.md exists and recommends SwiftInkRuntime",
+            "the statement makes no 'full parity' claim (the substring 'full parity' does not appear as an assertion)",
+            "construct gaps reference docs/product/ink-feature-reference.md rather than duplicating the MUST-REJECT list",
+            "the API gaps Combine observation, tag shape, and error handling are named",
+            "the living-parity-backlog convention is documented and the v3.0.0 endpoint is named"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/DocAccuracy_ParityStatementConsistencyTests.swift",
+          "criteria": "A new platform-neutral guard test asserts the parity statement (a) exists, (b) references ink-feature-reference.md as the construct-gap SSOT, (c) names the three API gaps, (d) contains no 'full parity' over-claim, (e) names v3.0.0. Full macOS + Linux suite remains GREEN.",
+          "scenario_name": "US-04 — Honest supported-parity / known-gaps statement (living backlog)",
+          "quality_gates": [
+            "guard test RED before the doc exists, GREEN after",
+            "full swift test suite remains GREEN (macOS)",
+            "no InkSwift import in the guard test (must run on Linux too)"
+          ],
+          "implementation_notes": [
+            "No DISTILL AT was authored (DISTILL skipped) — the crafter AUTHORS this guard test fresh in RED; it is doc-accuracy, not oracle-equivalence.",
+            "Test reads repo files as TEXT (no InkSwift import) so it runs cross-platform: locate the repo root by walking up from URL(filePath: #filePath) until Package.swift is found, then read docs/reference/js-bridge-vs-native-parity.md and docs/product/ink-feature-reference.md.",
+            "Assert the parity doc contains a reference/link to 'ink-feature-reference.md' (construct-gap SSOT) and the strings for the three API gaps (Combine / observation, tag, error), names 'v3.0.0', and does NOT assert 'full parity'.",
+            "Swift Testing backtick function-name mandate (CLAUDE.md) — no @Test(\"...\") string labels.",
+            "Content source: feature-delta.md US-04 section; construct gaps live in ink-feature-reference.md MUST-REJECT rows (28, 36-39)."
+          ],
+          "dependencies": [],
+          "estimated_hours": 1.0,
+          "deliverables": [
+            "docs/reference/js-bridge-vs-native-parity.md (new)",
+            "Tests/SwiftInkRuntimeTests/Acceptance/DocAccuracy_ParityStatementConsistencyTests.swift (new)"
+          ],
+          "files_to_modify": [
+            "docs/reference/js-bridge-vs-native-parity.md",
+            "Tests/SwiftInkRuntimeTests/Acceptance/DocAccuracy_ParityStatementConsistencyTests.swift"
+          ]
+        },
+        {
+          "id": "01-02",
+          "name": "Migration guide (US-03) + 100%-API-coverage guard test",
+          "description": "Author docs/how-to/migrate-from-js-bridge.md (Diataxis how-to): the InkStory -> Story/InkCompiler mapping table covering 100% of the InkStory public API, flagging shape differences (tags dict->array, state String->Data, getVariable JXValue->Any?, added throws) and the no-equivalent Combine observation gap; names the v3.0.0 runway; links the parity statement. Author the coverage guard test FIRST (RED): it fails until every InkStory public symbol appears in the guide.",
+          "acceptance_criteria": [
+            "docs/how-to/migrate-from-js-bridge.md exists and maps 100% of the InkStory public API to a native equivalent or an explicit 'no native equivalent'",
+            "shape differences are flagged: tags [String:String]->[String], state String->Data, getVariable JXValue->Any?, and added throws on choice/knot/state calls",
+            "the Combine reactive-observation gap is stated explicitly as having no native equivalent",
+            "the guide names the v3.0.0 runway and links the parity statement"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/DocAccuracy_MigrationGuideCoverageTests.swift",
+          "criteria": "A new platform-neutral guard test extracts every public func/var/init identifier from Sources/InkSwift/InkStory.swift (parsed as text) and asserts each appears in docs/how-to/migrate-from-js-bridge.md. RED before the guide exists/complete, GREEN after. Full macOS + Linux suite GREEN.",
+          "scenario_name": "US-03 — Migration guide maps InkStory to the native API",
+          "quality_gates": [
+            "guard test RED before the guide is complete, GREEN after",
+            "coverage is 100% of InkStory public members (incl. the observation methods as 'no equivalent')",
+            "no InkSwift import in the guard test (runs on Linux)"
+          ],
+          "implementation_notes": [
+            "Crafter authors this guard test fresh in RED (no DISTILL AT). Parse Sources/InkSwift/InkStory.swift as TEXT for `public (func|var|init)` identifiers within the InkStory type; assert each identifier string appears in the guide markdown.",
+            "Locate repo root via URL(filePath: #filePath) walk-up to Package.swift (same helper as 01-01 — consider a small shared test helper if it reduces duplication, but do not over-engineer).",
+            "InkStory public surface includes the typo'd `oberservedVariables`, `retainTags`, `registerObservedVariable`, `deregisterObservedVariable` — the guide must mention all (observation ones as the no-equivalent gap).",
+            "Backbone mapping table content: feature-delta.md US-03 section.",
+            "Depends on 01-01 (the guide links the parity statement)."
+          ],
+          "dependencies": ["01-01"],
+          "estimated_hours": 1.5,
+          "deliverables": [
+            "docs/how-to/migrate-from-js-bridge.md (new)",
+            "Tests/SwiftInkRuntimeTests/Acceptance/DocAccuracy_MigrationGuideCoverageTests.swift (new)"
+          ],
+          "files_to_modify": [
+            "docs/how-to/migrate-from-js-bridge.md",
+            "Tests/SwiftInkRuntimeTests/Acceptance/DocAccuracy_MigrationGuideCoverageTests.swift"
+          ]
+        },
+        {
+          "id": "01-03",
+          "name": "README reposition (US-01) — recommend native, honest gaps",
+          "description": "Reposition README.md so SwiftInkRuntime is the recommended runtime for new projects: remove the stale 'experimental / plays the first 100 lines of the Intercept' wording; state it executes The Intercept fully and runs on Apple + Linux; add an honest 'Known gaps vs the JS-bridge' note that links the parity statement (01-01) and migration guide (01-02) and makes no 'full parity' claim; reframe the JS-bridge section as the legacy path with a pointer to the migration guide.",
+          "acceptance_criteria": [
+            "README presents SwiftInkRuntime as the recommended runtime for new projects; the 'experimental / first 100 lines' wording is removed",
+            "README includes an honest 'Known gaps vs the JS-bridge' note linking the parity statement and migration guide, with no 'full parity' claim",
+            "the JS-bridge section remains but is reframed as the legacy path with a pointer to the migration guide"
+          ],
+          "test_file": null,
+          "criteria": "README.md repositioned per the three ACs. Documentation-only step — no automated test (RED logged SKIPPED / NOT_APPLICABLE). Full suite remains GREEN (unchanged).",
+          "scenario_name": "US-01 — The README recommends the native runtime (with honest gaps)",
+          "quality_gates": [
+            "the string 'first 100 lines' no longer appears in README.md",
+            "links to both new docs resolve (relative paths correct)"
+          ],
+          "implementation_notes": [
+            "Documentation-only: log RED as SKIPPED with NOT_APPLICABLE (README reposition has no in-process assertion; a doc-lint guard here would be over-engineering per the maintainer's scope).",
+            "Current stale text is at README.md top banner (line ~4) + 'Supported features' + 'Getting started' sections that teach InkStory.",
+            "Depends on 01-01 + 01-02 so the linked docs exist."
+          ],
+          "dependencies": ["01-01", "01-02"],
+          "estimated_hours": 0.5,
+          "deliverables": ["README.md (repositioned)"],
+          "files_to_modify": ["README.md"]
+        },
+        {
+          "id": "01-04",
+          "name": "Deprecate InkStory (US-02) — @available warning, not error",
+          "description": "Attach the ADR-015 Option-1 deprecation to the public InkStory type in Sources/InkSwift/InkStory.swift: @available(*, deprecated, message: \"InkStory (the JavaScriptCore bridge) is legacy and will be removed in v3.0.0. Migrate to SwiftInkRuntime's Story / InkCompiler — see the migration guide: docs/how-to/migrate-from-js-bridge.md\"). Type-level only; message: only (NO renamed: — native Story is a different, non-API-compatible module). It is a WARNING, not an error; no public API removed; the JS-bridge still plays. The ~26 existing InkStory use-sites in our own test targets WILL now emit the deprecation warning — this is accepted (the maintainer chose 'accept them'); do NOT suppress them.",
+          "acceptance_criteria": [
+            "compiling against InkStory emits a Swift deprecation warning whose text names v3.0.0, names SwiftInkRuntime, and references the migration guide",
+            "the deprecation is a warning, not an error: existing builds still succeed; no public API is removed; the JS-bridge still plays stories",
+            "the removal version in the warning matches the migration guide (01-02) and parity statement (01-01) exactly (v3.0.0)"
+          ],
+          "test_file": null,
+          "criteria": "The @available attribute is added per ADR-015 Option 1. RED is logged SKIPPED (NOT_APPLICABLE): US-02 is verified by a compiler-warning DEMONSTRATION (the ~26 existing InkStory sites now warn) plus a green build — warnings, not errors — not by an in-process assertion. GREEN: attribute added, full swift test suite still GREEN (no -Werror). Do NOT suppress the own-suite warnings.",
+          "scenario_name": "US-02 — The JS-bridge API signals it is legacy (deprecation warning)",
+          "quality_gates": [
+            "swift build / swift test still succeed (warnings, not errors)",
+            "no public API removed; JS-bridge behaviour unchanged",
+            "message text matches v3.0.0 + SwiftInkRuntime + the migration-guide path used in 01-01/01-02"
+          ],
+          "implementation_notes": [
+            "ADR-015 (Accepted, Option 1): type-level @available on the InkStory class declaration; message: only; axis '*, deprecated' (unconditional, all-platform) => warning not error.",
+            "Option struct annotation is OPTIONAL and reach-neutral — DELIVER may skip it; do not add unless trivial.",
+            "There is NO -warnings-as-errors anywhere (Package.swift/CI/hook verified) so the build stays green; the ~26 warnings across InkSwiftTests + SwiftInkRuntimeTests oracle uses are ACCEPTED and are the US-02 demonstration.",
+            "This step edits the behaviorally-frozen InkSwift module — permitted: the @available annotation is the sole non-behavioral change allowed by the refined invariant (brief.md / ADR-002 refinement).",
+            "Ships last so the migration-guide path in the message already resolves (01-02 done)."
+          ],
+          "dependencies": ["01-01", "01-02"],
+          "estimated_hours": 0.25,
+          "deliverables": ["Sources/InkSwift/InkStory.swift (@available added)"],
+          "files_to_modify": ["Sources/InkSwift/InkStory.swift"]
+        }
+      ]
+    }
+  ],
+  "implementation_scope": {
+    "source_directories": ["Sources/InkSwift/", "docs/"],
+    "test_directories": ["Tests/SwiftInkRuntimeTests/"],
+    "excluded_patterns": ["*.ink", "*.ink.json"]
+  },
+  "validation": {
+    "status": "approved",
+    "approved_by": "orchestrator (right-sized DELIVER, maintainer-directed)",
+    "notes": "DISTILL skipped by maintainer decision (doc-accuracy feature; oracle-style ATs N/A). Two doc-accuracy guard tests authored fresh in RED. DEVOPS skipped (guardrail KPI-5 met by construction: no -warnings-as-errors). Single-crafter cohesive delivery per maintainer's ceremony choice."
+  }
+}

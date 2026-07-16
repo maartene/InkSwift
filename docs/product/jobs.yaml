@@ -3,9 +3,25 @@
 # Maintainer: nw-product-owner
 # Format: Jobs-to-Be-Done (JTBD) job statements
 
-schema_version: 3
+schema_version: 4
 
 changelog:
+  - version: 4
+    date: "2026-07-16"
+    feature: "native-runtime-migration"
+    note: >
+      Added job-runtime-consolidation (DISCUSS wave): the existing InkSwift JS-bridge
+      (v2.x) consumer's job of confidently switching onto the one recommended native
+      runtime. This is the "nudge" increment — reposition the README, deprecate the
+      JS-bridge InkStory API with a v3.0.0-removal signal, ship an InkStory→Story/
+      InkCompiler migration guide, and publish an honest supported-parity / known-gaps
+      statement. It composes with (and is made possible by) job-story-playback,
+      job-native-compilation, and job-linux-portability, which made the native runtime
+      ready on Apple + Linux. Scope EXCLUDES actually removing the JS-bridge product;
+      the eventual removal is a separate future feature (breaking major, v3.0.0). This
+      sets a course toward removal that CONTRADICTS native-runtime-linux's recorded
+      "keep the JS-bridge" decision — see the feature-delta ## Changed Assumptions
+      section (deprecate-now / remove-in-v3.0.0-later). The evolution doc is unchanged.
   - version: 3
     date: "2026-07-15"
     feature: "native-runtime-linux"
@@ -226,3 +242,69 @@ jobs:
       - "Every supported story in the committed fixture corpus plays line-for-line / choice-for-choice identical on Linux and macOS"
       - "Zero int/float/bool/bool-vs-int misclassifications on Linux across the fixture corpus"
       - "A Linux swift-test CI job runs on every push, catching Linux parity regressions before merge"
+
+  - id: "job-runtime-consolidation"
+    status: "active"
+    persona: "Maarten — Swift app developer embedding Ink stories (existing InkSwift JS-bridge v2.x consumer); secondarily Nadia — server-side Swift developer on Linux"
+    persona_file: "docs/product/personas/maarten.md"
+    related_jobs:
+      - id: "job-story-playback"
+        relationship: >
+          job-story-playback made the RUN side pure-Swift (native runtime, no JS
+          engine). This job helps the consumer who is still on the JS-bridge actually
+          adopt that runtime and understand the JS-bridge is now the legacy path.
+      - id: "job-native-compilation"
+        relationship: >
+          job-native-compilation made the BUILD side pure-Swift (native compiler, no
+          external inklecate). Together with playback it made a single native runtime
+          viable; this job signals consolidation onto it and maps the API to switch.
+      - id: "job-linux-portability"
+        relationship: >
+          job-linux-portability extended the native runtime's correct-execution reach
+          to Linux, making "one recommended runtime for every platform" credible — the
+          precondition for nudging all consumers (Apple AND Linux) toward it.
+    statement: >
+      When I have an app or service built on the InkSwift JS-bridge (v2.x) and the
+      maintainer is steering toward one native runtime, I want to understand that the
+      JS-bridge is now legacy, see exactly how my code maps to the native
+      SwiftInkRuntime API, and know honestly what does and does not work yet, so I can
+      decide whether and how to migrate — without being surprised by a future breaking
+      removal or misled by an over-claimed "full parity".
+    forces:
+      push: >
+        The JS-bridge carries a JavaScriptCore/JXKit + bundled inkjs dependency, and
+        the README still markets it as primary while calling the native runtime
+        "experimental". The maintainer wants to consolidate on one runtime and reduce
+        maintenance burden (drop the JavaScriptCore system-lib dependency).
+      pull: >
+        One recommended pure-Swift runtime with no JS engine; a clear InkStory →
+        Story/InkCompiler API mapping; an honest supported-parity / known-gaps
+        statement; and advance notice of the eventual v3.0.0 removal so migration can
+        be planned, not forced.
+      anxiety: >
+        "If I migrate, will my story behave identically? The native runtime cannot play
+        LIST, RANDOM/SEED_RANDOM, threads, EXTERNAL functions, or shuffle {~a|b}, and
+        it has no Combine reactive observation — will I silently lose features?" and
+        "Will the JS-bridge vanish from under me without warning?"
+      habit: >
+        The established InkStory() + loadStory + Combine ObservableObject/@StateObject
+        SwiftUI pattern the README teaches; trust in inkjs (full Ink) as ground truth.
+    features:
+      - id: "native-runtime-migration"
+        contribution: >
+          The "nudge" increment. (1) Repositions the README so the native
+          SwiftInkRuntime is the recommended runtime for new projects (honest framing,
+          not over-claimed parity). (2) Adds an @available deprecation signal on the
+          JS-bridge InkStory public API whose warning names the v3.0.0 removal and
+          points to the native runtime + migration guide. (3) Ships a migration guide
+          mapping every InkStory call to its Story/InkCompiler equivalent (including
+          the no-equivalent Combine-observation gap). (4) Publishes an honest
+          supported-parity / known-gaps statement. Scope EXCLUDES removing or
+          repurposing the JS-bridge product — that is a separate future feature
+          (breaking major, v3.0.0).
+        status: "in DISCUSS wave"
+    outcome_kpis:
+      - "An existing JS-bridge consumer who rebuilds sees a deprecation warning that names v3.0.0 and links to a resolvable migration guide (0 → 100% of consumers compiling InkStory)"
+      - "The migration guide maps 100% of the InkStory public API to a native equivalent or an explicit 'no native equivalent' (Combine observation)"
+      - "The published known-gaps list names 100% of documented feature gaps (LIST, RANDOM, threads, EXTERNAL, shuffle) and API gaps (Combine observation, tag-shape, error-handling)"
+      - "The deprecation signal is a warning, not an error: 0 existing consumer builds break; macOS + Linux suites stay green; no public API removed"

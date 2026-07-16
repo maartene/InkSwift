@@ -84,6 +84,17 @@ These constructs are rejected by the compiler with a located
 
 ## Known gaps / future work
 
+**Maintenance convention — this gap list is the native-runtime parity backlog.**
+The MUST-REJECT table and the gaps below are not just documentation; they are the
+running to-do list of work remaining to reach parity with the inkjs-backed JS-bridge
+(`InkSwift`). Whenever a feature adds a capability that closes a gap — moving a
+construct from MUST-REJECT to MUST-COMPILE, or landing a missing API-parity capability
+— that feature MUST, as part of its GREEN/finalize step, revisit this list and remove
+(or reclassify) every gap it closed, so the backlog only ever lists what is genuinely
+still missing. Precedent: slice-01 moved the deterministic variable-text rows 25–27
+from MUST-REJECT to MUST-COMPILE and updated this document in the same change. A closed
+gap left in this list is a stale backlog — treat it the same as a stale test.
+
 The MUST-REJECT list above is honest about *why* each construct is rejected, because
 the reasons are not uniform:
 

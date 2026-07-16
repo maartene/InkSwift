@@ -1,0 +1,180 @@
+schema_version: 1
+
+# Single Source of Truth: Native Runtime Migration ("nudge") Journey
+# Created by: native-runtime-migration DISCUSS wave (2026-07-16)
+# Maintainer: nw-product-owner
+# Depth: LIGHTWEIGHT — doc/signal-heavy feature; happy-path focus, minimal error paths.
+# Scope: the NUDGE increment only (reposition README + deprecate JS-bridge + migration
+#        guide + honest parity/gaps statement). Removing the JS-bridge is OUT of scope
+#        (separate future feature — breaking major, v3.0.0).
+
+persona:
+  name: "Maarten (as an existing InkSwift JS-bridge v2.x consumer)"
+  role: "Swift app developer embedding Ink stories; existing JS-bridge consumer"
+  persona_file: "docs/product/personas/maarten.md"
+  secondary_persona:
+    name: "Nadia"
+    role: "Server-side Swift developer on Linux (also an existing JS-bridge consumer via JXKit 3.6.0)"
+    persona_file: "docs/product/personas/nadia.md"
+  description: >
+    An existing consumer of the published InkSwift JS-bridge (v2.x, InkStory API) who
+    must decide whether and how to move onto the recommended native SwiftInkRuntime.
+    "Existing v2.x JS-bridge consumer" is a hat both Maarten (Apple) and Nadia (Linux)
+    wear — no new persona file is warranted at this density.
+
+primary_job:
+  id: "job-runtime-consolidation"
+  statement: >
+    When I have an app or service built on the InkSwift JS-bridge (v2.x) and the
+    maintainer is steering toward one native runtime, I want to understand that the
+    JS-bridge is now legacy, see exactly how my code maps to the native SwiftInkRuntime
+    API, and know honestly what does and does not work yet, so I can decide whether and
+    how to migrate — without being surprised by a future breaking removal or misled by
+    an over-claimed "full parity".
+
+journey:
+  name: "Discover the recommendation, understand the map, decide about migrating"
+  goal: "From 'am I on a dying runtime?' to a confident, eyes-open migrate / stay / wait decision"
+  persona: "Maarten / Nadia (existing JS-bridge consumer)"
+  emotional_arc:
+    start: "Uncertain / slightly wary — 'the README calls native experimental, yet I hear it's now recommended — is the bridge dying, and what will break if I move?'"
+    middle: "Informed / engaged — a clear API mapping and an HONEST gaps list; no over-claim to distrust"
+    end: "Confident and in control — I know the v3.0.0 timeline, I know what native can't do yet, and I can decide to migrate now, stay on the bridge, or wait"
+
+mental_model:
+  - "The README is where I judge which runtime a project should adopt."
+  - "A Swift compiler deprecation warning on an API I already call is an unmissable signal that it's legacy."
+  - "A migration guide should map my existing calls one-for-one — and tell me plainly when there is NO equivalent."
+  - "'Parity' claims are only trustworthy if the gaps are stated honestly; I distrust 'full parity'."
+  - "A named removal version (v3.0.0) tells me how much runway I have to migrate."
+
+steps:
+  - id: 1
+    name: "Discover the recommendation"
+    command: "Read github.com/maartene/InkSwift README"
+    expected_output: >
+      The README recommends the native SwiftInkRuntime for new projects (no JS engine,
+      native compiler, runs on Apple + Linux), honestly notes the known gaps, and no
+      longer calls the native runtime "experimental / first 100 lines".
+    shared_artifacts:
+      - name: "recommended-runtime-name"
+        source: "Package.swift product name (SwiftInkRuntime)"
+        displayed_as: "${recommended_runtime}"
+        consumers: ["README", "deprecation-message", "migration-guide", "parity-statement"]
+      - name: "known-gaps-list"
+        source: "parity-statement doc (references docs/product/ink-feature-reference.md MUST-REJECT rows + the API-mapping no-equivalent rows)"
+        displayed_as: "${known_gaps}"
+        consumers: ["README 'stay on the bridge if…'", "migration-guide caveats", "parity-statement"]
+    emotional_state:
+      entry: "Uncertain — the current README markets the JS-bridge and undersells native"
+      exit: "Oriented — native is the recommended path, and the gaps are stated up front"
+    failure_modes:
+      - "README over-claims 'full parity' → consumer migrates, hits a gap (e.g. LIST), loses trust."
+      - "README recommends native but hides the gaps → consumer with a LIST/RANDOM story is misled."
+
+  - id: 2
+    name: "See the legacy signal"
+    command: "Rebuild an app that calls InkStory() (swift build / Xcode)"
+    expected_output: >
+      The Swift compiler emits a deprecation warning on the InkStory API reading, in
+      effect: "legacy; will be removed in v3.0.0 — migrate to SwiftInkRuntime (see the
+      migration guide)". The build still SUCCEEDS (warning, not error).
+    shared_artifacts:
+      - name: "deprecation-message-string"
+        source: "@available(*, deprecated, message:) attribute on InkStory (Sources/InkSwift/InkStory.swift)"
+        displayed_as: "${deprecation_message}"
+        consumers: ["Swift compiler warning surfaced in the consumer's Xcode / CLI build"]
+      - name: "removal-version"
+        source: "this feature's decision, recorded in the migration guide + parity statement"
+        displayed_as: "v3.0.0"
+        consumers: ["deprecation-message", "migration-guide", "parity-statement", "README"]
+    emotional_state:
+      entry: "Wary — did an update just break my build?"
+      exit: "Informed — it's a warning, not a break; I know the runway (v3.0.0) and where to go next"
+    failure_modes:
+      - "The deprecation is emitted as an ERROR (or breaks compilation) → existing consumer build breaks (guardrail violation)."
+      - "The warning names no version / points nowhere → consumer feels nudged into a void (anxiety, no action)."
+
+  - id: 3
+    name: "Map my code"
+    command: "Open docs/how-to/migrate-from-js-bridge.md (the migration guide)"
+    expected_output: >
+      Every InkStory public call is mapped to its native Story / InkCompiler
+      equivalent — including shape differences (tags [String:String] → [String]; state
+      String → Data; getVariable JXValue → Any?) and the one call with NO native
+      equivalent (Combine reactive observation).
+    shared_artifacts:
+      - name: "api-mapping-table"
+        source: "migration guide doc (single source of truth for the InkStory→native mapping)"
+        displayed_as: "${api_mapping}"
+        consumers: ["migration-guide", "deprecation-message pointer", "README link"]
+    emotional_state:
+      entry: "Focused — I want to translate my actual calls"
+      exit: "Capable — I can rewrite call-by-call, and I know which one call has no equivalent"
+    failure_modes:
+      - "The guide omits a public InkStory method → consumer hits an unmapped call mid-migration."
+      - "The guide silently drops the Combine-observation gap → consumer discovers it only after committing to migrate."
+
+  - id: 4
+    name: "Judge the gaps and decide"
+    command: "Read the supported-parity / known-gaps statement (docs/reference/js-bridge-vs-native-parity.md)"
+    expected_output: >
+      An honest statement: "We recommend SwiftInkRuntime for new projects. Known gaps
+      vs the JS-bridge: <feature gaps: LIST, RANDOM/SEED_RANDOM, threads, EXTERNAL,
+      shuffle {~a|b}>; <API gaps: Combine observation, tag shape, error handling>. Stay
+      on the JS-bridge if you need any of these." Enables a stay / migrate / wait choice.
+    shared_artifacts:
+      - name: "known-gaps-list"
+        source: "same as step 1 (parity-statement is the single source of truth)"
+        displayed_as: "${known_gaps}"
+        consumers: ["parity-statement", "README", "migration-guide"]
+    emotional_state:
+      entry: "Evaluating — can native actually run MY story?"
+      exit: "Decided — I migrate now, or I stay on the bridge for a documented reason, eyes open"
+    failure_modes:
+      - "Gaps list is incomplete (misses e.g. shuffle) → a consumer migrates and ships a broken story."
+      - "Gaps are framed as 'temporary/soon' without honesty → over-claim; the same trust failure the tone decision forbids."
+
+integration_validation:
+  shared_artifact_consistency:
+    - artifact: "removal-version"
+      must_match_across: [2, 3, 4]
+      failure_message: "The removal version MUST read v3.0.0 identically in the deprecation warning, the migration guide, and the parity statement — a mismatch makes the runway ambiguous and erodes trust."
+    - artifact: "known-gaps-list"
+      must_match_across: [1, 3, 4]
+      failure_message: "The README, migration guide caveats, and parity statement must present the SAME known-gaps list from one source — a divergence is an over-claim (a consumer sees 'supported' in one place, 'gap' in another)."
+    - artifact: "recommended-runtime-name"
+      must_match_across: [1, 2, 3, 4]
+      failure_message: "The recommended runtime is named 'SwiftInkRuntime' everywhere — README, deprecation message, migration guide, parity statement — matching the Package.swift product name."
+
+gherkin:
+  happy_path: |
+    Scenario: An existing consumer decides about migrating with eyes open
+      Given Maarten ships an app built on the InkSwift JS-bridge (InkStory, v2.x)
+      And the README now recommends SwiftInkRuntime for new projects with an honest gaps list
+      When he rebuilds his app and reads the migration guide and parity statement
+      Then the compiler warns that InkStory is legacy and will be removed in v3.0.0
+      And the warning points him to SwiftInkRuntime and the migration guide
+      And the migration guide maps every InkStory call he uses to a native equivalent
+      And the parity statement tells him honestly what native cannot do yet
+      And he can decide to migrate now or stay on the bridge for a documented reason
+
+  deprecation_is_not_a_break: |
+    Scenario: The legacy signal warns without breaking the build
+      Given Maarten's app calls "let story = InkStory()"
+      When he compiles against the deprecated JS-bridge API
+      Then the compiler emits a deprecation WARNING naming v3.0.0 and SwiftInkRuntime
+      And the build still succeeds (the warning is not an error)
+
+  honest_gap_keeps_a_consumer_on_the_bridge: |
+    Scenario: A consumer with an unsupported feature is correctly told to stay
+      Given Nadia's story uses a LIST and a RANDOM shuffle {~a|b}
+      When she reads the supported-parity / known-gaps statement
+      Then LIST, RANDOM, and shuffle are listed as native gaps
+      And the statement advises staying on the JS-bridge while she needs them
+      And she is not misled by any "full parity" claim
+
+changelog:
+  - date: "2026-07-16"
+    feature: "native-runtime-migration"
+    change: "Created lightweight nudge journey for the existing JS-bridge consumer (job-runtime-consolidation): reposition README, deprecate InkStory toward v3.0.0, migration guide, honest parity/gaps statement. Removal of the JS-bridge is out of scope."
