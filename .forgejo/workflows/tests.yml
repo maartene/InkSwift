@@ -20,7 +20,8 @@ jobs:
   # backend for the InkSwift bridge target.
   test-linux:
     name: Linux
-    runs-on: ubuntu-latest
+    # runs-on: ubuntu-latest
+    runs-on: docker
     container: swift:6.3.3
     steps:
       # The swift image ships no Node, and this runner does not inject one into
