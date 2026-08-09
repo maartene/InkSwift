@@ -864,7 +864,16 @@ public enum InkParser {
         if let kind = try declarationKind(of: trimmed, at: position) {
             return InkStatement(kind: kind, position: position)
         }
-        guard trimmed.contains("{") else {
+        // Shortcut plain prose to a `.text` statement, but ONLY when it carries
+        // neither an interpolation `{…}` nor a tag `#`. Without `{`, the segment
+        // parser can only ever produce literals and tags, so those two markers
+        // are exactly the cases that need it.
+        //
+        // Gating on `{` alone left a choice's post-bracket tag as literal text:
+        // `* [Choice A] # sidequest` has the outcome `# sidequest`, which never
+        // reached the tag-aware parser and was echoed verbatim into the output
+        // (Issue #8). An unrelated `{…}` on the same line masked the defect.
+        guard trimmed.contains("{") || trimmed.contains("#") else {
             return InkStatement(kind: .text(trimmed), position: position)
         }
         try UnsupportedConstructDetector.check(line: trimmed, lineNumber: position.line)
