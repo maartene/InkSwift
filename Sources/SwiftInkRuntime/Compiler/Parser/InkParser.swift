@@ -885,10 +885,24 @@ public enum InkParser {
         return segments
     }
 
-    /// Scan a `{ … }` group beginning at the brace at `openIndex`. A body with a
-    /// top-level `:` is an inline conditional `{ cond: a|b }`; otherwise it is an
-    /// inline-printed expression. Returns the resulting segment and the index just
-    /// past the closing brace.
+    /// Scan a `{ … }` group beginning at the brace at `openIndex`. Returns the
+    /// resulting segment and the index just past the closing brace.
+    ///
+    /// Classification order matters and mirrors inklecate: a LEADING ALTERNATIVE
+    /// MARKER — `!` once, `&` cycle, `\` escape-to-sequence — read after any
+    /// leading whitespace, claims the WHOLE body ahead of every other test. Only
+    /// an unmarked body is then tested for a top-level `:` (inline conditional
+    /// `{ cond: a|b }`), then a top-level `|` (unmarked alternative), and finally
+    /// falls through to an inline-printed expression.
+    ///
+    /// The marker must be tested first because a marked body may legally contain
+    /// a `:` (`{!a: x}` is a once-only over the literal stage `"a: x"`, NOT a
+    /// conditional on `!a`) or contain neither `:` nor `|` (`{!a}` prints the
+    /// stage `"a"`, not the boolean `!a`). Testing `:` first misclassified both.
+    ///
+    /// Shuffle `~` is deliberately NOT in the marker set: it is rejected upstream
+    /// by `UnsupportedConstructDetector`, and claiming it here would silently
+    /// downgrade an unsupported shuffle to a plain sequence.
     private static func scanBraceSegment(
         in line: String,
         after openIndex: String.Index
@@ -900,6 +914,9 @@ public enum InkParser {
             index = line.index(after: index)
         }
         let next = index < line.endIndex ? line.index(after: index) : index
+        if let markerSegment = leadingAlternativeSegment(body) {
+            return (markerSegment, next)
+        }
         if let colonIndex = topLevelColonIndex(in: body) {
             return (try inlineConditionalSegment(body, colonIndex: colonIndex), next)
         }
@@ -908,6 +925,24 @@ public enum InkParser {
         }
         let expression = try InkExpressionParser.parse(body.trimmingCharacters(in: .whitespaces))
         return (.expression(expression), next)
+    }
+
+    /// The characters that, in leading position, mark a brace body as a
+    /// variable-text alternative. Deliberately excludes shuffle `~` — see
+    /// `scanBraceSegment`.
+    private static let alternativeMarkers: Set<Character> = ["!", "&", "\\"]
+
+    /// Build a variable-text segment when `body` opens with an alternative
+    /// marker, skipping any leading whitespace so `{ !a: q }` classifies exactly
+    /// like `{!a: q}` (verified against inklecate). Returns nil for an unmarked
+    /// body, which then falls through to the conditional / bar / expression
+    /// tests in `scanBraceSegment`.
+    private static func leadingAlternativeSegment(_ body: String) -> ContentSegment? {
+        guard let markerIndex = body.firstIndex(where: { !$0.isWhitespace }),
+              alternativeMarkers.contains(body[markerIndex]) else {
+            return nil
+        }
+        return variableTextSegment(String(body[markerIndex...]))
     }
 
     /// Build a variable-text segment from a `{a|b|c}` / `{&a|b}` / `{!a|b}` body
