@@ -109,7 +109,7 @@ final class InkEngine {
 
     var currentChoices: [Choice] {
         return state.currentChoices.map { data in
-            Choice(text: data.text, index: data.index, tags: [])
+            Choice(text: data.text, index: data.index, tags: data.tags)
         }
     }
 
@@ -375,7 +375,7 @@ final class InkEngine {
             }
         }
 
-        let choiceText = resolveChoiceText()
+        let (choiceText, choiceTags) = resolveChoiceTextAndTags()
         let index = state.currentChoices.count
         // Capture the continuation stack NOW while containerStack still
         // has the choice-collection context. This snapshot survives
@@ -387,7 +387,8 @@ final class InkEngine {
                 targetPath: target,
                 continuationFrames: continuationFrames,
                 index: index,
-                flags: flags
+                flags: flags,
+                tags: choiceTags
             )
         )
     }
@@ -395,11 +396,27 @@ final class InkEngine {
     /// Discard a pending choice-text string from the evalStack without consuming it.
     /// Called when a choice is skipped (condition false, once-only suppressed, or
     /// invisible-default) so that the str/text/str-accumulated string does not linger
-    /// on the evalStack and corrupt later conditional evaluations.
+    /// on the evalStack and corrupt later conditional evaluations. Also drops any
+    /// choice-level tags accumulated for the skipped choice — see
+    /// `resolveChoiceTextAndTags`.
     private func discardPendingChoiceTextFromEvalStack() {
         if case .string(_) = state.evalStack.last {
             state.evalStack.removeLast()
         }
+        state.stringModeTags = []
+    }
+
+    /// Resolve the display text AND any choice-level tags (`* [Text # tag]`)
+    /// for a choice point. The tags are whatever `state.stringModeTags`
+    /// accumulated while the preceding `ev str …/str /ev` block ran (see
+    /// `StoryState.stringModeTags`) — drained here regardless of which
+    /// `resolveChoiceText()` fallback produced the text, since a tag can only
+    /// ever have accumulated when that block actually ran a `str`/`/str` span.
+    /// Mirrors the C# reference `Story.PopChoiceStringAndTags`.
+    private func resolveChoiceTextAndTags() -> (text: String, tags: [String]) {
+        let tags = state.stringModeTags
+        state.stringModeTags = []
+        return (resolveChoiceText(), tags)
     }
 
     /// Resolve the display text for a choice point from (in priority order):
@@ -1163,7 +1180,7 @@ final class InkEngine {
         } else {
             targetPath = knot
         }
-        // D1: reset 12 StoryState fields (RD-01); stackFrames intentionally NOT cleared
+        // D1: reset 13 StoryState fields (RD-01); stackFrames intentionally NOT cleared
         state.returnStack = []
         state.evalStack = []
         state.currentChoices = []
@@ -1175,6 +1192,7 @@ final class InkEngine {
         state.tagAccumulator = ""
         state.inStringMode = false
         state.stringAccumulator = ""
+        state.stringModeTags = []
         // D4: delegate stack installation to applyDivert
         applyDivert(target: targetPath)
     }

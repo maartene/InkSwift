@@ -271,6 +271,57 @@ struct Compiler_S4_CeilingTests {
         #expect(conditionBeforeChoicePoint,
                 "the guard condition must be lowered onto the eval stack before the choicePoint")
     }
+
+    // Regression for Issue #8: `Choice.tags` was always `[]`, and the raw tag
+    // text leaked into the displayed choice text instead (InkEngine hard-coded
+    // `tags: []`; nothing routed a tag closed inside the choice-text eval block
+    // anywhere but the generic, unscoped `currentTags`). Loaded straight from
+    // the inklecate oracle JSON — the more fundamental reproduction, since this
+    // exercises only InkDecoder + InkEngine, not the native compiler at all.
+    @Test func `a bracketed choice-level tag populates Choice-tags, not the visible text`() throws {
+        let oracleJSON = try CompilerOracle.oracleJSON("compile-choice-tags")
+        let story = try Story(json: oracleJSON)
+        while story.canContinue { _ = story.`continue`() }
+
+        let choices = story.currentChoices
+        #expect(choices.count == 2)
+        #expect(choices[0].text == "Plain choice")
+        #expect(choices[0].tags == [])
+        // Trailing space before "#" is verbatim inklecate behaviour, not a bug —
+        // see splitChoiceLabelTag's doc comment.
+        #expect(choices[1].text == "Tagged choice ")
+        #expect(choices[1].tags == ["sidequest"])
+    }
+
+    // Same fixture, compiled through InkCompiler.compile(source:) instead of
+    // loaded from the oracle JSON — proves WeaveEmitter.choicePointNodes now
+    // emits the tag markup too (the compiler-side half of the fix; the
+    // engine-side half above already covers anyone loading pre-compiled
+    // inklecate/Inky JSON directly, which never touches the native compiler).
+    @Test func `the same choice-level tag populates Choice-tags when compiled natively`() throws {
+        let source = try CompilerOracle.source("compile-choice-tags")
+        let story = Story(blueprint: try InkCompiler.compile(source: source))
+        while story.canContinue { _ = story.`continue`() }
+
+        let choices = story.currentChoices
+        #expect(choices.count == 2)
+        #expect(choices[0].text == "Plain choice")
+        #expect(choices[0].tags == [])
+        #expect(choices[1].text == "Tagged choice ")
+        #expect(choices[1].tags == ["sidequest"])
+    }
+
+    // Full line-for-line equivalence, picking the tagged choice: proves the
+    // tag text does not leak into EITHER side's played output (the original
+    // "sichtbarer Literal-Text" symptom), on top of the AST-level assertions
+    // above.
+    @Test func `native compile plays identical to the oracle when the tagged choice is picked`() throws {
+        let result = try CompilerOracle.compileAndPlay("compile-choice-tags", choiceScript: [1])
+
+        #expect(result.native == result.oracle)
+        #expect(result.oracle.contains("You picked tagged."))
+        #expect(result.oracle.contains { $0.contains("sidequest") } == false)
+    }
 }
 
 /// The flags of the namedContent outcome container keyed by a weave `label`,

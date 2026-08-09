@@ -856,10 +856,22 @@ private final class WeaveResolver {
         // then — for a `{guard}`-carrying choice — the guard eval block (leaves a
         // boolean on top). The runtime pops the condition bool first, then the
         // choice-text string, so this order matches inklecate (criterion 3).
-        var nodes: [NodeKind] = [
-            .controlCommand("ev"), .controlCommand("str"), .text(choice.label),
-            .controlCommand("/str"), .controlCommand("/ev"),
-        ]
+        // Tag-splitting is scoped to BRACKETED choices only (`echoesLabel ==
+        // false`, i.e. `choiceOnlyLabel != nil`) — see splitChoiceLabelTag's
+        // doc comment for why an unbracketed choice's tag is left untouched.
+        let labelText: String
+        let tag: String?
+        if choice.echoesLabel {
+            labelText = choice.label
+            tag = nil
+        } else {
+            (labelText, tag) = Self.splitChoiceLabelTag(choice.label)
+        }
+        var nodes: [NodeKind] = [.controlCommand("ev"), .controlCommand("str"), .text(labelText)]
+        if let tag {
+            nodes.append(contentsOf: [.tagOpen, .text(tag), .tagClose])
+        }
+        nodes.append(contentsOf: [.controlCommand("/str"), .controlCommand("/ev")])
         if let condition = choice.condition {
             nodes.append(.controlCommand("ev"))
             nodes.append(contentsOf: lowerCondition(condition))
@@ -867,6 +879,39 @@ private final class WeaveResolver {
         }
         nodes.append(.choicePoint(target: target.joined(separator: "."), flags: flags(for: choice)))
         return nodes
+    }
+
+    /// Split a choice label into its literal menu text and an optional trailing
+    /// choice-level tag (`Text # tag`). Mirrors the content-line tag convention
+    /// (`InkParser.parseContentSegments`): a `#` starts a tag running to the end
+    /// of the label; everything before it is literal text. Only a single tag is
+    /// supported (matching that same existing convention) — a second `#` is
+    /// swallowed into the first tag's text, not split into a second tag.
+    ///
+    /// Scope (verified against inklecate 1.2.1): this only fires for a tag
+    /// written INSIDE the choice-only bracket or in unbracketed leading text —
+    /// i.e. anywhere in `choice.label`, which is exactly `choiceOnlyLabel ??
+    /// body` (never the post-bracket continuation, which is a separate `body`
+    /// statement lowered elsewhere as an ordinary content-line tag). A plain
+    /// (unbracketed) choice's tag is NOT covered here even though `label`
+    /// carries it too: inklecate reuses the SAME text+tag block for both the
+    /// pre-pick menu and the post-pick echo via a variable-divert-target
+    /// indirection (`outcomeContainer`'s `echoesLabel` path re-emits
+    /// `choice.label` verbatim) that this fix does not replicate — left as a
+    /// follow-up, out of scope for Issue #8's bracketed-choice reproduction.
+    private static func splitChoiceLabelTag(_ label: String) -> (text: String, tag: String?) {
+        guard let hashIndex = label.firstIndex(of: "#") else {
+            return (label, nil)
+        }
+        // The text portion is NOT trimmed: inklecate keeps whatever whitespace
+        // sits between the prose and the `#` verbatim (`[Tagged choice #
+        // sidequest]` -> the text node is "Tagged choice " WITH the trailing
+        // space, confirmed against the compiled oracle fixture). `label` itself
+        // was already trimmed at its own outer edges upstream by
+        // `splitChoiceOnlyLabel` — only the split point here must stay raw.
+        let text = String(label[..<hashIndex])
+        let tag = String(label[label.index(after: hashIndex)...]).trimmingCharacters(in: .whitespaces)
+        return (text, tag)
     }
 
     private func flags(for choice: WeaveChoice) -> ChoiceFlags {

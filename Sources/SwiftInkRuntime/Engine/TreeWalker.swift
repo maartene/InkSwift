@@ -70,7 +70,16 @@ struct TreeWalker {
             state.tagAccumulator = ""
 
         case .tagClose:
-            state.currentTags.append(state.tagAccumulator)
+            // A tag closed WHILE `inStringMode` is true is choice-level markup
+            // (`* [Text # tag]`, only ever emitted inside a `str`/`/str` span —
+            // see `StoryState.stringModeTags`), not a content-line tag: route it
+            // there instead of the generic `currentTags` so it does not leak
+            // into "tags of the current output line".
+            if state.inStringMode {
+                state.stringModeTags.append(state.tagAccumulator)
+            } else {
+                state.currentTags.append(state.tagAccumulator)
+            }
             state.inTagMode = false
             state.tagAccumulator = ""
 
@@ -130,9 +139,12 @@ struct TreeWalker {
             }
 
         case "str":
-            // Begin string accumulation mode
+            // Begin string accumulation mode. Reset stringModeTags here (not on
+            // "/str") so any choice-level tag closed inside THIS span is still
+            // readable by InkEngine.resolveChoiceTextAndTags after "/str" fires.
             state.inStringMode = true
             state.stringAccumulator = ""
+            state.stringModeTags = []
 
         case "/str":
             // End string mode, push accumulated string onto eval stack

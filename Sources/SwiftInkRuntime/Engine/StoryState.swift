@@ -208,17 +208,24 @@ struct ChoiceData: Codable {
     /// Typed choice flags from the inklecate `flg` bitmask.
     /// Decoded with `decodeIfPresent` so legacy saves without this key default to empty.
     let flags: ChoiceFlags
+    /// Choice-level tags (`* [Text # tag]`) — see `StoryState.stringModeTags`.
+    /// Decoded with `decodeIfPresent` so legacy saves without this key default to empty.
+    let tags: [String]
 
     private enum CodingKeys: String, CodingKey {
-        case text, targetPath, continuationFrames, index, flags
+        case text, targetPath, continuationFrames, index, flags, tags
     }
 
-    init(text: String, targetPath: String, continuationFrames: [ContainerStackFrame], index: Int, flags: ChoiceFlags = []) {
+    init(
+        text: String, targetPath: String, continuationFrames: [ContainerStackFrame], index: Int,
+        flags: ChoiceFlags = [], tags: [String] = []
+    ) {
         self.text = text
         self.targetPath = targetPath
         self.continuationFrames = continuationFrames
         self.index = index
         self.flags = flags
+        self.tags = tags
     }
 
     init(from decoder: Decoder) throws {
@@ -229,6 +236,7 @@ struct ChoiceData: Codable {
         index              = try container.decode(Int.self,                  forKey: .index)
         let rawFlags       = try container.decodeIfPresent(Int.self,         forKey: .flags) ?? 0
         flags              = ChoiceFlags(rawValue: rawFlags)
+        tags               = try container.decodeIfPresent([String].self,    forKey: .tags) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -238,6 +246,7 @@ struct ChoiceData: Codable {
         try container.encode(continuationFrames, forKey: .continuationFrames)
         try container.encode(index,              forKey: .index)
         try container.encode(flags.rawValue,     forKey: .flags)
+        try container.encode(tags,               forKey: .tags)
     }
 }
 
@@ -298,6 +307,17 @@ struct StoryState: Codable {
     var inStringMode: Bool
     var stringAccumulator: String
 
+    /// Tags closed WHILE `inStringMode` is true — i.e. `# tag` markup emitted
+    /// inside the `ev str …/str /ev` block that builds a choice's own display
+    /// text (`WeaveEmitter.choicePointNodes`), as opposed to a tag on a plain
+    /// content line (which is never inside a `str`/`/str` span). Reset when a
+    /// new `str` block opens; drained by `InkEngine.resolveChoiceTextAndTags`
+    /// into the constructed `ChoiceData.tags` — mirrors the C# reference
+    /// (`Story.PopChoiceStringAndTags`), which pops `Tag` objects off the same
+    /// eval-stack region as the choice string, rather than the generic
+    /// `currentTags` a content line's tags land in.
+    var stringModeTags: [String]
+
     var lastCompletedLine: String
 
     // Full container execution stack for save/restore.
@@ -344,6 +364,7 @@ struct StoryState: Codable {
         tagAccumulator = ""
         inStringMode = false
         stringAccumulator = ""
+        stringModeTags = []
         lastCompletedLine = ""
         stackFrames = []
         returnStack = []
@@ -357,7 +378,7 @@ struct StoryState: Codable {
     private enum CodingKeys: String, CodingKey {
         case pointer, outputStream, variablesState, visitCounts, currentTags
         case isEnded, currentChoices, evalStack
-        case inTagMode, tagAccumulator, inStringMode, stringAccumulator
+        case inTagMode, tagAccumulator, inStringMode, stringAccumulator, stringModeTags
         case lastCompletedLine, stackFrames, returnStack
         case chosenChoiceTargets, suppressNextNewline
         case callFrameVariables
@@ -377,6 +398,7 @@ struct StoryState: Codable {
         tagAccumulator       = try container.decode(String.self,               forKey: .tagAccumulator)
         inStringMode         = try container.decode(Bool.self,                 forKey: .inStringMode)
         stringAccumulator    = try container.decode(String.self,               forKey: .stringAccumulator)
+        stringModeTags       = try container.decodeIfPresent([String].self,    forKey: .stringModeTags) ?? []
         lastCompletedLine    = try container.decode(String.self,               forKey: .lastCompletedLine)
         stackFrames          = try container.decode([ContainerStackFrame].self, forKey: .stackFrames)
         returnStack          = try container.decodeIfPresent([String].self,    forKey: .returnStack) ?? []
@@ -400,6 +422,7 @@ struct StoryState: Codable {
         try container.encode(tagAccumulator,    forKey: .tagAccumulator)
         try container.encode(inStringMode,      forKey: .inStringMode)
         try container.encode(stringAccumulator, forKey: .stringAccumulator)
+        try container.encode(stringModeTags,    forKey: .stringModeTags)
         try container.encode(lastCompletedLine, forKey: .lastCompletedLine)
         try container.encode(stackFrames,       forKey: .stackFrames)
         try container.encode(returnStack,       forKey: .returnStack)
