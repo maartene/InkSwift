@@ -60,22 +60,39 @@ public enum InkExpressionParser {
     ) throws -> InkExpression {
         var left = try parseOperand(from: &tokens)
         while let precedence = bindingPower(of: tokens.peek()), precedence >= minimumPrecedence {
-            let oper = tokens.next()!.text
+            let oper = nativeBinaryOperatorSymbol(for: tokens.next()!.text)
             let right = try parseExpression(minimumPrecedence: precedence + 1, from: &tokens)
             left = .binary(op: oper, left: left, right: right)
         }
         return left
     }
 
+    /// Maps a parsed binary-operator token to its runtime native-function
+    /// symbol. The word-form logical operators (`and`, `or`) lower to the same
+    /// symbols as their native forms (`&&`, `||`) — mirroring how `not` already
+    /// lowers to `!` — so codegen only ever sees the canonical symbol, verified
+    /// interchangeable against inklecate 1.2.1. Every other token is already its
+    /// own native symbol and passes through unchanged.
+    private static func nativeBinaryOperatorSymbol(for tokenText: String) -> String {
+        switch tokenText {
+        case andKeyword: return andNativeSymbol
+        case orKeyword: return orNativeSymbol
+        default: return tokenText
+        }
+    }
+
     private static func parseOperand(from tokens: inout ExpressionTokenizer) throws -> InkExpression {
         guard let token = tokens.next() else {
             throw InkExpressionParseError.unexpectedEndOfInput
         }
-        // `not <operand>` is the logical-not unary prefix; it lowers to the
-        // runtime native function `!` (postfix). Recurse so `not not x` and
-        // `not (a == b)` lower correctly. The operand is itself a full operand
-        // (covering parenthesised expressions and nested prefixes).
-        if token.text == notKeyword {
+        // `not <operand>` / `!<operand>` are the word-form and symbol-form
+        // logical-not unary prefix; both lower to the runtime native function
+        // `!` (postfix) — verified interchangeable against inklecate 1.2.1
+        // (`!a`, `not a` produce identical oracle output). Recurse so
+        // `not not x` / `!!x` and `not (a == b)` / `!(a == b)` lower correctly.
+        // The operand is itself a full operand (covering parenthesised
+        // expressions and nested prefixes).
+        if token.text == notKeyword || token.text == notNativeSymbol {
             return .unary(op: notNativeSymbol, operand: try parseOperand(from: &tokens))
         }
         // A bare `(` opens a parenthesised sub-expression (grouping) — parse a
@@ -97,9 +114,20 @@ public enum InkExpressionParser {
     }
 
     /// The source keyword for logical not, and the runtime native-function symbol
-    /// it lowers to (matching inklecate's postfix `!`).
+    /// it lowers to (matching inklecate's postfix `!`). The symbol is ALSO a
+    /// directly-typeable input spelling (`!a`), not just a lowering target — see
+    /// the `parseOperand` dispatch above.
     private static let notKeyword = "not"
     private static let notNativeSymbol = "!"
+
+    /// The word-form spelling of logical-and/-or and the runtime native-function
+    /// symbols they lower to (`&&`/`||`) — used by `bindingPower` (both spellings
+    /// bind at the same precedence) and `nativeBinaryOperatorSymbol` (both lower
+    /// to the same symbol).
+    private static let andKeyword = "and"
+    private static let andNativeSymbol = "&&"
+    private static let orKeyword = "or"
+    private static let orNativeSymbol = "||"
 
     /// Parse a function-call operand `f(arg, …)` — the opening `(` is the next
     /// token. Arguments are comma-separated expressions; a bare `f()` has none.
@@ -151,8 +179,8 @@ public enum InkExpressionParser {
     /// Left binding power for an operator token; nil for non-operators.
     private static func bindingPower(of token: ExpressionToken?) -> Int? {
         switch token?.text {
-        case "||": return logicalOrPrecedence
-        case "&&": return logicalAndPrecedence
+        case "||", orKeyword: return logicalOrPrecedence
+        case "&&", andKeyword: return logicalAndPrecedence
         case ">", "<", ">=", "<=", "==", "!=": return comparisonPrecedence
         case "+", "-": return additivePrecedence
         case "*", "/", "%": return multiplicativePrecedence
@@ -285,16 +313,20 @@ private struct ExpressionTokenizer {
         return (ExpressionToken(text: String(character)), index + 1)
     }
 
-    /// Scan a logical operator (`&&` / `||`) beginning at `index`. The doubled
-    /// forms are recognised as a single two-character token. A LONE `&` or `|`
-    /// is not a valid Ink operator: it is emitted as a single-character token so
-    /// the parser raises `unexpectedToken` for it, rather than the character
-    /// being silently dropped (which previously truncated the whole expression).
-    /// Returns `nil` when the character at `index` is neither `&` nor `|`.
+    /// Scan a logical operator (`&&` / `||` / `!`) beginning at `index`. The
+    /// doubled forms `&&`/`||` are recognised as a single two-character token. A
+    /// LONE `&` or `|` is not a valid Ink operator: it is emitted as a
+    /// single-character token so the parser raises `unexpectedToken` for it,
+    /// rather than the character being silently dropped (which previously
+    /// truncated the whole expression). `!` never doubles (there is no `!!`
+    /// token; `!!a` tokenizes as two separate `!` prefixes, i.e. double
+    /// negation, which is correct) and is only reached here when it is NOT
+    /// followed by `=` — `scanComparisonOperator` (tried first) already claims
+    /// `!=`. Returns `nil` when the character at `index` is none of `& | !`.
     private func scanLogicalOperator(from index: Int) -> (token: ExpressionToken, endIndex: Int)? {
         let character = characters[index]
-        guard character == "&" || character == "|" else { return nil }
-        if index + 1 < characters.count, characters[index + 1] == character {
+        guard character == "&" || character == "|" || character == "!" else { return nil }
+        if index + 1 < characters.count, characters[index + 1] == character, character != "!" {
             let symbol = String(character) + String(character)
             return (ExpressionToken(text: symbol), index + 2)
         }
