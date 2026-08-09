@@ -390,7 +390,7 @@ public enum InkParser {
             statements.append(InkStatement(kind: kind, position: position))
             return
         }
-        if let kind = try declarationKind(of: trimmed) {
+        if let kind = try declarationKind(of: trimmed, at: position) {
             statements.append(InkStatement(kind: kind, position: position))
             return
         }
@@ -412,17 +412,20 @@ public enum InkParser {
     /// Recognise a variable/constant/logic statement. `VAR`/`CONST` declare
     /// globals/constants; `~ temp x = e` declares a local; `~ x = e` reassigns.
     /// The right-hand side is parsed by the Pratt expression sub-parser.
-    private static func declarationKind(of trimmed: String) throws -> InkStatementKind? {
+    private static func declarationKind(
+        of trimmed: String,
+        at position: SourcePosition
+    ) throws -> InkStatementKind? {
         if let body = keywordBody(trimmed, keyword: varMarker) {
-            let (name, value) = try splitAssignment(body)
+            let (name, value) = try splitAssignment(body, at: position)
             return .globalVariable(name: name, value: value)
         }
         if let body = keywordBody(trimmed, keyword: constMarker) {
-            let (name, value) = try splitAssignment(body)
+            let (name, value) = try splitAssignment(body, at: position)
             return .constant(name: name, value: value)
         }
         if trimmed.hasPrefix(logicMarker) {
-            return try logicKind(of: String(trimmed.dropFirst(logicMarker.count)))
+            return try logicKind(of: String(trimmed.dropFirst(logicMarker.count)), at: position)
         }
         return nil
     }
@@ -430,7 +433,10 @@ public enum InkParser {
     /// Lower a logic line `~ <body>`: `return e` returns from a function, `temp x
     /// = e` declares a local, `f(args)` calls a function for its side effects
     /// (result discarded), otherwise `x = e` reassigns an existing variable.
-    private static func logicKind(of body: String) throws -> InkStatementKind {
+    private static func logicKind(
+        of body: String,
+        at position: SourcePosition
+    ) throws -> InkStatementKind {
         let trimmedBody = body.trimmingCharacters(in: .whitespaces)
         if let returnBody = keywordBody(trimmedBody, keyword: returnMarker) {
             return .returnStatement(try InkExpressionParser.parse(returnBody))
@@ -439,13 +445,19 @@ public enum InkParser {
             return .returnStatement(nil)
         }
         if let tempBody = keywordBody(trimmedBody, keyword: tempMarker) {
-            let (name, value) = try splitAssignment(tempBody)
+            let (name, value) = try splitAssignment(tempBody, at: position)
             return .temporaryVariable(name: name, value: value)
         }
-        if trimmedBody.contains("=") == false {
+        // Only a REAL assignment `=` makes this an assignment. An `=` belonging to
+        // a comparison (`==`, `!=`, `>=`, `<=`) or sitting inside a string literal
+        // does not — `~ describe(x >= y)` is a call, not an assignment to
+        // `"describe(x >"`. The value of an expression statement is discarded by
+        // `lowerFunctionCallStatement` (`ev … pop /ev`), so this is safe for any
+        // expression, not just a call.
+        guard assignmentEqualsIndex(in: trimmedBody) != nil else {
             return .functionCallStatement(try InkExpressionParser.parse(trimmedBody))
         }
-        let (name, value) = try splitAssignment(trimmedBody)
+        let (name, value) = try splitAssignment(trimmedBody, at: position)
         return .assignment(name: name, value: value)
     }
 
@@ -474,24 +486,105 @@ public enum InkParser {
     /// side is wrapped in a `.binary` node that reads the target variable back.
     /// This reuses the existing simple-assignment and arithmetic codegen paths
     /// rather than introducing a second assignment code path.
-    private static func splitAssignment(_ body: String) throws -> (name: String, value: InkExpression) {
-        guard let equalsIndex = body.firstIndex(of: "=") else {
-            throw InkExpressionParseError.unexpectedToken(body)
+    private static func splitAssignment(
+        _ body: String,
+        at position: SourcePosition
+    ) throws -> (name: String, value: InkExpression) {
+        guard let equalsIndex = assignmentEqualsIndex(in: body) else {
+            throw CompileError(
+                kind: .syntaxError,
+                message: "Expected an assignment `=` in `\(body)`.",
+                line: position.line,
+                column: position.column
+            )
         }
         let rightHandSide = String(body[body.index(after: equalsIndex)...])
             .trimmingCharacters(in: .whitespaces)
         let beforeEquals = body[..<equalsIndex]
 
-        if let compoundOperator = beforeEquals.last, compoundAssignmentOperators.contains(compoundOperator) {
-            let name = String(beforeEquals.dropLast()).trimmingCharacters(in: .whitespaces)
+        if let operatorCharacter = beforeEquals.last, assignmentOperatorPrefixes.contains(operatorCharacter) {
+            guard compoundAssignmentOperators.contains(operatorCharacter) else {
+                throw CompileError(
+                    kind: .syntaxError,
+                    message: "`\(operatorCharacter)=` is not an Ink assignment operator; "
+                        + "only `=`, `+=` and `-=` are supported.",
+                    line: position.line,
+                    column: position.column
+                )
+            }
+            let name = try assignmentTarget(String(beforeEquals.dropLast()), at: position)
             let addend = try InkExpressionParser.parse(rightHandSide)
-            let value = InkExpression.binary(op: String(compoundOperator), left: .variableReference(name), right: addend)
+            let value = InkExpression.binary(op: String(operatorCharacter), left: .variableReference(name), right: addend)
             return (name, value)
         }
 
-        let name = String(beforeEquals).trimmingCharacters(in: .whitespaces)
+        let name = try assignmentTarget(String(beforeEquals), at: position)
         let value = try InkExpressionParser.parse(rightHandSide)
         return (name, value)
+    }
+
+    /// The operator characters that may sit immediately before an assignment `=`.
+    /// `+`/`-` desugar (see `compoundAssignmentOperators`); the rest are rejected
+    /// with a named error rather than silently producing a bogus target such as
+    /// `"x *"`.
+    private static let assignmentOperatorPrefixes: Set<Character> = ["+", "-", "*", "/", "%"]
+
+    /// The characters that, immediately BEFORE an `=`, make it part of a
+    /// comparison operator (`!=`, `<=`, `>=`, and the second `=` of `==`) rather
+    /// than the assignment operator.
+    private static let comparisonEqualsPrefixes: Set<Character> = ["!", "<", ">", "="]
+
+    /// The index of the ASSIGNMENT `=` in `body`, or nil when the body contains
+    /// none. An `=` is skipped when it belongs to a comparison operator — either
+    /// followed by `=` (`==`) or preceded by one of `comparisonEqualsPrefixes` —
+    /// or when it sits inside a string literal (`~ f("a=b")`).
+    ///
+    /// Testing merely for the PRESENCE of `=` (and then splitting at the first
+    /// one) misread every logic line carrying a comparison: `~ x >= 5` became an
+    /// assignment to `"x >"` and `~ describe(x >= y)` — legal Ink that inklecate
+    /// runs — was rejected outright.
+    private static func assignmentEqualsIndex(in body: String) -> String.Index? {
+        var insideStringLiteral = false
+        var previous: Character?
+        var index = body.startIndex
+        while index < body.endIndex {
+            let character = body[index]
+            if character == "\"" {
+                insideStringLiteral.toggle()
+            } else if character == "=", insideStringLiteral == false {
+                let nextIndex = body.index(after: index)
+                let followedByEquals = nextIndex < body.endIndex && body[nextIndex] == "="
+                let precededByComparison = comparisonEqualsPrefixes.contains(previous ?? " ")
+                if followedByEquals == false && precededByComparison == false {
+                    return index
+                }
+            }
+            previous = character
+            index = body.index(after: index)
+        }
+        return nil
+    }
+
+    /// Validate and return an assignment target. Ink variable names are plain
+    /// identifiers; anything else means the `=` was misread (or the line is
+    /// malformed), which previously produced a silently-declared bogus variable
+    /// while the intended one kept its old value.
+    private static func assignmentTarget(
+        _ raw: String,
+        at position: SourcePosition
+    ) throws -> String {
+        let name = raw.trimmingCharacters(in: .whitespaces)
+        let isIdentifier = name.first.map { $0.isLetter || $0 == "_" } ?? false
+            && name.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" }
+        guard isIdentifier else {
+            throw CompileError(
+                kind: .syntaxError,
+                message: "`\(name)` is not a valid assignment target.",
+                line: position.line,
+                column: position.column
+            )
+        }
+        return name
     }
 
     /// Recognise a weave line: a choice (`*`/`+`, once-only/sticky) or a gather
@@ -768,7 +861,7 @@ public enum InkParser {
     ) throws -> InkStatement? {
         let trimmed = outcome.trimmingCharacters(in: .whitespaces)
         guard trimmed.isEmpty == false else { return nil }
-        if let kind = try declarationKind(of: trimmed) {
+        if let kind = try declarationKind(of: trimmed, at: position) {
             return InkStatement(kind: kind, position: position)
         }
         guard trimmed.contains("{") else {
