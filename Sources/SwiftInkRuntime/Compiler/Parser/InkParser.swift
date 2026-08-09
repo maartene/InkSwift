@@ -460,14 +460,36 @@ public enum InkParser {
         return remainder.trimmingCharacters(in: .whitespaces)
     }
 
+    /// The compound-assignment operator characters Ink supports directly before
+    /// `=`. Verified against inklecate 1.2.1: `*=`/`/=`/`%=` are NOT accepted by
+    /// the reference compiler (`Expected right side of '*' expression but saw
+    /// '= ...'`) — only `+=`/`-=` are real Ink syntax.
+    private static let compoundAssignmentOperators: Set<Character> = ["+", "-"]
+
     /// Split a `name = expression` body into the name and the parsed expression.
+    /// A compound assignment (`name += expression`, `name -= expression`) is
+    /// desugared here into the equivalent full form (`name = name + expression`):
+    /// the character immediately before `=` is checked against
+    /// `compoundAssignmentOperators` and, if it matches, the parsed right-hand
+    /// side is wrapped in a `.binary` node that reads the target variable back.
+    /// This reuses the existing simple-assignment and arithmetic codegen paths
+    /// rather than introducing a second assignment code path.
     private static func splitAssignment(_ body: String) throws -> (name: String, value: InkExpression) {
         guard let equalsIndex = body.firstIndex(of: "=") else {
             throw InkExpressionParseError.unexpectedToken(body)
         }
-        let name = String(body[..<equalsIndex]).trimmingCharacters(in: .whitespaces)
         let rightHandSide = String(body[body.index(after: equalsIndex)...])
             .trimmingCharacters(in: .whitespaces)
+        let beforeEquals = body[..<equalsIndex]
+
+        if let compoundOperator = beforeEquals.last, compoundAssignmentOperators.contains(compoundOperator) {
+            let name = String(beforeEquals.dropLast()).trimmingCharacters(in: .whitespaces)
+            let addend = try InkExpressionParser.parse(rightHandSide)
+            let value = InkExpression.binary(op: String(compoundOperator), left: .variableReference(name), right: addend)
+            return (name, value)
+        }
+
+        let name = String(beforeEquals).trimmingCharacters(in: .whitespaces)
         let value = try InkExpressionParser.parse(rightHandSide)
         return (name, value)
     }

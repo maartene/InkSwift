@@ -32,4 +32,19 @@ struct Compiler_S2_VariablesTests {
         #expect(result.oracle.contains("Total: 13"))
         #expect(result.oracle.contains("Math: 14"))
     }
+
+    @Test func `compound assignment operators reassign the variable, matching the oracle`() throws {
+        // Regression for the compound-assignment operators (`+=`, `-=`) being
+        // parsed but never taking effect: `counter` starts at 10, `+= 5` -> 15,
+        // `-= 3` -> 12, and — inside the picked choice — `+= 100` -> 112. Only
+        // `+=`/`-=` are exercised: `*=`/`/=`/`%=` were verified against
+        // inklecate 1.2.1 to be rejected at compile time (not real Ink syntax),
+        // so there is nothing to desugar for them.
+        let result = try CompilerOracle.compileAndPlay("compile-compound-assignment", choiceScript: [0])
+
+        #expect(result.native == result.oracle)
+        #expect(result.oracle.contains("After plus: 15"))
+        #expect(result.oracle.contains("After minus: 12"))
+        #expect(result.oracle.contains("Choice counter: 112"))
+    }
 }
