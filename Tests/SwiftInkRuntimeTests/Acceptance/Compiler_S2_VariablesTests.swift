@@ -32,4 +32,20 @@ struct Compiler_S2_VariablesTests {
         #expect(result.oracle.contains("Total: 13"))
         #expect(result.oracle.contains("Math: 14"))
     }
+
+    @Test func `word-form and symbol-form logical operators are interchangeable, matching the oracle`() throws {
+        // Regression for `and`/`or` raising `unexpectedToken` and a bare `!`
+        // raising `unexpectedEndOfInput`: `a` is true, `b` is false, so
+        // `a and b` -> false, `a or b` -> true, and `a and not b` / `a && !b`
+        // (word/symbol mixed both ways) -> true. Also exercises `and`/`not`
+        // inside a choice condition and a choice body.
+        let result = try CompilerOracle.compileAndPlay("compile-logical-operator-forms", choiceScript: [0])
+
+        #expect(result.native == result.oracle)
+        #expect(result.oracle.contains("AndWord: false"))
+        #expect(result.oracle.contains("OrWord: true"))
+        #expect(result.oracle.contains("MixedWordSymbol: true"))
+        #expect(result.oracle.contains("MixedSymbolBang: true"))
+        #expect(result.oracle.contains("Guard passed: true"))
+    }
 }

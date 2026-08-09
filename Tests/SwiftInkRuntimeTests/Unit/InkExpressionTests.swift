@@ -134,6 +134,45 @@ struct InkExpressionParserLogicalTests {
             _ = try InkExpressionParser.parse("a | b")
         }
     }
+
+    // L8 — the word-form `and`/`or` parse to the SAME AST as `&&`/`||`
+    // (identical native symbol, identical precedence): `a or b and c` parses
+    // exactly like `a || b && c` (L1). Previously `and` raised
+    // `unexpectedToken` — `bindingPower` had no case for the word form and the
+    // leftover token surfaced as a hard parse error.
+    @Test func `parses word-form and/or identically to symbol-form &&/||`() throws {
+        let expression = try InkExpressionParser.parse("a or b and c")
+        #expect(expression == .binary(
+            op: "||",
+            left: .variableReference("a"),
+            right: .binary(op: "&&", left: .variableReference("b"), right: .variableReference("c"))
+        ))
+    }
+
+    // L9 — the symbol-form `!` parses to the SAME AST as the word-form `not`:
+    // both lower to `.unary(op: "!", ...)`. Previously a bare `!` raised
+    // `unexpectedEndOfInput` — the tokenizer had no case for a `!` that wasn't
+    // immediately followed by `=` (i.e. not part of `!=`), so it produced no
+    // token at all and the parser saw end-of-input.
+    @Test func `parses symbol-form ! identically to word-form not`() throws {
+        #expect(try InkExpressionParser.parse("!a") == .unary(op: "!", operand: .variableReference("a")))
+        #expect(try InkExpressionParser.parse("not a") == .unary(op: "!", operand: .variableReference("a")))
+    }
+
+    // L10 — `!` composes with itself and with `&&`, matching `not`/`&&`
+    // composition already covered by L1-L4: `!a && !b` parses as
+    // `(!a) && (!b)`, and double negation `!!a` parses as `!(!a)`.
+    @Test func `composes ! with && and with itself`() throws {
+        #expect(try InkExpressionParser.parse("!a && !b") == .binary(
+            op: "&&",
+            left: .unary(op: "!", operand: .variableReference("a")),
+            right: .unary(op: "!", operand: .variableReference("b"))
+        ))
+        #expect(try InkExpressionParser.parse("!!a") == .unary(
+            op: "!",
+            operand: .unary(op: "!", operand: .variableReference("a"))
+        ))
+    }
 }
 
 @Suite("RuntimeObjectEmitter — arithmetic expression lowering")
