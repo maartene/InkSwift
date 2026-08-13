@@ -95,6 +95,21 @@ public enum InkExpressionParser {
         if token.text == notKeyword || token.text == notNativeSymbol {
             return .unary(op: notNativeSymbol, operand: try parseOperand(from: &tokens))
         }
+        // A `-` in OPERAND position is arithmetic negation, never subtraction —
+        // `parseOperand` is only reached where an operand is expected, so `2 - -3`
+        // reads the first `-` as binary (via `bindingPower`) and only the second
+        // one here. It lowers to the runtime native function `_` (Negate), which
+        // the reference keeps distinct from binary `-` (`NativeFunctionCall.cs`:
+        // `public const string Negate = "_"; // distinguish from "-" for
+        // subtraction`). Recursing on a full operand makes `--x` and `-(a + b)`
+        // lower correctly and binds the prefix tighter than any binary operator,
+        // matching inklecate's `{"VAR?":"i"},"_",2,"*"` for `-i * 2`.
+        //
+        // Unlike inklecate this does not constant-fold `-5` to a negative literal;
+        // it emits `5, "_"`, which plays identically.
+        if token.text == negateSourceSymbol {
+            return .unary(op: negateNativeSymbol, operand: try parseOperand(from: &tokens))
+        }
         // A bare `(` opens a parenthesised sub-expression (grouping) — parse a
         // full expression up to the matching `)`. Needed so `not (a == b)` binds
         // the whole comparison under the prefix `!`.
@@ -119,6 +134,13 @@ public enum InkExpressionParser {
     /// the `parseOperand` dispatch above.
     private static let notKeyword = "not"
     private static let notNativeSymbol = "!"
+
+    /// Arithmetic negation: written `-` in source, lowered to the runtime native
+    /// function `_`. The two spellings differ on purpose — `-` stays the binary
+    /// subtraction operator, and the reference runtime names the unary form
+    /// `Negate = "_"` precisely to keep them apart.
+    private static let negateSourceSymbol = "-"
+    private static let negateNativeSymbol = "_"
 
     /// The word-form spelling of logical-and/-or and the runtime native-function
     /// symbols they lower to (`&&`/`||`) — used by `bindingPower` (both spellings

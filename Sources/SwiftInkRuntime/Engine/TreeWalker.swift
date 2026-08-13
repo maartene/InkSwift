@@ -316,6 +316,19 @@ struct TreeWalker {
             applyUnaryOp(state: &state) { value in
                 return .bool(!value.asBool)
             }
+        // Arithmetic negation. The reference names this `_` to keep it distinct
+        // from binary `-` subtraction (`NativeFunctionCall.Negate`) and defines it
+        // for int and float only — `AddIntUnaryOp(Negate, x => -x)` and its float
+        // counterpart, with no bool or string form. Any other value is therefore
+        // left untouched rather than coerced into a number it never had.
+        case "_":
+            applyUnaryOp(state: &state) { value in
+                switch value {
+                case .int(let number): return .int(-number)
+                case .float(let number): return .float(-number)
+                default: return value
+                }
+            }
         case "&&":  applyBinaryOp(state: &state) { .bool($0.asBool && $1.asBool) }
         case "||":  applyBinaryOp(state: &state) { .bool($0.asBool || $1.asBool) }
         case "MIN":     applyBinaryOp(state: &state) { $0.asDouble <= $1.asDouble ? $0 : $1 }
