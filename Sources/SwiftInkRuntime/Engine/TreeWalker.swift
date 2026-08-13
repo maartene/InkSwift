@@ -75,10 +75,32 @@ struct TreeWalker {
             // see `StoryState.stringModeTags`), not a content-line tag: route it
             // there instead of the generic `currentTags` so it does not leak
             // into "tags of the current output line".
-            if state.inStringMode {
-                state.stringModeTags.append(state.tagAccumulator)
-            } else {
-                state.currentTags.append(state.tagAccumulator)
+            //
+            // The accumulated text is whitespace-cleaned and an empty tag is
+            // dropped, matching the reference runtime: every tag added by
+            // `StoryState.currentTags` goes through `CleanOutputWhitespace` and is
+            // added only when non-empty, and a choice tag is built the same way in
+            // `Story.cs`'s EndTag string-evaluation branch.
+            //
+            // Cleaning means BOTH trimming the edges and collapsing each internal
+            // run of spaces/tabs to one space — verified against inklecate 1.2.1:
+            // the source tag `#  spaced   tag  ` compiles to the json text
+            // `"^spaced   tag"` (edges trimmed by the compiler, the internal run
+            // kept) and the official player then reports `# tags: spaced tag`.
+            // Trimming alone would leave the run intact and diverge.
+            //
+            // Doing it here covers both paths: a natively compiled story emits
+            // `.tagOpen/.text/.tagClose` and is read back through this same case,
+            // so compiler-side and json-side tags are cleaned identically.
+            let tagText = state.tagAccumulator
+                .split(whereSeparator: { $0 == " " || $0 == "\t" })
+                .joined(separator: " ")
+            if tagText.isEmpty == false {
+                if state.inStringMode {
+                    state.stringModeTags.append(tagText)
+                } else {
+                    state.currentTags.append(tagText)
+                }
             }
             state.inTagMode = false
             state.tagAccumulator = ""

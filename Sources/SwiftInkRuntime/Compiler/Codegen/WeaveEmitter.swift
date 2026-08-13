@@ -860,15 +860,15 @@ private final class WeaveResolver {
         // false`, i.e. `choiceOnlyLabel != nil`) — see splitChoiceLabelTag's
         // doc comment for why an unbracketed choice's tag is left untouched.
         let labelText: String
-        let tag: String?
+        let tags: [String]
         if choice.echoesLabel {
             labelText = choice.label
-            tag = nil
+            tags = []
         } else {
-            (labelText, tag) = Self.splitChoiceLabelTag(choice.label)
+            (labelText, tags) = Self.splitChoiceLabelTag(choice.label)
         }
         var nodes: [NodeKind] = [.controlCommand("ev"), .controlCommand("str"), .text(labelText)]
-        if let tag {
+        for tag in tags {
             nodes.append(contentsOf: [.tagOpen, .text(tag), .tagClose])
         }
         nodes.append(contentsOf: [.controlCommand("/str"), .controlCommand("/ev")])
@@ -881,12 +881,19 @@ private final class WeaveResolver {
         return nodes
     }
 
-    /// Split a choice label into its literal menu text and an optional trailing
-    /// choice-level tag (`Text # tag`). Mirrors the content-line tag convention
-    /// (`InkParser.parseContentSegments`): a `#` starts a tag running to the end
-    /// of the label; everything before it is literal text. Only a single tag is
-    /// supported (matching that same existing convention) — a second `#` is
-    /// swallowed into the first tag's text, not split into a second tag.
+    /// Split a choice label into its literal menu text and its choice-level tags
+    /// (`Text # one # two`). Every `#` opens a tag running to the next `#` or to
+    /// the end of the label; everything before the first `#` is literal text.
+    /// This matches inklecate, which emits one `#`/`/#` pair per marker inside the
+    /// choice's text-generation block.
+    ///
+    /// Each tag is whitespace-cleaned and empty tags are dropped, mirroring the
+    /// reference runtime: `Story.cs` builds a choice tag with
+    /// `CleanOutputWhitespace(...)`, and `StoryState.currentTags` only adds a tag
+    /// when its text is non-empty. inklecate emits the raw inter-marker text (the
+    /// first tag of `# one # two` is `"one "`, with the trailing space), so the
+    /// cleaning has to happen on the reading side — see `TreeWalker`'s `.tagClose`
+    /// for the engine half that does the same for compiled json.
     ///
     /// Scope (verified against inklecate 1.2.1): this only fires for a tag
     /// written INSIDE the choice-only bracket or in unbracketed leading text —
@@ -899,9 +906,10 @@ private final class WeaveResolver {
     /// indirection (`outcomeContainer`'s `echoesLabel` path re-emits
     /// `choice.label` verbatim) that this fix does not replicate — left as a
     /// follow-up, out of scope for Issue #8's bracketed-choice reproduction.
-    private static func splitChoiceLabelTag(_ label: String) -> (text: String, tag: String?) {
-        guard let hashIndex = label.firstIndex(of: "#") else {
-            return (label, nil)
+    private static func splitChoiceLabelTag(_ label: String) -> (text: String, tags: [String]) {
+        let parts = label.split(separator: "#", omittingEmptySubsequences: false)
+        guard parts.count > 1 else {
+            return (label, [])
         }
         // The text portion is NOT trimmed: inklecate keeps whatever whitespace
         // sits between the prose and the `#` verbatim (`[Tagged choice #
@@ -909,9 +917,11 @@ private final class WeaveResolver {
         // space, confirmed against the compiled oracle fixture). `label` itself
         // was already trimmed at its own outer edges upstream by
         // `splitChoiceOnlyLabel` — only the split point here must stay raw.
-        let text = String(label[..<hashIndex])
-        let tag = String(label[label.index(after: hashIndex)...]).trimmingCharacters(in: .whitespaces)
-        return (text, tag)
+        let text = String(parts[0])
+        let tags = parts.dropFirst()
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { $0.isEmpty == false }
+        return (text, tags)
     }
 
     private func flags(for choice: WeaveChoice) -> ChoiceFlags {
