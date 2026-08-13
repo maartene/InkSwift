@@ -1,0 +1,1 @@
+{"inkVersion":21,"root":[["ev",true,{"f()":"say"},"pop","/ev","\n","ev",false,{"f()":"say"},"pop","/ev","\n","^Done.","\n","end",["done",{"#n":"g-0"}],null],"done",{"say":[{"temp=":"v"},"ev",{"VAR?":"v"},"/ev",[{"->":".^.b","c":true},{"b":["^ yes",{"->":"say.6"},null]}],[{"->":".^.b"},{"b":["^no",{"->":"say.6"},null]}],"nop","\n",null]}],"listDefs":{}}

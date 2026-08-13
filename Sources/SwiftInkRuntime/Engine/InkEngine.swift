@@ -14,6 +14,15 @@ final class InkEngine {
     // pushed as additional frames during execution.
     private var containerStack: [ContainerFrame] = []
 
+    /// `containerStack.count` at the moment each in-flight function call installed
+    /// its body frame — one entry per pending call, popped by `applyFunctionReturn`.
+    /// Used to tell the function's own body container (whose exhaustion IS the
+    /// implicit void return) from a nested sub-container inside it (whose
+    /// exhaustion must merely pop one level). Not persisted: a function call never
+    /// spans a `continue()` boundary, because its output is produced inside an
+    /// `ev`/`/ev` block whose flush is deferred, so no save can land mid-call.
+    private var functionRootDepths: [Int] = []
+
     init(root: ContainerNode) {
         self.root = root
         self.state = StoryState()
@@ -165,10 +174,25 @@ final class InkEngine {
                     }
                     break
                 }
-                // Implicit void return: function body exhausted with a pending function
-                // return address (identified by "fnret:" prefix).
+                // Implicit void return: the function's OWN BODY container exhausted
+                // with a pending function return address (identified by "fnret:").
                 // Push void sentinel so the caller's "out" command has something to consume.
-                if let returnAddr = state.returnStack.last, returnAddr.hasPrefix("fnret:") {
+                //
+                // The depth test matters: a nested sub-container inside the body must
+                // pop one level, NOT end the function. An inline conditional lowers to
+                // two sibling sub-containers (a conditional divert into the true
+                // branch, then an unconditional divert into the else branch), so
+                // without this test a FALSE condition exhausted the first sub-container
+                // and was mistaken for the body finishing — returning to the caller and
+                // skipping the else branch plus everything after it.
+                //
+                // `functionRootDepths` records `containerStack.count` immediately after
+                // the call's divert installed the body frame; deeper frames are nested.
+                // With no depth recorded (a state restored mid-function, which the step
+                // loop does not otherwise produce) the guard falls back to the previous
+                // always-return behaviour rather than stranding the call.
+                if let returnAddr = state.returnStack.last, returnAddr.hasPrefix("fnret:"),
+                   containerStack.count <= (functionRootDepths.last ?? Int.max) {
                     state.returnStack.removeLast()
                     state.evalStack.append(.string("void"))
                     applyFunctionReturn(returnAddr: returnAddr)
@@ -538,6 +562,10 @@ final class InkEngine {
         // confused with the caller's locals with the same name).
         state.callFrameVariables.append([:])
         applyDivert(target: target)
+        // Record the stack depth of the function's own body frame. Anything deeper
+        // is a nested sub-container whose exhaustion must pop one level instead of
+        // ending the call — see the implicit-void-return branch in stepToNextLine.
+        functionRootDepths.append(containerStack.count)
     }
 
     /// Restore execution to the position encoded in a function return address.
@@ -548,6 +576,10 @@ final class InkEngine {
         // declarations made inside the function body are discarded here.
         if !state.callFrameVariables.isEmpty {
             state.callFrameVariables.removeLast()
+        }
+        // Pop the matching body-frame depth recorded by `applyFunctionCall`.
+        if !functionRootDepths.isEmpty {
+            functionRootDepths.removeLast()
         }
         // Strip the "fnret:" prefix
         let addr = returnAddr.hasPrefix("fnret:") ? String(returnAddr.dropFirst(6)) : returnAddr
