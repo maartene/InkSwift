@@ -61,6 +61,23 @@ enum CommentEliminator {
                 }
                 if character == "\"" {
                     insideString = false
+                } else if character == "\n" {
+                    // A genuine Ink string literal never spans a line break —
+                    // verified against inklecate 1.2.1, which rejects one with
+                    // "Expected close quote for string expression but saw end of
+                    // line". So reaching a newline still `insideString` means the
+                    // opening quote was never a real string literal to begin
+                    // with: ordinary content text is not tokenised as containing
+                    // string literals at all in Ink, and a bare `"` there is just
+                    // punctuation (e.g. a closing quotation mark paired with a
+                    // typographic opener the lexer doesn't recognise, such as the
+                    // German „). Treating that stray quote as having opened a
+                    // string that stays open indefinitely made comment
+                    // recognition depend on the total count of unrelated quote
+                    // characters anywhere earlier in the (possibly
+                    // multi-file-concatenated) source — resetting here confines
+                    // the false positive to the single line it occurred on.
+                    insideString = false
                 }
                 index = next
                 continue
