@@ -1027,7 +1027,7 @@ enum RuntimeObjectEmitter {
                     fallThrough: fallThrough, named: &named,
                     lowerBranch: branchLowerer(context: context),
                     lowerContinuation: inlineConditionalContinuationLowerer(
-                        context: context, enclosingKeyPrefix: keyPrefix, fallThrough: fallThrough
+                        context: context, enclosingKeyPrefix: keyPrefix
                     ),
                     lowerExpression: { lowerExpression($0, context: context) }
                 ))
@@ -1061,9 +1061,14 @@ enum RuntimeObjectEmitter {
     /// arm body under its own qualified key-prefix into a private named collector.
     private static func branchLowerer(
         context: LoweringContext
-    ) -> (_ body: [InkStatement], _ prefix: [String], _ named: inout [String: ContainerNode]) -> [NodeKind] {
-        return { body, prefix, collected in
-            lowerBody(body, context: context, keyPrefix: prefix, named: &collected)
+    ) -> ConditionalEmitter.BranchLowerer {
+        return { body, prefix, fallThrough, collected in
+            // The caller decides where this body's loose end lands (an arm rejoins
+            // its own conditional's `-end`; a rejoin body inherits the enclosing
+            // scope's fall-through), so THREAD it — a conditional nested in the body
+            // otherwise fell back on the `.end` default and ended the story inside
+            // its own rejoin container, stranding everything after the outer block.
+            lowerBody(body, context: context, keyPrefix: prefix, fallThrough: fallThrough, named: &collected)
         }
     }
 
@@ -1203,7 +1208,7 @@ enum RuntimeObjectEmitter {
             fallThrough: fallThrough, named: &named,
             lowerBranch: branchLowerer(context: context),
             lowerContinuation: inlineConditionalContinuationLowerer(
-                context: context, enclosingKeyPrefix: keyPrefix, fallThrough: fallThrough
+                context: context, enclosingKeyPrefix: keyPrefix
             ),
             lowerExpression: { lowerExpression($0, context: context) },
             qualifyDivertTarget: { context.qualifiedDivertTarget($0) }
@@ -1223,10 +1228,13 @@ enum RuntimeObjectEmitter {
     /// conditionals — step 01-04 cross-wiring regression).
     private static func inlineConditionalContinuationLowerer(
         context: LoweringContext,
-        enclosingKeyPrefix: [String],
-        fallThrough: WeaveEmitter.FallThrough
-    ) -> (_ body: [InkStatement], _ prefix: [String], _ named: inout [String: ContainerNode]) -> [NodeKind] {
-        return { body, prefix, collected in
+        enclosingKeyPrefix: [String]
+    ) -> ConditionalEmitter.BranchLowerer {
+        // The rejoin's loose-end target arrives as a PARAMETER rather than being
+        // captured here: the emitter is the one that knows whether it is lowering a
+        // rejoin (the enclosing fall-through) or an arm (its own `-end`), and one
+        // source for that target keeps the two from drifting apart.
+        return { body, prefix, fallThrough, collected in
             // The rejoin's own `prefix` (`…cond{N}-end`) is the scope BOTH the weave
             // c-N/g-N containers and any nested inline conditional nest under, so
             // choicePoint targets and rejoin diverts resolve self-consistently and

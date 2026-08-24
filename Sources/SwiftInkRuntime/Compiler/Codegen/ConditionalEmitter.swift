@@ -33,9 +33,19 @@ enum ConditionalEmitter {
     /// Lowers an arm body under its qualified key-prefix into a private named
     /// collector, returning the body nodes (the collector captures nested
     /// conditionals declared inside the arm).
+    ///
+    /// `fallThrough` is where a LOOSE END inside that body lands. It must be
+    /// threaded, not defaulted: a conditional nested inside the body builds its
+    /// own rejoin container, and that rejoin is a loose end. For an ARM body the
+    /// target is the enclosing conditional's own `-end` (the arm rejoins its
+    /// conditional); for the REJOIN body it is the enclosing scope's fall-through
+    /// (the rejoin is that scope's loose end). Without it the nested rejoin fell
+    /// back on `lowerBody`'s `.end` default and terminated the story there,
+    /// stranding everything after the outer block.
     typealias BranchLowerer = (
         _ body: [InkStatement],
         _ keyPrefix: [String],
+        _ fallThrough: WeaveEmitter.FallThrough,
         _ named: inout [String: ContainerNode]
     ) -> [NodeKind]
 
@@ -143,9 +153,9 @@ enum ConditionalEmitter {
         var endNamed: [String: ContainerNode] = [:]
         var endChildren: [NodeKind]
         if let lowerContinuation {
-            endChildren = lowerContinuation(continuation, keyPrefix + [endKey], &endNamed)
+            endChildren = lowerContinuation(continuation, keyPrefix + [endKey], fallThrough, &endNamed)
         } else {
-            endChildren = lowerBranch(continuation, keyPrefix + [endKey], &endNamed)
+            endChildren = lowerBranch(continuation, keyPrefix + [endKey], fallThrough, &endNamed)
         }
         // A continuation that opens its own weave (trailing choices/gathers routed
         // through the resolver) OR already diverts away threads its own loose end; a
@@ -205,7 +215,10 @@ enum ConditionalEmitter {
     ) -> String {
         let armKey = key(ordinal, label)
         var armNamed: [String: ContainerNode] = [:]
-        var children = lowerBranch(branch.body, keyPrefix + [armKey], &armNamed)
+        // An arm's loose end is its OWN conditional's rejoin: a conditional nested
+        // inside this arm must divert its rejoin container to `endPath`, not
+        // terminate the story with the lowerer's `.end` default.
+        var children = lowerBranch(branch.body, keyPrefix + [armKey], .gather(endPath), &armNamed)
         if endsWithControlFlow(branch.body) == false {
             children.append(unconditionalDivert(to: endPath))
         }
@@ -249,9 +262,9 @@ enum ConditionalEmitter {
         var endNamed: [String: ContainerNode] = [:]
         var children: [NodeKind]
         if let lowerContinuation {
-            children = lowerContinuation(continuation, keyPrefix + [endKey], &endNamed)
+            children = lowerContinuation(continuation, keyPrefix + [endKey], fallThrough, &endNamed)
         } else {
-            children = lowerBranch(continuation, keyPrefix + [endKey], &endNamed)
+            children = lowerBranch(continuation, keyPrefix + [endKey], fallThrough, &endNamed)
             for (innerKey, container) in endNamed {
                 named[innerKey] = container
             }
