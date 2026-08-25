@@ -80,13 +80,15 @@ enum ConditionalEmitter {
             guard let match = branch.match else {
                 elseKey = registerArm(
                     branch, ordinal: ordinal, index: index, label: "else",
-                    endPath: endPath, keyPrefix: keyPrefix, named: &named, lowerBranch: lowerBranch
+                    endPath: endPath, keyPrefix: keyPrefix, named: &named,
+                    lowerBranch: lowerBranch, lowerArm: lowerContinuation
                 )
                 continue
             }
             let branchKey = registerArm(
                 branch, ordinal: ordinal, index: index, label: "b\(index)",
-                endPath: endPath, keyPrefix: keyPrefix, named: &named, lowerBranch: lowerBranch
+                endPath: endPath, keyPrefix: keyPrefix, named: &named,
+                lowerBranch: lowerBranch, lowerArm: lowerContinuation
             )
             dispatch.append(contentsOf: guardNodes(
                 subject: subject, match: match, isSwitch: isSwitch, lowerExpression: lowerExpression
@@ -203,6 +205,12 @@ enum ConditionalEmitter {
     /// Register one arm container (`b{i}` or `else`) holding the arm body plus a
     /// trailing divert to the shared continuation (unless the body already diverts
     /// away). Returns the arm's key.
+    ///
+    /// An arm body may OPEN A WEAVE — a choice written inside the arm belongs to
+    /// the enclosing knot's menu and must become a real choicePoint. `lowerArm` is
+    /// the same weave-routing lowerer the rejoin uses; without it the arm lowered
+    /// through the plain path, the choice never reached a choice container, and
+    /// flow ran off the end of the knot with nothing offered.
     private static func registerArm(
         _ branch: ConditionalBranch,
         ordinal: Int,
@@ -211,15 +219,26 @@ enum ConditionalEmitter {
         endPath: [String],
         keyPrefix: [String],
         named: inout [String: ContainerNode],
-        lowerBranch: BranchLowerer
+        lowerBranch: BranchLowerer,
+        lowerArm: BranchLowerer? = nil
     ) -> String {
         let armKey = key(ordinal, label)
         var armNamed: [String: ContainerNode] = [:]
         // An arm's loose end is its OWN conditional's rejoin: a conditional nested
         // inside this arm must divert its rejoin container to `endPath`, not
-        // terminate the story with the lowerer's `.end` default.
-        var children = lowerBranch(branch.body, keyPrefix + [armKey], .gather(endPath), &armNamed)
-        if endsWithControlFlow(branch.body) == false {
+        // terminate the story with the lowerer's `.end` default. The same target
+        // threads a weave-bearing arm's loose ends, so a choice taken inside the
+        // arm rejoins the block exactly where a plain arm body does.
+        var children: [NodeKind]
+        if let lowerArm {
+            children = lowerArm(branch.body, keyPrefix + [armKey], .gather(endPath), &armNamed)
+        } else {
+            children = lowerBranch(branch.body, keyPrefix + [armKey], .gather(endPath), &armNamed)
+        }
+        // A weave-bearing arm threads its own loose end through the resolver
+        // (symmetric with the rejoin in `lowerInline`/`registerContinuation`);
+        // appending the rejoin divert after its dispatch would strand the menu.
+        if containsWeaveItem(branch.body) == false, endsWithControlFlow(branch.body) == false {
             children.append(unconditionalDivert(to: endPath))
         }
         named[armKey] = ContainerNode(children: children, namedContent: armNamed, flags: 0, name: armKey)
