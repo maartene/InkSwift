@@ -120,7 +120,7 @@ enum WeaveEmitter {
         lowerStatementWithFallThrough: (([InkStatement], FallThrough, [String]) -> BodyLowering)? = nil,
         lowerCondition: @escaping (InkExpression) -> [NodeKind] = { _ in [] }
     ) throws -> (children: [NodeKind], named: [String: ContainerNode], labelPaths: [String: [String]]) {
-        let block = WeaveParser.parse(statements, atLevel: 1)
+        let block = WeaveParser.parse(statements, atLevel: WeaveParser.topLevel(of: statements))
         let resolver = WeaveResolver(
             lowerStatement: lowerStatement,
             lowerStatementWithFallThrough: lowerStatementWithFallThrough,
@@ -140,7 +140,7 @@ enum WeaveEmitter {
     static func discover(
         _ statements: [InkStatement]
     ) -> (labelPaths: [String: [String]], referencedLabels: Set<String>) {
-        let block = WeaveParser.parse(statements, atLevel: 1)
+        let block = WeaveParser.parse(statements, atLevel: WeaveParser.topLevel(of: statements))
         var labelPaths: [String: [String]] = [:]
         WeaveDiscovery.recordLabelPaths(block, keyPrefix: [], into: &labelPaths)
         let referencedLabels = WeaveDiscovery.referencedLabels(block, knownLabels: Set(labelPaths.keys))
@@ -162,7 +162,7 @@ enum WeaveEmitter {
         keyPrefix: [String]
     ) -> [String: [String]] {
         guard containsWeave(statements) else { return [:] }
-        let block = WeaveParser.parse(statements, atLevel: 1)
+        let block = WeaveParser.parse(statements, atLevel: WeaveParser.topLevel(of: statements))
         var localPaths: [String: [String]] = [:]
         WeaveDiscovery.recordLabelPaths(block, keyPrefix: keyPrefix, into: &localPaths)
         return localPaths
@@ -173,7 +173,7 @@ enum WeaveEmitter {
         keyPrefix: [String]
     ) -> [String: [String]] {
         guard containsWeave(statements) else { return [:] }
-        let block = WeaveParser.parse(statements, atLevel: 1)
+        let block = WeaveParser.parse(statements, atLevel: WeaveParser.topLevel(of: statements))
         var localPaths: [String: [String]] = [:]
         WeaveDiscovery.recordLabelPaths(block, keyPrefix: keyPrefix, into: &localPaths)
         // recordLabelPaths keys each label by its BARE name with the REAL absolute
@@ -395,6 +395,31 @@ private enum WeaveParser {
     static func parse(_ statements: [InkStatement], atLevel level: Int) -> WeaveBlock {
         var cursor = 0
         return parseBlock(statements, cursor: &cursor, atLevel: level, stopAtSameLevelGather: false)
+    }
+
+    /// The level a flat statement stream's OWN weave starts at: the shallowest
+    /// choice/gather level it contains, or 1 when it holds no weave items.
+    ///
+    /// A weave lowered as a self-contained unit does not always start at level 1.
+    /// A conditional arm written inside a level-1 choice body holds `* *` choices,
+    /// and `parseBlock` matches items only at `level` (deeper ones open a nested
+    /// weave under a choice at `level`). Parsed at a hardcoded 1, a level-2 choice
+    /// matched neither `== 1` nor `< 1`, fell through to `default:` and was
+    /// swallowed as ordinary content — its choicePoint was never emitted and only
+    /// its body's divert survived, inlined into the arm.
+    ///
+    /// Deriving the level from the body keeps every such sub-weave self-consistent
+    /// without threading an enclosing-level parameter through the emitters. For a
+    /// knot's own weave this returns 1, so the top-level path is unchanged.
+    static func topLevel(of statements: [InkStatement]) -> Int {
+        let levels = statements.compactMap { statement -> Int? in
+            switch statement.kind {
+            case .choice(let level, _, _, _, _, _): return level
+            case .gather(let level, _, _): return level
+            default: return nil
+            }
+        }
+        return levels.min() ?? 1
     }
 
     /// Parse a weave block at `level`. When `stopAtSameLevelGather` is set (the
