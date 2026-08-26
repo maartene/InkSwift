@@ -88,4 +88,42 @@ struct Compiler_ChoiceInConditionalArmTests {
 
         #expect(story.currentChoices.map(\.text) == ["From the middle arm"])
     }
+
+    // Scenario: the content written AFTER a block whose arm bears a choice still
+    // plays, and plays BEFORE the choice is presented — a choice inside a
+    // conditional generates its choicePoint without halting the flow
+    // (inkle/ink#978), so the arm rejoins and picks up the rest of the knot.
+    //
+    // This is the assertion the original fixture could not make: every conditional
+    // in it ended its knot, leaving the `-end` rejoin empty, so an arm that halted
+    // the flow was indistinguishable from one that rejoined. Each knot now
+    // continues past its block (CLAUDE.md — "a fixture must continue past the
+    // construct it pins").
+    @Test
+    func `content after a block whose arm bears a choice plays before the choice`() throws {
+        let source = try CompilerOracle.source("compile-choice-in-conditional-arm")
+        let story = Story(blueprint: try InkCompiler.compile(source: source))
+
+        var lines: [String] = []
+        while story.canContinue {
+            lines.append(story.`continue`().trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+
+        #expect(lines.filter { !$0.isEmpty } == ["Before the else arm.", "Other.", "After the else block."])
+        #expect(story.currentChoices.map(\.text) == ["From the else arm"])
+    }
+
+    // Scenario: the same rejoin on every arm kind. A fix that threads only the
+    // `- else:` arm would leave the implicit-true and middle arms halting, and
+    // their trailing lines missing from the playthrough.
+    @Test
+    func `every arm kind rejoins so all three trailing lines play`() throws {
+        let result = try CompilerOracle.compileAndPlay(
+            "compile-choice-in-conditional-arm", choiceScript: [0, 0, 0]
+        )
+
+        let trailing = ["After the else block.", "After the true block.", "After the middle block."]
+        #expect(trailing.allSatisfy(result.native.contains))
+        #expect(result.native == result.oracle)
+    }
 }

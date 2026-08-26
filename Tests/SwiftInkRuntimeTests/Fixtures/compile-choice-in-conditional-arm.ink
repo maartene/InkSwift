@@ -14,6 +14,7 @@ Before the else arm.
     * From the else arm
         -> implicit_true_arm
 }
+After the else block.
 
 === implicit_true_arm ===
 Before the true arm.
@@ -22,6 +23,7 @@ Before the true arm.
     * From the true arm
         -> middle_arm
 }
+After the true block.
 
 === middle_arm ===
 Before the middle arm.
@@ -35,6 +37,7 @@ Before the middle arm.
     - else:
         Other.
 }
+After the middle block.
 
 === done ===
 Done.

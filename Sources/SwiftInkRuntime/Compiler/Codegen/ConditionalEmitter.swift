@@ -206,11 +206,11 @@ enum ConditionalEmitter {
     /// trailing divert to the shared continuation (unless the body already diverts
     /// away). Returns the arm's key.
     ///
-    /// An arm body may OPEN A WEAVE — a choice written inside the arm belongs to
-    /// the enclosing knot's menu and must become a real choicePoint. `lowerArm` is
-    /// the same weave-routing lowerer the rejoin uses; without it the arm lowered
-    /// through the plain path, the choice never reached a choice container, and
-    /// flow ran off the end of the knot with nothing offered.
+    /// An arm body may OPEN A WEAVE — a choice written inside the arm is valid Ink
+    /// (inkle/ink#129) and must become a real choicePoint. `lowerArm` is the same
+    /// weave-routing lowerer the rejoin uses; without it the arm lowered through the
+    /// plain path, the choice never reached a choice container, and flow ran off the
+    /// end of the knot with nothing offered.
     private static func registerArm(
         _ branch: ConditionalBranch,
         ordinal: Int,
@@ -235,10 +235,31 @@ enum ConditionalEmitter {
         } else {
             children = lowerBranch(branch.body, keyPrefix + [armKey], .gather(endPath), &armNamed)
         }
-        // A weave-bearing arm threads its own loose end through the resolver
-        // (symmetric with the rejoin in `lowerInline`/`registerContinuation`);
-        // appending the rejoin divert after its dispatch would strand the menu.
-        if containsWeaveItem(branch.body) == false, endsWithControlFlow(branch.body) == false {
+        // A weave-bearing arm ends with the terminating `done` `WeaveEmitter.lower`
+        // appends to every weave. For the enclosing knot that `done` is right — it
+        // halts the flow so the accumulated choices are presented. For an ARM it is
+        // wrong, and this is settled upstream (inkle/ink#978, answered by joningold):
+        //
+        //   "a choice inside a conditional doesn't stop the flow in the same way
+        //    that a choice outside a conditional — ie. a weave — does"
+        //
+        // The choicePoint is generated and flow CONTINUES out of the block, through
+        // the rejoin, picking up whatever followed it — which is why inklecate prints
+        // the prose after the block BEFORE presenting the arm's choice. The reference
+        // gets this by appending the rejoin unconditionally
+        // (`ConditionalSingleBranch.GenerateRuntimeObject`, target set in
+        // `Conditional.cs`); it has no notion of suppressing it for a weave-bearing
+        // arm. So swap the weave's `done` for the rejoin divert rather than leaving it
+        // to halt: with the `done` in place, `-end` — holding everything written after
+        // the block — was built correctly and never reached.
+        let haltsOnWeaveTerminator: Bool
+        if case .controlCommand("done")? = children.last {
+            children.removeLast()
+            haltsOnWeaveTerminator = true
+        } else {
+            haltsOnWeaveTerminator = false
+        }
+        if haltsOnWeaveTerminator || endsWithControlFlow(branch.body) == false {
             children.append(unconditionalDivert(to: endPath))
         }
         named[armKey] = ContainerNode(children: children, namedContent: armNamed, flags: 0, name: armKey)
