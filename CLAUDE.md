@@ -90,6 +90,34 @@ gh api "search/issues?q=repo:inkle/ink+<terms>&per_page=10" \
 
 `gh search issues --repo inkle/ink "<single-term>"` works too, but multi-word queries silently return nothing and look like clean misses — use the API form for anything multi-word.
 
+Search in **upstream vocabulary**, not ours or the player's. Ink says *choice*, *option*, *choice point*, *weave*, *gather*, *thread*, *knot*, *stitch*, *divert*. Words like "menu", "branch", "arm", "dropdown" return clean-looking zero-hit misses — the report you want is there, filed under a word you didn't try. When a search comes back empty, re-run it with a synonym from that list before concluding nothing exists. (Worked example: the "a choice inside a conditional arm is never offered" investigation found nothing under "menu"; `choices+nested+in+conditionals` and `choice+inside+conditional` surfaced #978 and #129, one of them maintainer-answered and decisive.)
+
 Weigh three things: **who acknowledged it** (maintainer-authored or maintainer-answered, e.g. `joningold`, is strong signal; an unanswered user report says little about intent); **how long it has been that way** (longevity turns a defect into de facto spec — an eight-year-old known issue has become its own truth, since real stories now depend on it and inklecate still ships it, whereas a recent acknowledged bug likely to be fixed is the weakest case for copying); and **what diverging costs** (not copying a bug means differing from inklecate on a real input, trading an oracle guarantee for a documented exception the suite must carry).
 
 Whichever way it goes, record the reasoning in the code, not just the commit message.
+
+### A fixture must continue past the construct it pins
+
+A construct that sits at the **end of its enclosing scope** cannot catch a rejoin bug. If a block conditional is the last thing in a knot, nothing follows it, so the `-end` rejoin container is empty — and an arm that never reaches that container plays identically to one that does. The fixture is green, the oracle agrees, and the defect is invisible.
+
+So every fixture pinning a construct with a *continuation* — a conditional, a weave, a tunnel, a nested block — must **put content after it, inside the same scope**, and assert that content plays. Prose alone is enough; prose plus a choice is better, because it pins both the content and the flow's ability to reach a following choice point.
+
+Concretely, for a block conditional:
+
+```ink
+{ x == 0:
+    Zero.
+    * From the zero arm
+        -> elsewhere
+- else:
+    Other.
+    * From the else arm
+        -> elsewhere
+}
+After the block.        ← without this line the fixture proves nothing about the rejoin
+```
+
+Ask of any new fixture: *if the arm terminated the flow instead of rejoining, would this test still pass?* If yes, the fixture is not yet pinning what it claims to.
+
+This generalises the "why not synthetic minimal fixtures" lesson in
+`docs/how-to/native-compile-story-equivalence.md` — minimal fixtures false-green not only through insufficient nesting depth but through **truncation**: stopping at the construct's own boundary. (Worked example: PR #20 / issue #18, whose fixture ended every conditional at the end of its knot. It went green while the trailing content after a weave-bearing arm was still being dropped, because the arm's weave terminated the flow with `done` instead of diverting to the rejoin.)
