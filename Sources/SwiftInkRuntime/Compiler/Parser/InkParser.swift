@@ -206,11 +206,20 @@ public enum InkParser {
             : try InkExpressionParser.parse(subjectText)
         var pendingBody: [InkStatement] = []
         var armStarted = isSwitch == false && hasSubject
+        // `{ cond:` followed by content: the subject guards that content, and
+        // only a single `- else:` may follow (see `checkArmAfterHeaderGuardedContent`).
+        let subjectGuardsContent = hasSubject && opensWithArm == false
+        var explicitArmCount = 0
 
         var lineIndex = 0
         while lineIndex < bodyLines.count {
             let line = bodyLines[lineIndex]
             if let guardText = armGuard(of: line.text) {
+                if subjectGuardsContent {
+                    try checkArmAfterHeaderGuardedContent(
+                        guardText: guardText, priorArmCount: explicitArmCount, line: line)
+                }
+                explicitArmCount += 1
                 if armStarted {
                     branches.append(ConditionalBranch(match: pendingMatch, body: pendingBody))
                 }
@@ -233,6 +242,40 @@ public enum InkParser {
             kind: .conditionalBlock(subject: subject, isSwitch: isSwitch, branches: branches),
             position: position
         )
+    }
+
+    /// Reject an else-if chain hung off a header condition (issue #19). When the
+    /// header guards the content that follows it (`{ x == 1: One. - else: … }`),
+    /// the reference parses that content as the true branch and then accepts at
+    /// most ONE further branch, which must be `- else:`
+    /// (`InkParser_Conditional.cs`, the `initialQueryExpression` + `soleContent`
+    /// path). An extra condition there is a deliberate, named error upstream; a
+    /// second branch is never consumed, so the block fails to close. Further
+    /// conditions belong in the headerless `{` form, where every condition is an
+    /// arm. We match the reference rather than keep the over-acceptance: a story
+    /// that compiles here but not under inklecate is silently non-portable.
+    private static func checkArmAfterHeaderGuardedContent(
+        guardText: String,
+        priorArmCount: Int,
+        line: (text: String, number: Int)
+    ) throws {
+        if priorArmCount > 0 {
+            throw CompileError(
+                kind: .syntaxError,
+                message: "Expected closing brace '}' for inline logic but saw '\(line.text)'.",
+                line: line.number,
+                column: 1
+            )
+        }
+        guard guardText == "else" else {
+            throw CompileError(
+                kind: .syntaxError,
+                message: "Expected an '- else:' clause here rather than an extra condition. "
+                    + "Use a `{` block with every condition as an arm for an else-if chain.",
+                line: line.number,
+                column: 1
+            )
+        }
     }
 
     /// A `{ cond: ...true... }` block with no explicit arms: a single guarded
