@@ -19,7 +19,7 @@ confirm the native runtime supports your story's features.
 | `continueStory()` | `continue()` | added `throws` |
 | `canContinue` | `canContinue` | same name |
 | `currentText` | `currentText` | same name |
-| `currentErrors` | (native uses `throws`) | see "Error handling" below |
+| `currentErrors` | `currentErrors` | story errors only (e.g. a `->->` or `~ return` with no matching frame); they stop the story. API misuse throws instead — see the [parity reference](../reference/js-bridge-vs-native-parity.md#api-gaps) |
 | `options: [Option]` | `currentChoices: [Choice]` | property + element type rename |
 | `chooseChoiceIndex(_:)` | `chooseChoice(at:) throws` | added `throws` |
 | `moveToKnitStitch(_:stitch:)` | `moveToKnot(_:stitch:) throws` | added `throws` |

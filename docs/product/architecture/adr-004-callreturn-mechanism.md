@@ -1,7 +1,14 @@
 # ADR-004: Call/Return Mechanism — Return Address Stack in StoryState
 
-**Status**: Accepted
+**Status**: Accepted; partly superseded by [ADR-016](./adr-016-typed-container-path.md) and [ADR-017](./adr-017-typed-call-stack-and-pop-check.md) (2026-11-17)
 **Date**: 2026-06-04
+
+> **Superseded in part.** The return stack is now a typed `[CallStackElement]` (tunnel or
+> function, ADR-017), still saved as the legacy strings (ADR-018). `.divert` carries a
+> typed `DivertTarget` (path or variable) instead of an `isVariable` flag, and function
+> calls are their own `NodeKind.functionCall` (ADR-016). `.pushDivertTarget` pushes onto
+> the evaluation stack, not the return stack. The text below is the original decision,
+> kept as a record.
 **Deciders**: Maarten Engels (project owner), Morgan (nw-solution-architect)
 **Feature**: native-runtime (ink-callreturn-mechanism)
 

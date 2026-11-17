@@ -38,6 +38,22 @@ authoritative, always-current list. As of today they are:
 
 If your story uses any of these, stay on the JS-bridge for now.
 
+### Behaviour gaps found by the upstream conformance suite
+
+Beyond the rejected constructs, ink's own test suite (`tests/Tests.cs` from inkle/ink,
+ported as `Tests/SwiftInkRuntimeTests/Conformance/`) shows places where a story the native
+runtime accepts plays differently from the reference. Each failing upstream test is
+recorded as a disabled backlog item naming the gap. Examples: `TURNS()` and `TURNS_SINCE`,
+some glue placements, default (fallback) choices, tunnel onwards with a divert
+(`->-> target`), `FLOOR` / `INT` / `CEILING`, multi-line sequences, `INCLUDE`, and some
+newline handling. For the current list, run:
+
+```
+grep -rho 'conformance: [^"]*' Tests/SwiftInkRuntimeTests/Conformance | sort | uniq -c | sort -rn
+```
+
+If your story relies on one of these, check it against the JS-bridge before migrating.
+
 ### API gaps
 
 These are surface/behaviour differences between the `InkStory` API and the native
@@ -52,9 +68,15 @@ not cover them):
 - **Tag shape** — the JS-bridge exposes tags as `[String: String]`; the native runtime
   exposes them as `[String]`. Migrating code that reads tags must adapt to the array
   shape.
-- **Error handling** — the JS-bridge surfaces problems via a `currentErrors` array; the
-  native runtime uses Swift `throws` on the corresponding calls. Migrating code must move
-  from array inspection to `try` / `catch`.
+- **Error handling** — the JS-bridge surfaces problems via a `currentErrors` array. The
+  native runtime splits them: misuse of the API (an invalid choice index, an unknown knot,
+  an invalid save) **throws** from the corresponding call, so migrating code moves from
+  array inspection to `try` / `catch` there. Errors in the story itself are reported in
+  `Story.currentErrors` and stop the story (`canContinue == false`), using the reference
+  runtime's messages. So far this covers a `->->` or `~ return` with no matching tunnel or
+  function on the call stack. Running out of content is not reported yet
+  ([#28](https://github.com/maartene/InkSwift/issues/28)). These errors are never saved,
+  and `restoreState` / `moveToKnot` clear them.
 
 Stay on the JS-bridge if any of these block you; otherwise migrate with the
 [migration guide](../how-to/migrate-from-js-bridge.md).

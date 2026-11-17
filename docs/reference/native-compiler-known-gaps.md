@@ -4,6 +4,11 @@
 > yet**, with a reproduction for each. This exists so a gap is a recorded decision
 > rather than a surprise. For the broader "should I migrate" picture see
 > [JS-bridge vs native runtime parity](js-bridge-vs-native-parity.md).
+>
+> The defects below were each isolated by hand. The systematic list comes from ink's own
+> test suite, ported as `Tests/SwiftInkRuntimeTests/Conformance/`. Every upstream test
+> that fails is a disabled backlog item naming its gap (see CLAUDE.md "Upstream
+> conformance suite").
 
 Each entry names the layer it lives in. That distinction matters:
 

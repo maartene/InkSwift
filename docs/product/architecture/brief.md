@@ -76,10 +76,13 @@ C4Component
   Container_Boundary(sir, "SwiftInkRuntime") {
     Component(facade, "Story (Facade)", "Facade/ layer", "Public API. Owns no state. Delegates to InkEngine. Exposes: init(json:), continue(), chooseChoice(at:), currentText, canContinue, currentChoices, currentTags, globalTags, currentErrors, saveState(), restoreState(_:).")
     Component(engine, "InkEngine", "Engine/ layer", "final class. Owns var state: StoryState. Drives tree-walker. Enforces execution invariants. Internal only.")
-    Component(storystate, "StoryState", "Engine/ layer", "struct, Codable. Holds callstack, visitCounts, currentPointer, variablesState, outputStream, returnStack. Owned by InkEngine.")
+    Component(storystate, "StoryState", "Engine/ layer", "struct, Codable. Holds container stack frames, visitCounts (keyed by ContainerPath), pointer, variablesState, outputStream, and the return stack of CallStackElements. Saved as the legacy string wire (ADR-018). Owned by InkEngine.")
+    Component(resolver, "ContainerPathResolver", "Engine/ layer", "Stateless. Navigates the ContainerNode tree by ContainerPath and resolves relative PathReferences and $-anchors (ADR-016).")
+    Component(callstack, "CallStackElement", "Engine/ layer", "Typed return-stack element (tunnel | function). Kind-checked pops; a mismatched or empty pop is a runtime error in currentErrors (ADR-017).")
     Component(walker, "TreeWalker", "Engine/ layer", "Recursive node visitor. Reads NodeKind, advances pointer, pushes output. Internal only.")
     Component(decoder, "InkDecoder", "Decoder/ layer", "Converts raw Ink JSON into ContainerNode tree via JSONDecoder + a custom Decodable typing Bool->Int->Double (platform-stable; formerly JSONSerialization + CoreFoundation type identity — ADR-013). The only layer permitted to perform Ink-format JSON decoding. Internal only.")
-    Component(nodetypes, "Node Types (ContainerNode, NodeKind)", "Decoder/ layer", "Value types representing parsed Ink AST. NodeKind is internal. ContainerNode is internal. NodeKind includes pushDivertTarget and isVariable-flagged divert for call/return support.")
+    Component(nodetypes, "Node Types (ContainerNode, NodeKind)", "Decoder/ layer", "Value types representing parsed Ink AST. NodeKind is internal. ContainerNode is internal. Path payloads are typed PathReferences parsed once by InkDecoder; .divert carries a DivertTarget (path | variable); function calls are NodeKind.functionCall (ADR-016).")
+    Component(paths, "ContainerPath / PathReference", "Decoder/ layer", "Typed path values (index | name components); the only parse of inklecate path strings. Shared by Decoder, Compiler and Engine.")
     Component(tagparser, "TagParser", "Engine/ layer", "Pure function. Parses raw tag strings (\"key: value\" or bare \"key\") into [String: String]. Internal only.")
   }
 
@@ -92,6 +95,10 @@ C4Component
   Rel(engine, nodetypes, "Holds root ContainerNode from")
   Rel(decoder, nodetypes, "Produces")
   Rel(facade, decoder, "Initialises engine by passing decoded tree from")
+  Rel(engine, resolver, "Resolves divert and read-count targets with")
+  Rel(storystate, callstack, "Holds the return stack as")
+  Rel(decoder, paths, "Parses path strings into")
+  Rel(resolver, paths, "Navigates by")
 ```
 
 ---
@@ -375,6 +382,17 @@ In the choice-collection loop the engine skips choices matching the above criter
 ### Tier 3 — Conditionals and Tunnels (tier3-conditionals-and-tunnels)
 
 This subsection records the concrete architectural decisions for the `tier3-conditionals-and-tunnels` feature. It covers rows 22–24, 29–30, and 34–35 of the Feature Coverage Matrix: inline conditional text, block/switch conditionals, Ink functions, tunnels, and reference parameters.
+
+> **Superseded in part by typed-runtime-paths (2026-11-17, ADR-016/017).** Where this
+> section encodes calls and returns as strings, the current design differs:
+> - **Call stack:** the `returnStack` of `"path.N"` / `"fnret:path|N"` strings is a typed
+>   `[CallStackElement]`. Mismatched or empty pops are now runtime errors.
+> - **Diverts:** the `isVariable` flag on `.divert` is a typed `DivertTarget`.
+> - **Function calls:** the `"f()"` call is `NodeKind.functionCall`, not a `.divert`.
+>
+> The decisions below are kept as the record of that feature; see the
+> [typed-runtime-paths section](#typed-runtime-paths-feature-addition) for the current
+> shape.
 
 No new source files are introduced. All changes are localised to four existing files: `NodeKind.swift`, `InkDecoder.swift`, `TreeWalker.swift`, and `InkEngine.swift`. `StoryState.swift` gains one new field for function call frames (Decision 3).
 
