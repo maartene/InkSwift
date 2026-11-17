@@ -666,6 +666,9 @@ The component responsibility annotations are updated:
 | [ADR-010](./adr-010-variable-text-lowering.md) | Variable-Text Lowering (sequence / cycle / once-only) | Accepted |
 | [ADR-013](./adr-013-portable-number-bool-classification.md) | Portable JSON Number/Bool Classification (JSONDecoder + custom Decodable) | Accepted |
 | [ADR-014](./adr-014-cross-platform-equivalence-oracle.md) | Cross-Platform Equivalence Oracle (inklecate-generated committed fixtures) | Accepted |
+| [ADR-016](./adr-016-typed-container-path.md) | Typed Container Paths and Function-Call Diverts | Accepted |
+| [ADR-017](./adr-017-typed-call-stack-and-pop-check.md) | Typed Call-Stack Elements and Type-Checked Tunnel/Function Pops | Accepted |
+| [ADR-018](./adr-018-save-format-compat-typed-paths.md) | Save-Format Compatibility for Typed Paths and Call Stack | Accepted |
 
 ---
 
@@ -1681,3 +1684,123 @@ warning WITHOUT erroring**.
 | ADR | Title | Status |
 |-----|-------|--------|
 | [ADR-015](./adr-015-inkstory-deprecation-mechanics.md) | `InkStory` Deprecation Mechanics — type-level `@available` `message:`, no `renamed:` | **Accepted (Option 1, 2026-07-16)** |
+
+---
+
+### typed-runtime-paths (Feature Addition)
+
+Issue #25. Replace string-encoded container paths, relative paths, return addresses and
+`f():` function-call diverts with value types mirroring the C# reference (`Path`,
+`Pointer`, `CallStack.Element`/`PushPopType`, `Divert.pushesToStack`). Paths are parsed
+once in `InkDecoder`, emitted typed by the native compiler, and persisted in the
+**unchanged** save format. Behaviour-preserving except one slice: type-checked
+tunnel/function pops. **Status: DESIGN complete — all decisions accepted by the maintainer
+(2026-11-17).**
+Full option analysis: `docs/feature/typed-runtime-paths/feature-delta.md`; ADR-016/017/018.
+
+#### Quality Attributes (ranked)
+
+1. **Correctness** — oracle + upstream conformance suites green on every slice.
+2. **Reliability** — existing saves keep restoring; a mismatched or empty tunnel/function
+   pop is reported, not silently skipped.
+3. **Maintainability** — removes the Primitive Obsession CodeScene flags in
+   `InkEngine.swift`; one spelling per concept; path navigation moves out of `InkEngine`.
+   Expected effect: `InkEngine` gets smaller and better-scoring (string surgery and ~200
+   lines of helpers leave); new files are small single-purpose types.
+
+#### Decisions (accepted 2026-11-17)
+
+| ID | Decision | ADR |
+|---|---|---|
+| D1 | `ContainerPath` (absolute) + `PathReference` (absolute \| relative with raw caret count) + `PathComponent` (index \| name), never-failing C#-semantics parse, `description` round-trips today's dotted strings, in `Decoder/` | ADR-016 |
+| D2 | `CallStackElement { kind: tunnel\|function, returnPath, returnIndex }`; wrong-kind **or empty-stack** pop → refuse, record the exact C# message (`Found …, when expected …`) in `currentErrors`, end the flow. Upstream check: deliberate reference error, no inkle/ink issue calls it a defect | ADR-017 |
+| D3 | `NodeKind.functionCall(target:)`; `DivertTarget = path \| variable` replaces `isVariable`. `f():` is in no output contract (compiler builds `NodeKind` directly; `JSONEmitter` does not serialise diverts) | ADR-016 |
+| D4 | Typed in memory, byte-identical saved strings, no version field; existing saves keep restoring; golden legacy saves as the probe | ADR-018 |
+| D5 | Stateless `ContainerPathResolver` in `Engine/`; `containerStack` mutation stays in `InkEngine` | feature-delta |
+| D6 | Slices S0 (golden saves) → S1 types → S2 resolver → S3 engine/state typed → S4 node payloads → S5 `.functionCall` → S6 call-stack element → **S7 pop check (only behaviour change)** | feature-delta |
+
+#### Placement and boundary rules
+
+`ContainerPath` lives in `Decoder/` (the lowest layer — Decoder, Compiler and Engine may all
+depend on it under R1/R5). `ContainerPathResolver` and `CallStackElement` are execution
+concepts and live in `Engine/`; Compiler must not reference them (R5). The existing R1/R5
+regexes match only `import Engine` lines, which cannot occur inside one module, so
+symbol-level coupling is unenforced today — the existing `ChoiceFlags` (in
+`Engine/StoryState.swift`, referenced by `Decoder/NodeKind.swift`) shows the gap.
+Follow-up, out of scope for #25: a `.swiftlint.yml` rule `r1_r5_no_engine_symbols` over
+`Decoder/` + `Compiler/` matching Engine-only type names.
+
+#### Reuse Analysis (summary — full table with contract shapes in the feature-delta)
+
+| Existing component | Decision |
+|---|---|
+| `InkEngine` path helpers (`parseRelativePath`, `navigate`, `descend`, `navigateWithActualPath`, `absolutePath`, `resolveAnchor`, …) | EXTEND by extraction → `ContainerPathResolver` (pure) |
+| `InkEngine` stack installers (`installDestinationFrame`, `applyDivert` family) | EXTEND (stay, typed) |
+| Return-address string builders/parsers | REPLACE by `CallStackElement` (CREATE NEW — no existing type carries kind + pointer) |
+| `StoryState` + nested types | EXTEND (typed fields; hand-written `Codable` keeps the wire) |
+| `InkDecoder.classifyDict`, `NodeKind` | EXTEND (parse once; typed payloads; `.functionCall`) |
+| `TreeWalker.resolveReadCountPath`, `handleDivert` pointer write | EXTEND (typed); deletion checked in S2 (no reference counterpart for a second caret rule) |
+| `ExpressionLowering`, emitters, `RuntimePathReconciler` | EXTEND (emit/compare typed paths; prefix constant deleted) |
+| `JSONEmitter`, `Story` facade, `ContainerNode` | NO CHANGE / REUSE AS-IS |
+
+#### C4 — Diagram Impact
+
+System Context (L1) and Container (L2) are **unchanged** — an internal refactor adds no
+actor, container, data store or external system; see the existing diagrams above. The L3
+delta for the affected `SwiftInkRuntime` components:
+
+```mermaid
+C4Component
+  title Component delta — typed-runtime-paths (SwiftInkRuntime)
+
+  Container_Boundary(sir, "SwiftInkRuntime") {
+    Component(facade, "Story (Facade)", "Facade/", "Public API unchanged. currentErrors now reports a refused tunnel/function pop.")
+    Component(engine, "InkEngine", "Engine/", "Owns containerStack + StoryState. Drives stepping; type-checked pops; delegates path resolution.")
+    Component(resolver, "ContainerPathResolver", "Engine/ (new)", "Pure, read-only: navigates root by ContainerPath, resolves relative PathReferences and $-anchors.")
+    Component(callstack, "CallStackElement", "Engine/ (new)", "kind tunnel|function + return path + index. Codable to the legacy return-address strings.")
+    Component(state, "StoryState", "Engine/", "Typed paths, visit-count keys, return stack. Hand-written Codable keeps the legacy wire.")
+    Component(walker, "TreeWalker", "Engine/", "Dispatches NodeKind; no path parsing.")
+    Component(decoder, "InkDecoder", "Decoder/", "Parses inklecate path strings once into typed payloads; maps {f(): path} to .functionCall.")
+    Component(nodes, "NodeKind / ContainerNode", "Decoder/", "Typed payloads: PathReference, DivertTarget, .functionCall.")
+    Component(path, "ContainerPath / PathReference", "Decoder/ (new)", "Value types: absolute path, relative reference, index|name component. Total parse, legacy description.")
+    Component(compiler, "Compiler codegen", "Compiler/", "Emits typed NodeKind payloads; RuntimePathReconciler compares ContainerPaths.")
+  }
+
+  Rel(facade, engine, "Drives execution through")
+  Rel(engine, resolver, "Resolves divert and read-count targets with")
+  Rel(engine, state, "Reads and mutates")
+  Rel(state, callstack, "Persists return stack as")
+  Rel(engine, walker, "Dispatches ordinary nodes through")
+  Rel(resolver, nodes, "Navigates the ContainerNode tree from")
+  Rel(resolver, path, "Resolves")
+  Rel(decoder, nodes, "Produces")
+  Rel(decoder, path, "Parses path strings into")
+  Rel(compiler, nodes, "Constructs")
+  Rel(compiler, path, "Builds paths as")
+  Rel(state, path, "Keys visit counts and frames by")
+```
+
+#### Earned Trust
+
+| Substrate | Probe |
+|---|---|
+| inklecate path strings | Parse is total (C# semantics: `""` = root, int-first), so no new failure path; extend the `InkDecoder.probe()` fixture with a `.^` relative path, an `f()` call and a `->t->`, asserting the typed cases. |
+| Saves written by earlier builds | S0 golden legacy saves (captured from `main` before any type change) restore and continue identically; typed state re-encodes structurally equal to the golden JSON. |
+| Behavioural truth | Oracle fixtures + upstream conformance suite per slice; the upstream `TestPaths` test becomes portable via a hand port in `scripts/conformance/overrides/`. |
+
+#### Open questions and follow-ups (see feature-delta)
+
+Open for DISTILL: runtime-error lifetime (cleared on `restoreState`/`moveToKnot`?
+persisted?). Follow-ups, **out of scope for #25**: suspected, unconfirmed tunnel-return bug (a
+return to `path.N` where child `N` is a container re-enters it with a single-frame stack —
+preserved by this refactor, to be confirmed and filed separately); the TreeWalker dead-code
+check during S2; the symbol-level boundary rule; moving `ChoiceFlags` to `Decoder/`;
+divert-target values in `InkValue` (wire change).
+
+#### ADR
+
+| ADR | Title | Status |
+|-----|-------|--------|
+| [ADR-016](./adr-016-typed-container-path.md) | Typed Container Paths and Function-Call Diverts | Accepted |
+| [ADR-017](./adr-017-typed-call-stack-and-pop-check.md) | Typed Call-Stack Elements and Type-Checked Tunnel/Function Pops | Accepted |
+| [ADR-018](./adr-018-save-format-compat-typed-paths.md) | Save-Format Compatibility for Typed Paths and Call Stack | Accepted |
