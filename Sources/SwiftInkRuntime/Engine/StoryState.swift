@@ -251,23 +251,44 @@ struct ChoiceData: Codable {
 }
 
 struct StoryPointer: Codable {
-    var containerPath: [String]
+    var containerPath: ContainerPath
     var index: Int
+
+    init(containerPath: ContainerPath, index: Int) {
+        self.containerPath = containerPath
+        self.index = index
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case containerPath, index
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        containerPath = ContainerPath(savedComponents: try container.decode([String].self, forKey: .containerPath))
+        index = try container.decode(Int.self, forKey: .index)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(containerPath.savedComponents, forKey: .containerPath)
+        try container.encode(index, forKey: .index)
+    }
 }
 
 /// One frame of the container execution stack, serialised for save/restore.
 /// `pathFromRoot` is the absolute path from root to this frame's container:
 /// each component is either a numeric index into the parent's `children`
-/// array, or a name lookup into the parent's `namedContent`. Empty array =
-/// root. `executionIndex` is the next-to-process position within the container.
+/// array, or a name lookup into the parent's `namedContent`. No components =
+/// root; saved as an array of component strings (ADR-018). `executionIndex` is the next-to-process position within the container.
 /// `isChoiceContinuationRoot` marks frames installed by chooseChoice so the
 /// engine stops walking when the continuation exhausts (one-level callstack).
 struct ContainerStackFrame: Codable {
-    var pathFromRoot: [String]
+    var pathFromRoot: ContainerPath
     var executionIndex: Int
     var isChoiceContinuationRoot: Bool
 
-    init(pathFromRoot: [String], executionIndex: Int, isChoiceContinuationRoot: Bool = false) {
+    init(pathFromRoot: ContainerPath, executionIndex: Int, isChoiceContinuationRoot: Bool = false) {
         self.pathFromRoot = pathFromRoot
         self.executionIndex = executionIndex
         self.isChoiceContinuationRoot = isChoiceContinuationRoot
@@ -279,9 +300,16 @@ struct ContainerStackFrame: Codable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        pathFromRoot = try container.decode([String].self, forKey: .pathFromRoot)
+        pathFromRoot = ContainerPath(savedComponents: try container.decode([String].self, forKey: .pathFromRoot))
         executionIndex = try container.decode(Int.self, forKey: .executionIndex)
         isChoiceContinuationRoot = try container.decodeIfPresent(Bool.self, forKey: .isChoiceContinuationRoot) ?? false
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(pathFromRoot.savedComponents, forKey: .pathFromRoot)
+        try container.encode(executionIndex, forKey: .executionIndex)
+        try container.encode(isChoiceContinuationRoot, forKey: .isChoiceContinuationRoot)
     }
 }
 
@@ -291,7 +319,8 @@ struct StoryState: Codable {
     var pointer: StoryPointer
     var outputStream: [String]
     var variablesState: [String: InkValue]
-    var visitCounts: [String: Int]
+    /// Saved as `{"a.b": n}`: keys are `ContainerPath.description` (ADR-018).
+    var visitCounts: [ContainerPath: Int]
     var currentTags: [String]
     var isEnded: Bool
     var currentChoices: [ChoiceData]
@@ -329,8 +358,8 @@ struct StoryState: Codable {
     var returnStack: [String]
 
     /// Paths of choices that have already been taken (once-only suppression).
-    /// Serialised as a sorted array for deterministic JSON output.
-    var chosenChoiceTargets: Set<String>
+    /// Serialised as a sorted array of dotted strings for deterministic JSON output.
+    var chosenChoiceTargets: Set<ContainerPath>
 
     /// When true, the next `\n` appended to the output stream is suppressed
     /// (consumed by the glue `<>` that set this flag). Reset after one newline
@@ -352,7 +381,7 @@ struct StoryState: Codable {
     var callFrameVariables: [[String: InkValue]]
 
     init() {
-        pointer = StoryPointer(containerPath: [], index: 0)
+        pointer = StoryPointer(containerPath: .root, index: 0)
         outputStream = []
         variablesState = [:]
         visitCounts = [:]
@@ -389,7 +418,8 @@ struct StoryState: Codable {
         pointer              = try container.decode(StoryPointer.self,         forKey: .pointer)
         outputStream         = try container.decode([String].self,             forKey: .outputStream)
         variablesState       = try container.decode([String: InkValue].self,   forKey: .variablesState)
-        visitCounts          = try container.decode([String: Int].self,        forKey: .visitCounts)
+        let savedVisitCounts = try container.decode([String: Int].self,        forKey: .visitCounts)
+        visitCounts          = savedVisitCounts.reduce(into: [:]) { $0[ContainerPath(savedKey: $1.key)] = $1.value }
         currentTags          = try container.decode([String].self,             forKey: .currentTags)
         isEnded              = try container.decode(Bool.self,                 forKey: .isEnded)
         currentChoices       = try container.decode([ChoiceData].self,         forKey: .currentChoices)
@@ -403,7 +433,7 @@ struct StoryState: Codable {
         stackFrames          = try container.decode([ContainerStackFrame].self, forKey: .stackFrames)
         returnStack          = try container.decodeIfPresent([String].self,    forKey: .returnStack) ?? []
         let chosenTargetsArray = try container.decodeIfPresent([String].self,  forKey: .chosenChoiceTargets) ?? []
-        chosenChoiceTargets  = Set(chosenTargetsArray)
+        chosenChoiceTargets  = Set(chosenTargetsArray.map(ContainerPath.init(savedKey:)))
         suppressNextNewline  = try container.decodeIfPresent(Bool.self,        forKey: .suppressNextNewline) ?? false
         callFrameVariables   = try container.decodeIfPresent([[String: InkValue]].self, forKey: .callFrameVariables) ?? []
     }
@@ -413,7 +443,8 @@ struct StoryState: Codable {
         try container.encode(pointer,           forKey: .pointer)
         try container.encode(outputStream,      forKey: .outputStream)
         try container.encode(variablesState,    forKey: .variablesState)
-        try container.encode(visitCounts,       forKey: .visitCounts)
+        let savedVisitCounts = visitCounts.reduce(into: [String: Int]()) { $0[$1.key.description] = $1.value }
+        try container.encode(savedVisitCounts,  forKey: .visitCounts)
         try container.encode(currentTags,       forKey: .currentTags)
         try container.encode(isEnded,           forKey: .isEnded)
         try container.encode(currentChoices,    forKey: .currentChoices)
@@ -426,8 +457,32 @@ struct StoryState: Codable {
         try container.encode(lastCompletedLine, forKey: .lastCompletedLine)
         try container.encode(stackFrames,       forKey: .stackFrames)
         try container.encode(returnStack,       forKey: .returnStack)
-        try container.encode(Array(chosenChoiceTargets).sorted(), forKey: .chosenChoiceTargets)
+        try container.encode(chosenChoiceTargets.map(\.description).sorted(), forKey: .chosenChoiceTargets)
         try container.encode(suppressNextNewline, forKey: .suppressNextNewline)
         try container.encode(callFrameVariables,  forKey: .callFrameVariables)
+    }
+}
+
+// MARK: - ContainerPath save wire (ADR-018)
+
+/// The legacy string forms a `ContainerPath` takes in a save, kept byte-identical
+/// so saves cross builds in both directions. Parsing never fails and never reads a
+/// path as relative: a state key is always absolute, and `PathComponent(parsing:)`
+/// round-trips every component through `description`.
+extension ContainerPath {
+    /// `["a", "0", "g-2"]`, the form of `pointer.containerPath` and `pathFromRoot`.
+    init(savedComponents: [String]) {
+        self.init(components: savedComponents.map(PathComponent.init(parsing:)))
+    }
+
+    var savedComponents: [String] {
+        components.map(\.description)
+    }
+
+    /// `"a.0.g-2"`, the form of a `visitCounts` key and a `chosenChoiceTargets`
+    /// entry. "" is the root, not one empty name.
+    init(savedKey: String) {
+        let saved = savedKey.isEmpty ? [] : savedKey.split(separator: ".", omittingEmptySubsequences: false)
+        self.init(savedComponents: saved.map(String.init))
     }
 }

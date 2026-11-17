@@ -32,7 +32,7 @@ struct InkEngineVisitCountTests {
     // B2: visitCount returns stored count for known key
     @Test func `visitCount returns stored count for known key`() {
         let engine = makeEmptyEngine()
-        engine.state.visitCounts["prologue"] = 3
+        engine.state.visitCounts[ContainerPath(components: [.name("prologue")])] = 3
         #expect(engine.visitCount(forKnot: "prologue") == 3)
     }
 
@@ -48,6 +48,6 @@ struct InkEngineVisitCountTests {
         let engine = makeEmptyEngine()
         engine.setVisitCount(forKnot: "nonexistent", to: 5)
         #expect(engine.visitCount(forKnot: "nonexistent") == 0)
-        #expect(engine.state.visitCounts["nonexistent"] == nil)
+        #expect(engine.state.visitCounts[ContainerPath(components: [.name("nonexistent")])] == nil)
     }
 }

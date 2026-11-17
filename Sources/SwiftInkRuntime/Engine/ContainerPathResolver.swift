@@ -46,11 +46,11 @@ struct ContainerPathResolver {
     func ancestors(along path: ContainerPath) -> [Ancestor] {
         var chain: [Ancestor] = []
         var current = root
-        var currentPath: [PathComponent] = []
+        var currentPath = ContainerPath.root
         for component in path.components {
             guard let (child, resumeIndex) = descend(from: current, through: component) else { break }
-            chain.append(Ancestor(container: current, path: ContainerPath(components: currentPath), resumeIndex: resumeIndex))
-            currentPath.append(component)
+            chain.append(Ancestor(container: current, path: currentPath, resumeIndex: resumeIndex))
+            currentPath = currentPath.appending(component)
             current = child
         }
         return chain
@@ -144,7 +144,7 @@ struct ContainerPathResolver {
     /// anchor component, and returns the parent with the index just past it.
     func anchorTarget(of path: ContainerPath) -> (container: ContainerNode, resumeIndex: Int)? {
         guard let anchorComponent = path.components.last, anchorComponent.isAnchor else { return nil }
-        let prefix = ContainerPath(components: Array(path.components.dropLast()))
+        let prefix = path.parent
         guard prefix.components.isEmpty == false,
               let parentContainer = node(at: prefix) else { return nil }
         for (i, child) in parentContainer.children.enumerated() {
@@ -175,5 +175,25 @@ extension PathComponent {
     var isAnchor: Bool {
         guard case .name(let name) = self else { return false }
         return name.hasPrefix("$")
+    }
+}
+
+extension ContainerPath {
+    /// The story root: no components.
+    static let root = ContainerPath(components: [])
+
+    /// This path one level deeper, through `component`.
+    func appending(_ component: PathComponent) -> ContainerPath {
+        ContainerPath(components: components + [component])
+    }
+
+    /// This path without its last component; the root stays the root.
+    var parent: ContainerPath {
+        ContainerPath(components: Array(components.dropLast()))
+    }
+
+    /// Whether this path is an ancestor of `other`: a prefix of it, but not `other` itself.
+    func isStrictPrefix(of other: ContainerPath) -> Bool {
+        components.count < other.components.count && other.components.starts(with: components)
     }
 }
