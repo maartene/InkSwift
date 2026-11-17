@@ -73,7 +73,7 @@ struct UpstreamConformance03Tests {
         c.equal("The value of a variable in test file 2 is 5.\nThis is the main file\nThe value when accessed from knot_in_2 is 5.\n", story.continueMaximally())
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: unsupported INCLUDE (printed as text)"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: unsupported INCLUDE"))
     func `TestNestedInclude — native compiler and runtime`() {
         Conformance.run("TestNestedInclude", .native, Self.testNestedInclude)
     }

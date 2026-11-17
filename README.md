@@ -19,8 +19,8 @@ See the [migration guide](docs/how-to/migrate-from-js-bridge.md) to move an exis
 
 The native runtime does not yet cover every JS-bridge capability, so this is not a claim
 of complete parity. Known gaps include `LIST`, `RANDOM` / `SEED_RANDOM`, threads,
-`EXTERNAL` functions, shuffle variable-text (`{~a|b}`), and Combine-based variable
-observation. If your story needs one of these, stay on the JS-bridge for now. The
+`EXTERNAL` functions, shuffle variable-text (`{~a|b}`), multi-line sequences and
+`INCLUDE` in the native compiler, and Combine-based variable observation. If your story needs one of these, stay on the JS-bridge for now. The
 complete, maintained list is the
 [supported-parity / known-gaps statement](docs/reference/js-bridge-vs-native-parity.md).
 

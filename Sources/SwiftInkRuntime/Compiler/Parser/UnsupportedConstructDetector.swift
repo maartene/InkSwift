@@ -21,8 +21,8 @@ import Foundation
 enum UnsupportedConstructDetector {
 
     /// Inspect a whole statement `line` for a statement-level unsupported
-    /// construct (matrix rows 36-39): thread `<- knot`, `LIST` declaration,
-    /// `RANDOM(`/`SEED_RANDOM(` calls, and `EXTERNAL` declaration. Throws a
+    /// construct (matrix rows 36-39, 41): thread `<- knot`, `LIST` declaration,
+    /// `RANDOM(`/`SEED_RANDOM(` calls, `EXTERNAL` declaration, and `INCLUDE`. Throws a
     /// located `.unsupportedConstruct` naming the construct so the statement scan
     /// short-circuits BEFORE any StoryBlueprint is built (fail-closed). The
     /// `line` is the whitespace-trimmed statement; `column` is its leading column.
@@ -38,7 +38,7 @@ enum UnsupportedConstructDetector {
     }
 
     /// Name the statement-level unsupported construct of a trimmed statement, or
-    /// `nil` when the statement uses no such construct. Threads/LIST/EXTERNAL are
+    /// `nil` when the statement uses no such construct. Threads/LIST/EXTERNAL/INCLUDE are
     /// recognised by their leading keyword; RANDOM by its call appearing anywhere
     /// in an expression (e.g. on a `~ temp x = RANDOM(...)` right-hand side).
     private static func statementConstruct(of trimmed: String) -> String? {
@@ -50,6 +50,9 @@ enum UnsupportedConstructDetector {
         }
         if keyword(trimmed, isLeading: "EXTERNAL") {
             return "external"
+        }
+        if keyword(trimmed, isLeading: "INCLUDE") {
+            return "include"
         }
         if containsRandomCall(trimmed) {
             return "random"

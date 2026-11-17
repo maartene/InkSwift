@@ -35,6 +35,8 @@ authoritative, always-current list. As of today they are:
 - **Threads (`<-`)** (MUST-REJECT row 36)
 - **`EXTERNAL` functions** (MUST-REJECT row 39)
 - **Shuffle variable-text (`{~a|b}`)** (MUST-REJECT row 28 — depends on `RANDOM`)
+- **Multi-line sequences (`{stopping:` … `}`)** (MUST-REJECT row 40 — the native compiler only; the inline forms are supported)
+- **`INCLUDE`** (MUST-REJECT row 41 — the native compiler only; load a multi-file story from its inklecate `.ink.json`)
 
 If your story uses any of these, stay on the JS-bridge for now.
 
@@ -45,8 +47,7 @@ ported as `Tests/SwiftInkRuntimeTests/Conformance/`) shows places where a story 
 runtime accepts plays differently from the reference. Each failing upstream test is
 recorded as a disabled backlog item naming the gap. Examples: `TURNS()` and `TURNS_SINCE`,
 some glue placements, default (fallback) choices, tunnel onwards with a divert
-(`->-> target`), `FLOOR` / `INT` / `CEILING`, multi-line sequences, `INCLUDE`, and some
-newline handling. For the current list, run:
+(`->-> target`), `FLOOR` / `INT` / `CEILING`, and some newline handling. For the current list, run:
 
 ```
 grep -rho 'conformance: [^"]*' Tests/SwiftInkRuntimeTests/Conformance | sort | uniq -c | sort -rn

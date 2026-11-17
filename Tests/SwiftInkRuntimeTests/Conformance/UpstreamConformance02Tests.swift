@@ -34,7 +34,7 @@ struct UpstreamConformance02Tests {
         c.equal("Wait for it....\nSurprise!\nDone.\n", story.continueMaximally())
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: native compiler rejects a valid story: expected content for the conditional branch following '-'"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: unsupported multi-line sequences"))
     func `TestEmptySequenceContent — native compiler and runtime`() {
         Conformance.run("TestEmptySequenceContent", .native, Self.testEmptySequenceContent)
     }
@@ -459,7 +459,7 @@ struct UpstreamConformance02Tests {
         c.equal("This is include 1.\nThis is include 2.\nThis is the main file.\n", story.continueMaximally())
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: unsupported INCLUDE (printed as text)"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: unsupported INCLUDE"))
     func `TestInclude — native compiler and runtime`() {
         Conformance.run("TestInclude", .native, Self.testInclude)
     }
@@ -592,7 +592,7 @@ struct UpstreamConformance02Tests {
         c.equal("a line after an empty line\n", story.continue())
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: native compiler rejects a valid story: Expected an '- else:' clause here rather than an extra condition. Use a `{` bloc"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: unsupported multi-line sequences"))
     func `TestLeadingNewlineMultilineSequence — native compiler and runtime`() {
         Conformance.run("TestLeadingNewlineMultilineSequence", .native, Self.testLeadingNewlineMultilineSequence)
     }

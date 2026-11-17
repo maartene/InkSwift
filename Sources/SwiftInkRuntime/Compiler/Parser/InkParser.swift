@@ -82,6 +82,18 @@ public enum InkParser {
         /// (`InnerLogic`: "Expected some kind of logic…"), so it is an error
         /// rather than a bare `{` (issue #24).
         case emptySubject
+        /// `{stopping:`, `{shuffle once:`, `{&` …: a multi-line sequence, which the
+        /// runtime does not support. The reference parses an explicit sequence
+        /// annotation before any conditional (`InkParser_Logic.cs`, `InnerLogic`), so
+        /// `{once:` is a sequence even when a variable is named `once`.
+        case sequence
+
+        var isSequence: Bool {
+            if case .sequence = self {
+                return true
+            }
+            return false
+        }
 
         /// The parsed subject, or `nil` for a bare `{`.
         func expression() throws -> InkExpression? {
@@ -181,9 +193,12 @@ public enum InkParser {
         }
         let afterBrace = String(afterMarkers.dropFirst())
         let colonIndex = topLevelColonIndex(in: afterBrace)
+        let (header, inline) = blockHeader(afterBrace, colonIndex: colonIndex)
         // A bare `{` opener must have nothing meaningful before the (absent) colon;
         // otherwise this is a single-line `{expr}` that merely lacks a close brace.
-        guard colonIndex != nil || afterBrace.trimmingCharacters(in: .whitespaces).isEmpty else {
+        // A symbol-annotated sequence opener (`{&`) also has no colon.
+        guard colonIndex != nil || afterBrace.trimmingCharacters(in: .whitespaces).isEmpty
+                || header.isSequence else {
             return nil
         }
         // Both opener guards passed — emit the gather header (if a gather marker
@@ -192,7 +207,6 @@ public enum InkParser {
             statements.append(pendingGather)
         }
         let position = SourcePosition(line: start + 1, column: leadingColumn(of: lines[start]))
-        let (header, inline) = blockHeader(afterBrace, colonIndex: colonIndex)
         let (body, next) = collectBlockBody(from: start + 1, count: lines.count) {
             BodyLine(text: lines[$0].trimmingCharacters(in: .whitespaces), number: $0 + 1)
         }
@@ -233,12 +247,32 @@ public enum InkParser {
         colonIndex: String.Index?
     ) -> (header: BlockHeader, inline: String) {
         guard let colonIndex else {
-            return (.none, "")
+            return (isSequenceSymbolAnnotation(afterBrace) ? .sequence : .none, "")
         }
         let subject = String(afterBrace[..<colonIndex]).trimmingCharacters(in: .whitespaces)
         let inline = String(afterBrace[afterBrace.index(after: colonIndex)...])
             .trimmingCharacters(in: .whitespaces)
-        return (subject.isEmpty ? .emptySubject : .subject(subject), inline)
+        if subject.isEmpty {
+            return (.emptySubject, inline)
+        }
+        return (isSequenceWordAnnotation(subject) ? .sequence : .subject(subject), inline)
+    }
+
+    /// The words of a multi-line sequence annotation (`InkParser_Sequences.cs`,
+    /// `SequenceTypeSingleWord`), written before the colon: `{stopping:`,
+    /// `{shuffle once:`.
+    private static let sequenceAnnotationWords: Set<Substring> = ["stopping", "cycle", "shuffle", "once"]
+
+    private static func isSequenceWordAnnotation(_ subject: String) -> Bool {
+        let words = subject.split(whereSeparator: { $0 == " " || $0 == "\t" })
+        return words.isEmpty == false && words.allSatisfy(sequenceAnnotationWords.contains)
+    }
+
+    /// A symbol annotation (`SequenceTypeSymbolAnnotation`: `&` cycle, `!` once,
+    /// `~` shuffle, `$` stopping) alone on the opener line, which takes no colon.
+    private static func isSequenceSymbolAnnotation(_ afterBrace: String) -> Bool {
+        let symbols = afterBrace.filter { $0 != " " && $0 != "\t" }
+        return symbols.isEmpty == false && symbols.allSatisfy { "&!~$".contains($0) }
     }
 
     /// The guard and inline content of a branch line, or `nil` when the line
@@ -342,6 +376,15 @@ public enum InkParser {
             throw syntaxError(
                 "Expected some kind of logic, conditional or sequence within braces: { ... } but saw ':'",
                 line: position.line
+            )
+        }
+        if header.isSequence {
+            throw CompileError(
+                kind: .unsupportedConstruct,
+                construct: "multi-line sequence",
+                message: "Ink multi-line sequence is not supported by the runtime.",
+                line: position.line,
+                column: position.column
             )
         }
         if hasArmOpenerAtDepth0(bodyLines) {

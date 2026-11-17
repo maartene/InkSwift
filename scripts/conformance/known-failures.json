@@ -10,6 +10,9 @@
   "native": "native compiler rejects a valid story: unexpectedToken('mod')",
   "runtime": "float division result truncated"
  },
+ "TestAuthorWarningsInsideContentListBug": {
+  "native": "unsupported multi-line sequences"
+ },
  "TestBasicTunnel": {
   "native": "glue across a tunnel call",
   "runtime": "glue across a tunnel call"
@@ -99,7 +102,7 @@
   "native": "native compiler rejects a valid story: unexpectedToken('>')"
  },
  "TestDivertToWeavePoints": {
-  "native": "diverts to labelled weave points"
+  "native": "unsupported multi-line sequences; also diverts to labelled weave points"
  },
  "TestDoneStopsThread": {
   "native": "DONE stops the flow"
@@ -123,7 +126,7 @@
   "runtime": "runtime newline de-duplication (#26)"
  },
  "TestEmptySequenceContent": {
-  "native": "native compiler rejects a valid story: expected content for the conditional branch following '-'",
+  "native": "unsupported multi-line sequences",
   "runtime": "runtime newline de-duplication (#26)"
  },
  "TestEmptyThreadError": {
@@ -148,7 +151,7 @@
   "runtime": "not ported \u2014 needs an EvaluateFunction API"
  },
  "TestEvaluationStackLeaks": {
-  "native": "once-only sequence inside a tunnel",
+  "native": "unsupported multi-line sequences",
   "runtime": "runtime newline de-duplication (#26)"
  },
  "TestExternalBinding": {
@@ -199,7 +202,7 @@
   "runtime": "runtime newline de-duplication (#26)"
  },
  "TestInclude": {
-  "native": "unsupported INCLUDE (printed as text)",
+  "native": "unsupported INCLUDE",
   "runtime": "runtime newline de-duplication (#26)"
  },
  "TestIncrement": {
@@ -218,7 +221,7 @@
   "runtime": "unsupported threads"
  },
  "TestLeadingNewlineMultilineSequence": {
-  "native": "native compiler rejects a valid story: Expected an '- else:' clause here rather than an extra condition. Use a `{` bloc"
+  "native": "unsupported multi-line sequences"
  },
  "TestLeftRightGlueMatching": {
   "native": "glue at both ends of a line",
@@ -282,7 +285,7 @@
   "native": "native accepts a story inklecate rejects ('need to explicitly divert')"
  },
  "TestNestedInclude": {
-  "native": "unsupported INCLUDE (printed as text)"
+  "native": "unsupported INCLUDE"
  },
  "TestNestedPassByReference": {
   "native": "pass-by-reference (ref) parameters",

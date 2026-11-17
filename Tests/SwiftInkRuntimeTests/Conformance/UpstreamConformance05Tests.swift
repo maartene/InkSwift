@@ -239,7 +239,7 @@ struct UpstreamConformance05Tests {
         c.isFalse(c.hadError())
     }
 
-    @Test
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: unsupported multi-line sequences"))
     func `TestAuthorWarningsInsideContentListBug — native compiler and runtime`() {
         Conformance.run("TestAuthorWarningsInsideContentListBug", .native, Self.testAuthorWarningsInsideContentListBug)
     }
@@ -535,7 +535,7 @@ struct UpstreamConformance05Tests {
         c.equal(0, story.engine.state.evalStack.count)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: once-only sequence inside a tunnel"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: unsupported multi-line sequences"))
     func `TestEvaluationStackLeaks — native compiler and runtime`() {
         Conformance.run("TestEvaluationStackLeaks", .native, Self.testEvaluationStackLeaks)
     }

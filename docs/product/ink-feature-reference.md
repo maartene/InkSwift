@@ -4,7 +4,7 @@
 
 This document is the human-readable face of the native InkSwift compiler's accepted
 feature set. It classifies every Ink construct from the [Feature Coverage Matrix](architecture/brief.md#feature-coverage-matrix)
-(rows 1–39) as **MUST-COMPILE** or **MUST-REJECT**, with a one-line example and a
+(rows 1–41) as **MUST-COMPILE** or **MUST-REJECT**, with a one-line example and a
 one-line reason for each.
 
 ## The supported set == the runtime-playable set
@@ -72,7 +72,7 @@ These constructs compile to a playable blueprint. (Matrix rows 1–27, 29–35.)
 ## MUST-REJECT
 
 These constructs are rejected by the compiler with a located
-`.unsupportedConstruct` error. (Matrix rows 28, 36–39.)
+`.unsupportedConstruct` error. (Matrix rows 28, 36–41.)
 
 | # | Construct | Example | Reason |
 |---|-----------|---------|--------|
@@ -81,6 +81,8 @@ These constructs are rejected by the compiler with a located
 | 37 | LIST declarations | `LIST colors = red, green` | List value type and operators are unimplemented. |
 | 38 | RANDOM / SEED_RANDOM | `~ r = RANDOM(1, 6)` | No deterministic RNG support in the runtime. |
 | 39 | External functions | `EXTERNAL beep()` | No host-binding mechanism for external calls. |
+| 40 | Multi-line sequences | `{stopping:` / `- Halt!` / `- I said halt!` / `}` (also `{cycle:`, `{once:`, `{shuffle:`, `{&`) | The compiler has no lowering for the block form; only the inline `{a\|b}` forms (rows 25–27) are supported. |
+| 41 | `INCLUDE` | `INCLUDE chapter_two.ink` | The compiler reads a single source string and has no file resolution. |
 
 ## Known gaps / future work
 
@@ -111,6 +113,14 @@ the reasons are not uniform:
 - **Threads, LIST, RANDOM/SEED_RANDOM, EXTERNAL (rows 36–39)** are
   **runtime-unsupported**: the engine has no execution model for them today. These
   are lower priority (the BEYOND tier) and out of scope for the current ceiling.
+
+- **Multi-line sequences and `INCLUDE` (rows 40–41)** are **compiler-unsupported**:
+  stories compiled by inklecate/Inky that use them may still play from their
+  `.ink.json`, but the native compiler cannot build them. Both used to compile
+  silently into the wrong story (a multi-line sequence became a conditional on a
+  variable named `stopping`, `once` and so on; an `INCLUDE` line played as text), until
+  the upstream conformance suite exposed it. They are rejected with a located error
+  since 2026-11-17.
 
 ### Variable-text lowering, by example
 

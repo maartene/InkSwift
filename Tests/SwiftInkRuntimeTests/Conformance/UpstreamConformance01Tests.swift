@@ -433,7 +433,7 @@ struct UpstreamConformance01Tests {
         c.equal("gather\ntest\nchoice content\ngather\nsecond time round\n", story.continueMaximally())
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: diverts to labelled weave points"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: unsupported multi-line sequences; also diverts to labelled weave points"))
     func `TestDivertToWeavePoints — native compiler and runtime`() {
         Conformance.run("TestDivertToWeavePoints", .native, Self.testDivertToWeavePoints)
     }
