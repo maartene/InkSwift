@@ -77,9 +77,16 @@ Unlike `Acceptance/`, a `.disabled` test here is a **backlog item, not unfinishe
 
 ## Mutation Testing Strategy
 
-Mutation testing is **disabled** for this project. This is a durable constraint, not a deferral: no reliable, proven Swift mutation-testing solution exists, and Muter was flaky at best after significant effort.
+**Automated** mutation testing is **disabled** for this project. This is a durable constraint, not a deferral: no reliable, proven Swift mutation-testing solution exists, and Muter was flaky at best after significant effort. The nWave Phase 5 (automated mutation) gate is skipped.
 
-Test quality is instead validated by the **execution-equivalence oracle suite** (supported stories are checked line-for-line and choice-for-choice against the inklecate oracle via the InkSwift JS-bridge), **code review**, and the **CI boundary gates** (the R1/R3/R5 SwiftLint `custom_rules` in `.swiftlint.yml`).
+**Manual mutation testing replaces it, per DELIVER step.** Before committing, the software crafter picks **3–5 interesting mutations** in the production code the step changed and checks that the suite catches each one:
+
+1. **Choose mutations that would be plausible bugs**, not random edits: flip a condition or a comparison (`<` → `<=`), drop a branch or an early return, swap two cases, return a default instead of the computed value, delete a statement that updates state, or off-by-one an index or caret count.
+2. **Apply one at a time**, run the relevant tests (the step's own tests plus the suites that guard that code), record whether a test failed, and **revert** before the next one.
+3. **A surviving mutant is a finding.** Either add a test that kills it, or record why it is equivalent (no observable behaviour can tell it apart). Never leave a survivor unexplained.
+4. **Report the result** in the commit message: each mutation, where it was applied, and caught or survived-and-why. The mutations are never committed.
+
+Test quality is further validated by the **execution-equivalence oracle suite** (supported stories are checked line-for-line and choice-for-choice against the inklecate oracle via the InkSwift JS-bridge), the **upstream conformance suite**, **code review**, and the **CI boundary gates** (the R1/R3/R5 SwiftLint `custom_rules` in `.swiftlint.yml`).
 
 ## The oracle is necessary, not sufficient — read the C# source too
 

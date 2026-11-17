@@ -282,8 +282,9 @@ Swift 5.6 tools, Foundation `Codable` (`JSONEncoder`/`JSONDecoder`, already used
 - Paths parsed once, in `InkDecoder`; the `.ink.json` boundary stays string-based.
 - Save wire format byte-identical; existing saves restore; no version field.
 - No `CodingKeyRepresentable` dictionary encoding (deployment targets macOS 10.15 / iOS 13).
-- Every slice behaviour-preserving except S7; S7's ATs authored `.disabled` in DISTILL and
-  re-enabled on green; zero `.disabled` at finalize.
+- Every slice behaviour-preserving except S7. Per D8 there is no DISTILL wave: S7's ATs are
+  written inside the S7 step (red → green → commit), so no AT is ever `.disabled`; zero
+  `.disabled` ATs at finalize.
 - Runtime error text = the exact C# message.
 
 ### Upstream Changes
