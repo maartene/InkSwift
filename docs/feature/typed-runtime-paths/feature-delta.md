@@ -102,12 +102,14 @@ Trunk-based; every slice commits to `main` with SwiftLint + full `swift test` gr
 | S1 | `ContainerPath`/`PathReference`/`PathComponent` in `Decoder/` + unit tests (round-trip `parse(description) == self`, int-first, relative/absolute inequality). Hand-port `TestPaths` (`scripts/conformance/overrides/TestPaths.swift`) and re-enable it. | Additive, no callers. |
 | S2 | Extract `ContainerPathResolver` from `InkEngine` (typed API, engine converts at its edges). Check the TreeWalker dead-code candidates (see Follow-ups). | Preserving. |
 | S3 | `InkEngine` internals typed: `ContainerFrame.pathFromRoot`, `StoryPointer`, `ContainerStackFrame`, `visitCounts`, `chosenChoiceTargets` → `ContainerPath`, with legacy-string `Codable`. | Preserving; S0 fixtures + round-trip guard the wire. |
-| S4 | `NodeKind` payloads typed (`readCount`, `choicePoint`, `tunnelDivert`, `pushDivertTarget`, `.divert` with `DivertTarget`); decoder parses once; compiler emitters + `RuntimePathReconciler` produce typed values. May split per case. | Preserving. |
+| S4 | `NodeKind` payloads typed; decoder parses once; compiler emitters + `RuntimePathReconciler` produce typed values. Delivered as two steps (roadmap 02-03 / 02-04), each changing every construct/match site of its cases in the same commit: **S4a** `readCount`, `choicePoint`, `tunnelDivert`, `pushDivertTarget` → `PathReference`; **S4b** `.divert` `isVariable` → `DivertTarget`. | Preserving. |
 | S5 | `NodeKind.functionCall` — decoder `{"f()":…}`, `ExpressionLowering`, engine; delete `functionCallTargetPrefix` and every `"f():"` literal. | Preserving. |
 | S6 | `CallStackElement` on `returnStack` with legacy-string `Codable`; `buildTunnelReturnAddress`/`buildFunctionReturnAddress`/`hasPrefix("fnret:")` removed. Mismatched pop still a no-op here. | Preserving. |
 | **S7** | **Type-checked pops** per D2 (incl. empty stack): refusal → `currentErrors` (exact C# message) + end. ATs for `->->` over a function frame, `~ret` over a tunnel frame, and each on an empty stack — each fixture continues past the construct per CLAUDE.md. | **The one behaviour change.** |
 
-S2/S3 order may swap; S4–S6 are independent of each other after S3.
+S2/S3 order may swap; S4–S6 are independent of each other after S3. The DELIVER roadmap
+(`deliver/roadmap.json`, approved 2026-11-17) runs them as nine linear steps: 01-01 S0,
+01-02 S1, 02-01 S2, 02-02 S3, 02-03 S4a, 02-04 S4b, 02-05 S5, 02-06 S6, 03-01 S7.
 
 ---
 

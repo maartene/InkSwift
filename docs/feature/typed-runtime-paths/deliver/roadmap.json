@@ -1,0 +1,408 @@
+{
+  "roadmap": {
+    "project_id": "typed-runtime-paths",
+    "created_at": "2026-11-17T12:36:12Z",
+    "total_steps": 9
+  },
+  "phases": [
+    {
+      "id": "01",
+      "name": "Safety net",
+      "description": "Pin today's save wire format with golden legacy saves captured from current main, then add the additive ContainerPath value types with unit tests and the hand-ported upstream TestPaths. No production caller changes.",
+      "steps": [
+        {
+          "id": "01-01",
+          "name": "Capture golden legacy saves and restore characterization tests",
+          "description": "S0. Before any type change, capture saves from current main (mid-tunnel, after a once-only choice, with visit counts, at a choice point) as committed fixtures, plus restore-and-continue characterization tests. Test-only, green from the start.",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "Mid-tunnel, once-only-chosen, visit-count and choice-point goldens are captured by unmodified Story.saveState() at commit 54481ef (current main), recorded in the test file header",
+            "Each golden save restored into a fresh story yields the same continue output and choices as the uninterrupted playthrough from that point",
+            "Saving immediately after restoring each golden yields canonical (sorted-key) JSON bytes identical to the golden's canonical form",
+            "All new characterization tests pass on current main with no production code changed",
+            "Manual mutation check done: mutating the restore path makes a golden test fail; each mutation and outcome reported in the commit message"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/TypedPaths_LegacySaveCompatibilityTests.swift",
+          "scenario_name": "S0 golden legacy saves restore and continue",
+          "files_to_modify": [
+            "Tests/SwiftInkRuntimeTests/Acceptance/TypedPaths_LegacySaveCompatibilityTests.swift",
+            "Tests/SwiftInkRuntimeTests/Fixtures/legacy-save-mid-tunnel.json",
+            "Tests/SwiftInkRuntimeTests/Fixtures/legacy-save-once-only-chosen.json",
+            "Tests/SwiftInkRuntimeTests/Fixtures/legacy-save-visit-counts.json",
+            "Tests/SwiftInkRuntimeTests/Fixtures/legacy-save-choice-point.json"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express round-trip/invariant checks as parametrized tests over representative inputs.",
+            "This is the D4/ADR-018 safety net. Provenance: the golden files are produced by the unmodified Story.saveState() at commit 54481ef (main HEAD when this roadmap was written; if main has moved, use the then-current HEAD and record that SHA instead) before 01-02 lands, and are never regenerated afterwards. Record the commit SHA, the source fixture and the play route of each golden in the test file header.",
+            "Drive the saves from existing inklecate-produced fixtures (e.g. slice-t1-tunnels / slice-t2-nested-tunnels for a non-empty return stack, slice01-once-only for chosen choice targets, slice03-read-counts for visit counts). Hand-crafted story JSON is not allowed (project memory: real compiler JSON only).",
+            "Re-save check: compare canonical JSON (decode to Foundation objects, re-serialize with sorted keys) byte-for-byte. This gives both structural and byte identity independent of dictionary ordering.",
+            "Each source fixture must have content and a choice after the saved position, so restore-and-continue proves the flow resumes and reaches a later choice point (CLAUDE.md 'A fixture must continue past the construct it pins').",
+            "A function-return frame cannot be saved mid-function (no choices inside functions); the 'fnret:path|N' wire form is covered by the 02-06 codec round-trip tests instead. Record this in a comment in the test file.",
+            "Fixtures go flat in Tests/SwiftInkRuntimeTests/Fixtures/ (bundled via .process(\"Fixtures\")); prefer one parametrized test over the four golden files.",
+            "Green from the start, test-only: no .disabled trait is needed (D8). No production code is committed, so no CodeScene check applies.",
+            "MANUAL MUTATION CHECK (test-only variant): to prove the goldens have teeth, temporarily mutate the restore path in production code (e.g. skip decoding one StoryState field such as visitCounts or chosenChoiceTargets, or mis-parse a return-stack entry), run the new tests, confirm a golden test fails, and revert. Report each mutation and its outcome in the commit message; never commit a mutation.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
+          ],
+          "deps": []
+        },
+        {
+          "id": "01-02",
+          "name": "Add ContainerPath, PathReference and PathComponent value types",
+          "description": "S1. Create the typed path values in Decoder/ (ADR-016) with a never-failing parse using C# Path.componentsString semantics and a description reproducing today's dotted strings. Hand-port upstream TestPaths, remove its known-failures entry and regenerate. Additive: no production callers yet.",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "PathReference(parsing: s).description == s, never failing, for every path string in the committed .ink.json fixtures (incl. Fixtures/Conformance/) plus the listed edge cases",
+            "Integer-looking components parse as indices and others as names; a relative and an absolute reference with equal components compare unequal",
+            "Upstream TestPaths passes through the conformance harness after removing its known-failures.json entry and regenerating",
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained",
+            "Changed production files' Code Health not below their main baseline"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Unit/ContainerPathTests.swift",
+          "scenario_name": "S1 typed paths round-trip and TestPaths port",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Decoder/ContainerPath.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/ContainerPathTests.swift",
+            "scripts/conformance/overrides/TestPaths.swift",
+            "scripts/conformance/known-failures.json",
+            "Tests/SwiftInkRuntimeTests/Conformance/UpstreamConformance03Tests.swift"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express round-trip/invariant checks as parametrized tests over representative inputs.",
+            "GUARD: full `swift test` green, and the failure messages of `INKSWIFT_CONFORMANCE_BACKLOG=1 swift test --skip-build --filter UpstreamConformance` must be identical before and after the step (capture before, diff after), except that TestPaths leaves the backlog; record the diff in the commit message.",
+            "Shape per D1/ADR-016: ContainerPath (absolute, [PathComponent]); PathReference = absolute(ContainerPath) | relative(parentSteps, tail); PathComponent = index(Int) | name(String); synthesised Hashable; equality is structural, not container identity (knot.0 and knot.c-0 stay distinct).",
+            "Parse never fails: '' = root, leading '.' = relative, leading carets counted into parentSteps (raw count; caret semantics stay in the resolver, 02-01). inklecate emits carets only leading; a mid-path '^' must still parse without failing and round-trip.",
+            "Parse corpus (round-trip `PathReference(parsing: s).description == s` must hold for all): every path string occurring in the committed .ink.json fixtures under Tests/SwiftInkRuntimeTests/Fixtures, including Fixtures/Conformance/ (divert targets, read-count paths, choice targets, tunnel and f() targets, pushed divert targets), plus edge cases \"\", \".^\", \".^.^.x\", \"a.0.g-2\", \"0\", a digits-only name, and a mid-path \"^\". Collect the fixture strings in the test by walking the JSON, not by hand-copying.",
+            "Hand-port TestPaths (upstream Tests.cs:1526) into scripts/conformance/overrides/TestPaths.swift, adapting C# Path calls to the new types. Remove TestPaths' entry from scripts/conformance/known-failures.json and regenerate with `scripts/conformance/import_upstream_tests.py /Users/maartene/Downloads/ink /Users/maartene/Downloads/inklecate_mac/inklecate`; commit the regenerated UpstreamConformance03Tests.swift, never hand-edit generated files.",
+            "Placement Decoder/ is the lowest layer, so Decoder, Compiler and Engine may depend on it under the existing R1/R5 SwiftLint rules.",
+            "MANUAL MUTATION CHECK (CLAUDE.md 'Mutation Testing Strategy'): before COMMIT, pick 3-5 plausible-bug mutations in the production code this step changed (flip a condition/comparison, drop a branch or early return, swap cases, return a default instead of the computed value, delete a state update, off-by-one an index/caret count). Apply one at a time, run the step's tests plus the suites guarding that code, record caught/survived, revert. A survivor needs a killing test or a recorded equivalence argument. Report each mutation and its outcome in the commit message; never commit a mutation.",
+            "CODE HEALTH: self-check every changed production file with the bundled CodeScene CLI (`$(ls -d ~/Library/Caches/codehealth-mcp/MCP-*/cs | tail -1) review --output-format json <file>`, run from the repo root, needs network) against the main baseline before COMMIT; gate >=9.5 approve, 9–9.5 report what remains, <9 rework. The orchestrator also reviews the step with the CodeScene MCP afterwards.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
+          ],
+          "deps": [
+            "01-01"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "02",
+      "name": "Typed internals (behaviour-preserving)",
+      "description": "Move path navigation into a stateless resolver, then replace string paths in engine state, NodeKind payloads, divert targets, function-call diverts and the return stack with typed values. Every step preserves behaviour and the legacy save wire format.",
+      "steps": [
+        {
+          "id": "02-01",
+          "name": "Extract stateless ContainerPathResolver from InkEngine",
+          "description": "S2. Move InkEngine's path navigation helpers into a stateless ContainerPathResolver over the immutable root with a typed API; the engine converts at its edges. Also run the TreeWalker dead-code check (accepted mix: a small, suite-checked removal).",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "Every inklecate oracle fixture and upstream conformance result is unchanged after the extraction",
+            "The resolver resolves absolute, caret-relative, knot-namespace and $-anchor paths against a given tree and current path, verified without constructing an engine",
+            "TreeWalker's suspected dead read-count resolution and pointer write are deleted if the suite stays green, otherwise kept with the reason recorded in code",
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained",
+            "Changed production files' Code Health not below their main baseline"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Unit/ContainerPathResolverTests.swift",
+          "scenario_name": "S2 resolver extraction preserves navigation",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Engine/ContainerPathResolver.swift",
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift",
+            "Sources/SwiftInkRuntime/Engine/TreeWalker.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/ContainerPathResolverTests.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/TreeWalkerTests.swift"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express round-trip/invariant checks as parametrized tests over representative inputs.",
+            "GUARD: full `swift test` green, and the failure messages of `INKSWIFT_CONFORMANCE_BACKLOG=1 swift test --skip-build --filter UpstreamConformance` must be identical before and after the step (capture before, diff after).",
+            "Accepted mix: this step keeps the resolver extraction and the TreeWalker dead-code check together on purpose. The deletion is a small removal checked by the full suite, and both touch the same path-resolution code.",
+            "Scope per D5 and the reuse analysis: move (do not rewrite) the navigation helpers around InkEngine.swift:690-914 (component splitting, relative parsing, descend, knot-namespace '0' flattening, absolute navigation, anchor and read-count key resolution, ancestor-chain description for stack rebuilding). Contract shape: pure-function, reads root plus a passed-in current path. All containerStack mutation (installDestinationFrame, applyDivert family, stack rebuilders) stays in InkEngine.",
+            "Caret rule lives in the resolver: first caret = object to container, no drop. Engine state is still string-typed here; convert at the engine/resolver edge until 02-02 (S2/S3 order may swap per D6).",
+            "Resolver tests use real inklecate-produced fixtures (e.g. slice-t2-nested-tunnels, slice03-read-counts, TheIntercept) for the tree, never hand-crafted JSON.",
+            "TreeWalker dead-code check (CLAUDE.md 'oracle is necessary, not sufficient'): TreeWalker.resolveReadCountPath looks unreachable (InkEngine intercepts .readCount first) and uses a different named-only caret rule; TreeWalker.handleDivert's pointer.containerPath write is overwritten before any reader. Try deleting both; if the only failures are our own tests asserting the divergence, delete those tests too. If an oracle/conformance comparison fails, keep them, type them in 02-03 (read count) and 02-04 (divert), and record why in code.",
+            "MANUAL MUTATION CHECK (CLAUDE.md 'Mutation Testing Strategy'): before COMMIT, pick 3-5 plausible-bug mutations in the production code this step changed (flip a condition/comparison, drop a branch or early return, swap cases, return a default instead of the computed value, delete a state update, off-by-one an index/caret count). Apply one at a time, run the step's tests plus the suites guarding that code, record caught/survived, revert. A survivor needs a killing test or a recorded equivalence argument. Report each mutation and its outcome in the commit message; never commit a mutation.",
+            "CODE HEALTH: self-check every changed production file with the bundled CodeScene CLI (`$(ls -d ~/Library/Caches/codehealth-mcp/MCP-*/cs | tail -1) review --output-format json <file>`, run from the repo root, needs network) against the main baseline before COMMIT; gate >=9.5 approve, 9–9.5 report what remains, <9 rework. The orchestrator also reviews the step with the CodeScene MCP afterwards. InkEngine.swift is expected to improve as it shrinks.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
+          ],
+          "deps": [
+            "01-02"
+          ]
+        },
+        {
+          "id": "02-02",
+          "name": "Type engine and StoryState paths with legacy-string Codable",
+          "description": "S3. Replace string paths in ContainerFrame.pathFromRoot, StoryPointer, ContainerStackFrame, visitCounts and chosenChoiceTargets with ContainerPath, keeping the persisted form byte-identical via hand-written Codable (ADR-018). The return stack stays string-typed until 02-06.",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "All four golden legacy saves restore and continue exactly as before the step",
+            "Saving a typed state produces canonical JSON bytes identical to the golden files, so new saves still restore on the previous build",
+            "Visit counts, chosen choice targets, pointer and container stack frames persist under the same string keys and values as on main",
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained",
+            "Changed production files' Code Health not below their main baseline"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Unit/StoryStateTests.swift",
+          "scenario_name": "S3 typed state keeps the legacy save wire",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Engine/StoryState.swift",
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift",
+            "Sources/SwiftInkRuntime/Engine/ContainerPathResolver.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/StoryStateTests.swift"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express round-trip/invariant checks as parametrized tests over representative inputs.",
+            "GUARD: full `swift test` green, and the failure messages of `INKSWIFT_CONFORMANCE_BACKLOG=1 swift test --skip-build --filter UpstreamConformance` must be identical before and after the step (capture before, diff after).",
+            "Wire per D4/ADR-018: typed in memory, byte-identical legacy strings on disk ('a.b.4', [\"a\",\"0\"], {\"a.b\": 1}); no version field. The 01-01 golden saves and TypedPaths_LegacySaveCompatibilityTests are the primary guard and must not be edited.",
+            "Path-keyed dictionaries (visitCounts, chosenChoiceTargets) map to string keys explicitly in StoryState's hand-written Codable: CodingKeyRepresentable dictionary encoding needs macOS 12.3 / iOS 15.4 and the package targets macOS 10.15 / iOS 13.",
+            "Only absolute ContainerPath may be a state key (relative-as-key is non-representable by design). Decoding a saved path string uses the never-failing parse from 01-02.",
+            "Resolver API becomes fully typed; remove the string conversions added at the engine edge in 02-01 where they are no longer needed. returnStack stays [String] until 02-06.",
+            "MANUAL MUTATION CHECK (CLAUDE.md 'Mutation Testing Strategy'): before COMMIT, pick 3-5 plausible-bug mutations in the production code this step changed (flip a condition/comparison, drop a branch or early return, swap cases, return a default instead of the computed value, delete a state update, off-by-one an index/caret count). Apply one at a time, run the step's tests plus the suites guarding that code, record caught/survived, revert. A survivor needs a killing test or a recorded equivalence argument. Report each mutation and its outcome in the commit message; never commit a mutation.",
+            "CODE HEALTH: self-check every changed production file with the bundled CodeScene CLI (`$(ls -d ~/Library/Caches/codehealth-mcp/MCP-*/cs | tail -1) review --output-format json <file>`, run from the repo root, needs network) against the main baseline before COMMIT; gate >=9.5 approve, 9–9.5 report what remains, <9 rework. The orchestrator also reviews the step with the CodeScene MCP afterwards.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
+          ],
+          "deps": [
+            "02-01"
+          ]
+        },
+        {
+          "id": "02-03",
+          "name": "Type readCount, choicePoint, tunnelDivert and pushDivertTarget payloads",
+          "description": "S4a. Change the path payloads of readCount, choicePoint, tunnelDivert and pushDivertTarget to PathReference. InkDecoder parses each once; every emitter, the reconciler and engine code that constructs or matches these cases changes in this same step.",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "Decoding inklecate JSON yields typed path references for read counts, choice points, tunnel diverts and pushed divert targets, parsed once during decoding",
+            "Natively compiled stories carry the same typed paths the decoder produces for the equivalent inklecate JSON",
+            "Every oracle fixture and upstream conformance result is unchanged",
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained",
+            "Changed production files' Code Health not below their main baseline"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Unit/NodeKindTests.swift",
+          "scenario_name": "S4a typed NodeKind path payloads",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Decoder/NodeKind.swift",
+            "Sources/SwiftInkRuntime/Decoder/InkDecoder.swift",
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift",
+            "Sources/SwiftInkRuntime/Engine/TreeWalker.swift",
+            "Sources/SwiftInkRuntime/Engine/ContainerPathResolver.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/ExpressionLowering.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/WeaveEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/RuntimeObjectEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/RuntimePathReconciler.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/NodeKindTests.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/InkDecoderTests.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/WeaveEmitterChoiceKeyingTests.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_S4_CeilingTests.swift"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express round-trip/invariant checks as parametrized tests over representative inputs.",
+            "GUARD: full `swift test` green, and the failure messages of `INKSWIFT_CONFORMANCE_BACKLOG=1 swift test --skip-build --filter UpstreamConformance` must be identical before and after the step (capture before, diff after).",
+            "Same-step rule: a payload type change breaks compilation of every site that constructs or matches the case, so all of them change in this step, never in a later commit. Current sites (grep `\\.(readCount|choicePoint|tunnelDivert|pushDivertTarget)\\(` under Sources/SwiftInkRuntime): InkDecoder (classifyDict), InkEngine (readCount, choicePoint, tunnelDivert dispatch), TreeWalker (pushDivertTarget, readCount), ExpressionLowering and RuntimePathReconciler (readCount), WeaveEmitter (choicePoint), RuntimeObjectEmitter (tunnelDivert). Test sites that match these cases (NodeKindTests, InkDecoderTests, WeaveEmitterChoiceKeyingTests, Compiler_S4_CeilingTests) update in the same commit. InkParser's .tunnelDivert/.divert are AST cases (InkStatementKind), not NodeKind: out of scope.",
+            "InkDecoder.classifyDict is the single parse site for paths; the .ink.json boundary stays string-based. Earned Trust (driven port): extend the InkDecoder.probe() fixture with a relative '.^' path and a '->t->' and assert they decode to the typed cases.",
+            "Switch over NodeKind exhaustively (no default: clause) so any future case is a compile error. R2 access control on NodeKind is unchanged; ChoiceFlags placement is a follow-up, not in scope.",
+            "The value pushed by .pushDivertTarget onto evalStack stays a string InkValue: typing divert-target values would change the variablesState wire (follow-up). The variable-divert site stays the one runtime parse of a path string.",
+            "RuntimePathReconciler compares ContainerPath components instead of dotted-suffix strings for the read-count keys it rewrites. JSONEmitter is NO CHANGE.",
+            "If 02-01 kept TreeWalker's read-count resolution, type it here and keep the recorded reason.",
+            "MANUAL MUTATION CHECK (CLAUDE.md 'Mutation Testing Strategy'): before COMMIT, pick 3-5 plausible-bug mutations in the production code this step changed (flip a condition/comparison, drop a branch or early return, swap cases, return a default instead of the computed value, delete a state update, off-by-one an index/caret count). Apply one at a time, run the step's tests plus the suites guarding that code, record caught/survived, revert. A survivor needs a killing test or a recorded equivalence argument. Report each mutation and its outcome in the commit message; never commit a mutation.",
+            "CODE HEALTH: self-check every changed production file with the bundled CodeScene CLI (`$(ls -d ~/Library/Caches/codehealth-mcp/MCP-*/cs | tail -1) review --output-format json <file>`, run from the repo root, needs network) against the main baseline before COMMIT; gate >=9.5 approve, 9–9.5 report what remains, <9 rework. The orchestrator also reviews the step with the CodeScene MCP afterwards.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
+          ],
+          "deps": [
+            "02-02"
+          ]
+        },
+        {
+          "id": "02-04",
+          "name": "Replace divert isVariable flag with typed DivertTarget",
+          "description": "S4b. Change .divert to carry DivertTarget = path(PathReference) | variable(name:) in place of the target string plus isVariable flag. The decoder, every emitter, the reconciler, the engine and TreeWalker sites that construct or match .divert change in this same step.",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "A variable divert decodes as a variable target and a path divert as a path target, with no boolean variable flag remaining",
+            "Natively compiled diverts, including conditional ones, carry the same typed targets the decoder produces for the equivalent inklecate JSON",
+            "Every oracle fixture and upstream conformance result is unchanged",
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained",
+            "Changed production files' Code Health not below their main baseline"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Unit/NodeKindTests.swift",
+          "scenario_name": "S4b typed divert targets",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Decoder/NodeKind.swift",
+            "Sources/SwiftInkRuntime/Decoder/InkDecoder.swift",
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift",
+            "Sources/SwiftInkRuntime/Engine/TreeWalker.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/ExpressionLowering.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/WeaveEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/ConditionalEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/VariableTextEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/RuntimeObjectEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/RuntimePathReconciler.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/NodeKindTests.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/InkDecoderTests.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/TreeWalkerTests.swift"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express round-trip/invariant checks as parametrized tests over representative inputs.",
+            "GUARD: full `swift test` green, and the failure messages of `INKSWIFT_CONFORMANCE_BACKLOG=1 swift test --skip-build --filter UpstreamConformance` must be identical before and after the step (capture before, diff after).",
+            "Same-step rule: every site that constructs or matches .divert changes in this step (grep `\\.divert\\(` and `isVariable` under Sources/SwiftInkRuntime and Tests/SwiftInkRuntimeTests): InkDecoder, InkEngine, TreeWalker, ExpressionLowering, WeaveEmitter, ConditionalEmitter, VariableTextEmitter, RuntimeObjectEmitter, RuntimePathReconciler, and the test sites in NodeKindTests, InkDecoderTests and TreeWalkerTests.",
+            "Per D3: .divert(target: DivertTarget, isConditional: Bool). Switch over DivertTarget exhaustively (no default: clause).",
+            "ExpressionLowering's function-call divert is still a .divert with a path target carrying the 'f():' prefix in this step: keep it compiling and behaving identically; 02-05 turns it into .functionCall.",
+            "The variable-divert case still resolves its target through the one runtime parse of a path string read from the variable (follow-up: DivertTargetValue).",
+            "If 02-01 kept TreeWalker's divert pointer write, type it here and keep the recorded reason.",
+            "MANUAL MUTATION CHECK (CLAUDE.md 'Mutation Testing Strategy'): before COMMIT, pick 3-5 plausible-bug mutations in the production code this step changed (flip a condition/comparison, drop a branch or early return, swap cases, return a default instead of the computed value, delete a state update, off-by-one an index/caret count). Apply one at a time, run the step's tests plus the suites guarding that code, record caught/survived, revert. A survivor needs a killing test or a recorded equivalence argument. Report each mutation and its outcome in the commit message; never commit a mutation.",
+            "CODE HEALTH: self-check every changed production file with the bundled CodeScene CLI (`$(ls -d ~/Library/Caches/codehealth-mcp/MCP-*/cs | tail -1) review --output-format json <file>`, run from the repo root, needs network) against the main baseline before COMMIT; gate >=9.5 approve, 9–9.5 report what remains, <9 rework. The orchestrator also reviews the step with the CodeScene MCP afterwards.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
+          ],
+          "deps": [
+            "02-03"
+          ]
+        },
+        {
+          "id": "02-05",
+          "name": "Add NodeKind.functionCall and delete every f(): spelling",
+          "description": "S5. Introduce NodeKind.functionCall(target:) parallel to tunnelDivert. The decoder maps inklecate's {\"f()\": path}, ExpressionLowering emits the new case, and the engine dispatches on it. Delete functionCallTargetPrefix, every \"f():\" literal and the reconciler's prefix filter.",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "Inklecate function-call diverts decode to a function-call node carrying a typed target",
+            "No 'f():' literal remains in Sources/SwiftInkRuntime; the only surviving spelling is the inklecate JSON key \"f()\" in InkDecoder",
+            "Function-calling oracle fixtures and conformance results play identically to before the step",
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained",
+            "Changed production files' Code Health not below their main baseline"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Unit/Compiler_FunctionTunnelRefTests.swift",
+          "scenario_name": "S5 typed function-call diverts",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Decoder/NodeKind.swift",
+            "Sources/SwiftInkRuntime/Decoder/InkDecoder.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/ExpressionLowering.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/RuntimePathReconciler.swift",
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift",
+            "Sources/SwiftInkRuntime/Engine/TreeWalker.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/Compiler_FunctionTunnelRefTests.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/InkDecoderTests.swift"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express round-trip/invariant checks as parametrized tests over representative inputs.",
+            "GUARD: full `swift test` green, and the failure messages of `INKSWIFT_CONFORMANCE_BACKLOG=1 swift test --skip-build --filter UpstreamConformance` must be identical before and after the step (capture before, diff after).",
+            "Per D3/ADR-016: 'f():' is in no output contract (ADR-006 Option A builds NodeKind directly; JSONEmitter writes diverts as \"void\"). The only surviving 'f()' spelling is the inklecate input key {\"f()\": path} in InkDecoder.classifyDict.",
+            "Done check: a search of Sources/SwiftInkRuntime for the literal f(): and for functionCallTargetPrefix returns nothing. RuntimePathReconciler's prefix filter becomes a pattern match on the .functionCall case. Every site that matched the 02-04 f():-prefixed .divert changes in this same step.",
+            "Earned Trust (driven port): extend the InkDecoder.probe() fixture with an f() call and assert it decodes to .functionCall.",
+            "Guarding suites besides the full suite: slice-c3-functions oracle tests, Engine_FunctionBodyContainerTests, Compiler_FunctionTunnelRefTests, and the conformance function tests.",
+            "Independent of 02-06 after 02-02 (D6); sequenced after 02-04 because both edit NodeKind, the decoder and ExpressionLowering's function-call divert.",
+            "MANUAL MUTATION CHECK (CLAUDE.md 'Mutation Testing Strategy'): before COMMIT, pick 3-5 plausible-bug mutations in the production code this step changed (flip a condition/comparison, drop a branch or early return, swap cases, return a default instead of the computed value, delete a state update, off-by-one an index/caret count). Apply one at a time, run the step's tests plus the suites guarding that code, record caught/survived, revert. A survivor needs a killing test or a recorded equivalence argument. Report each mutation and its outcome in the commit message; never commit a mutation.",
+            "CODE HEALTH: self-check every changed production file with the bundled CodeScene CLI (`$(ls -d ~/Library/Caches/codehealth-mcp/MCP-*/cs | tail -1) review --output-format json <file>`, run from the repo root, needs network) against the main baseline before COMMIT; gate >=9.5 approve, 9–9.5 report what remains, <9 rework. The orchestrator also reviews the step with the CodeScene MCP afterwards.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
+          ],
+          "deps": [
+            "02-04"
+          ]
+        },
+        {
+          "id": "02-06",
+          "name": "Put typed CallStackElement on the return stack",
+          "description": "S6. Introduce CallStackElement { kind: tunnel | function, returnPath, returnIndex } (ADR-017) on StoryState.returnStack with legacy-string Codable (ADR-018). Remove the string return-address builders and prefix checks. A mismatched pop remains a no-op in this step.",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "Golden mid-tunnel saves restore and continue identically, and the return stack persists as the same legacy strings",
+            "Legacy 'fnret:path|N' and 'path.N' entries each decode to the matching call kind and re-encode to the identical string",
+            "Tunnel and function returns resume where they did before; a mismatched or empty-stack pop still changes nothing (superseded by 03-01)",
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained",
+            "Changed production files' Code Health not below their main baseline"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Unit/CallStackElementTests.swift",
+          "scenario_name": "S6 typed call-stack elements",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Engine/CallStack.swift",
+            "Sources/SwiftInkRuntime/Engine/StoryState.swift",
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/CallStackElementTests.swift"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express round-trip/invariant checks as parametrized tests over representative inputs.",
+            "GUARD: full `swift test` green, and the failure messages of `INKSWIFT_CONFORMANCE_BACKLOG=1 swift test --skip-build --filter UpstreamConformance` must be identical before and after the step (capture before, diff after).",
+            "CallKind = tunnel | function; FunctionEvaluationFromGame omitted (no EvaluateFunction API). Pops become kind-aware operations mirroring C# CallStack.CanPop(type)/Pop(type), but in this step a wrong-kind or empty pop must behave exactly as today (silent no-op). That criterion is explicitly superseded by 03-01, which turns the no-op into a refusal.",
+            "Remove buildTunnelReturnAddress, buildFunctionReturnAddress, the string parsing in the function-return path and every hasPrefix(\"fnret:\") (InkEngine.swift around :270, :341, :606-682). 'fnret:' may survive only inside the Codable mapping.",
+            "fnret at save time: check whether an 'fnret:' entry can ever be on the return stack when saveState() runs (function bodies run synchronously inside continue(), and choices cannot appear inside functions). If it cannot, record in CallStackElementTests that the cross-build guarantee for the function-return form is codec-only (the round-trip unit test), not backed by a golden save.",
+            "Parametrize the Codable round-trip over representative legacy entries (tunnel 'path.N', function 'fnret:path|N', root-level and nested paths) plus the 01-01 golden mid-tunnel saves.",
+            "Preserve today's tunnel-return resolution through applyDivert, including the suspected tunnel-return-into-container issue (feature-delta follow-up): do not fix it here; it is a separate issue.",
+            "callFrameVariables / functionRootDepths are NOT folded into CallStackElement (follow-up).",
+            "MANUAL MUTATION CHECK (CLAUDE.md 'Mutation Testing Strategy'): before COMMIT, pick 3-5 plausible-bug mutations in the production code this step changed (flip a condition/comparison, drop a branch or early return, swap cases, return a default instead of the computed value, delete a state update, off-by-one an index/caret count). Apply one at a time, run the step's tests plus the suites guarding that code, record caught/survived, revert. A survivor needs a killing test or a recorded equivalence argument. Report each mutation and its outcome in the commit message; never commit a mutation.",
+            "CODE HEALTH: self-check every changed production file with the bundled CodeScene CLI (`$(ls -d ~/Library/Caches/codehealth-mcp/MCP-*/cs | tail -1) review --output-format json <file>`, run from the repo root, needs network) against the main baseline before COMMIT; gate >=9.5 approve, 9–9.5 report what remains, <9 rework. The orchestrator also reviews the step with the CodeScene MCP afterwards.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
+          ],
+          "deps": [
+            "02-05"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "03",
+      "name": "Behaviour change",
+      "description": "The single observable change of #25: tunnel and function pops are type-checked like the C# reference. A wrong-kind or empty-stack pop is refused, reported in currentErrors with the exact C# message, and ends the flow.",
+      "steps": [
+        {
+          "id": "03-01",
+          "name": "Type-check tunnel and function pops with C# errors",
+          "description": "S7. Refuse a pop whose frame kind mismatches, or whose stack is empty: append the exact C# message to currentErrors and end the flow (ADR-017). Errors live in memory only and are cleared by restoreState and moveToKnot (D7). ATs are written inside this step (D8).",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "Wrong-kind pops report exactly 'Found tunnel onwards statement (->->), when expected function return statement (~ return)' or 'Found function return statement (~ return), when expected tunnel onwards statement (->->)'",
+            "Empty-stack pops report exactly 'Found tunnel onwards statement (->->), when expected end of flow (-> END or choice)' or 'Found function return statement (~ return), when expected end of flow (-> END or choice)'",
+            "Every refusal stops the story and each fixture's continuation past the construct (prose, then a choice) never plays; function-body exhaustion pops only a function frame",
+            "Errors are never saved, restoreState and moveToKnot clear them, and well-formed tunnels and functions report no errors",
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained; changed production files' Code Health not below their main baseline"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Engine_TypeCheckedPopTests.swift",
+          "scenario_name": "S7 type-checked tunnel and function pops",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift",
+            "Sources/SwiftInkRuntime/Engine/CallStack.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Engine_TypeCheckedPopTests.swift",
+            "Tests/SwiftInkRuntimeTests/Fixtures/pop-tunnel-onwards-over-function.ink",
+            "Tests/SwiftInkRuntimeTests/Fixtures/pop-tunnel-onwards-over-function.ink.json",
+            "Tests/SwiftInkRuntimeTests/Fixtures/pop-function-return-over-tunnel.ink",
+            "Tests/SwiftInkRuntimeTests/Fixtures/pop-function-return-over-tunnel.ink.json",
+            "Tests/SwiftInkRuntimeTests/Fixtures/pop-tunnel-onwards-empty-stack.ink",
+            "Tests/SwiftInkRuntimeTests/Fixtures/pop-tunnel-onwards-empty-stack.ink.json",
+            "Tests/SwiftInkRuntimeTests/Fixtures/pop-function-return-empty-stack.ink",
+            "Tests/SwiftInkRuntimeTests/Fixtures/pop-function-return-empty-stack.ink.json",
+            "Tests/SwiftInkRuntimeTests/Fixtures/pop-function-exhaustion-over-tunnel.ink",
+            "Tests/SwiftInkRuntimeTests/Fixtures/pop-function-exhaustion-over-tunnel.ink.json",
+            "scripts/conformance/known-failures.json"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express round-trip/invariant checks as parametrized tests over representative inputs.",
+            "Per D8 there is no DISTILL wave: write the ATs in this step (RED, then GREEN, then COMMIT). The ATs are never committed .disabled; finalize check `grep -rn \"\\.disabled(\" Tests/SwiftInkRuntimeTests/Acceptance` returns nothing.",
+            "Exact messages (Story.cs:1275-1288; popped = the requested pop, expected = the current frame's name, or end of flow when the stack cannot pop): (1) 'Found tunnel onwards statement (->->), when expected function return statement (~ return)'; (2) 'Found function return statement (~ return), when expected tunnel onwards statement (->->)'; (3) 'Found tunnel onwards statement (->->), when expected end of flow (-> END or choice)'; (4) 'Found function return statement (~ return), when expected end of flow (-> END or choice)'. Assert currentErrors equals exactly one of these and canContinue == false.",
+            "Fixture routes, one fixture per scenario. inklecate rejects `~ return` in a knot not declared as a function (compiler/ParsedHierarchy/FlowBase.cs ~185), and a story stops at its first refusal, so each scenario needs its own story. (a) pop-tunnel-onwards-over-function: a function, called from an expression, plain-diverts into a knot that ends in `->->`. (b) pop-function-return-over-tunnel: a tunnel body (entered with `-> t ->`) plain-diverts `-> f` into a `== function f ==` knot ending in `~ return`. (c) pop-tunnel-onwards-empty-stack: a top-level plain divert into a knot ending in `->->`. (d) pop-function-return-empty-stack: a top-level plain divert into a function knot ending in `~ return`. (e) pop-function-exhaustion-over-tunnel: a tunnel body plain-diverts into a function knot whose body runs out without `~ return`. Per ADR-017 decision 2, implicit exhaustion pops only a function frame, so the tunnel frame must not be consumed. Pin what the reference does there, an error or a plain end of flow.",
+            "Verification per fixture: compile each .ink with inklecate (/Users/maartene/Downloads/inklecate_mac/inklecate); never hand-craft JSON. Where the reference produces a runtime error, confirm its text through the InkSwift JS bridge (reference runtime) before pinning it in the AT. If a route is impossible (compile rejection, or the reference does not reach the intended frame state), record why in the test file and pick another route for the same scenario.",
+            "Every fixture puts prose, then a choice, after the offending construct in the same scope, and the AT asserts that content does NOT play (CLAUDE.md 'A fixture must continue past the construct it pins'): an engine that silently walks on would show it and fail.",
+            "D7: the error list lives in InkEngine memory, not in StoryState, and is never written to a save; restoreState and moveToKnot clear it. currentErrors (currently always []) returns it; the Story facade already delegates, so no public API change. ATs: after a refusal, saveState() then restoreState() yields empty currentErrors, and moveToKnot clears them and the story continues.",
+            "The tunnel-return-into-container follow-up remains out of scope. The well-formed case is guarded by the existing tunnel/function oracle fixtures and the conformance harness's hadError check.",
+            "Conformance: capture the backlog failure messages (`INKSWIFT_CONFORMANCE_BACKLOG=1 swift test --skip-build --filter UpstreamConformance`) before and after. Messages may change only for tests exercising pops; record each diff in the commit message. Any upstream test that now passes: remove its scripts/conformance/known-failures.json entry and regenerate with scripts/conformance/import_upstream_tests.py so it runs in the main suite.",
+            "MANUAL MUTATION CHECK (CLAUDE.md 'Mutation Testing Strategy'): before COMMIT, pick 3-5 plausible-bug mutations in the production code this step changed (flip a condition/comparison, drop a branch or early return, swap cases, return a default instead of the computed value, delete a state update, off-by-one an index/caret count). Apply one at a time, run the step's tests plus the suites guarding that code, record caught/survived, revert. A survivor needs a killing test or a recorded equivalence argument. Report each mutation and its outcome in the commit message; never commit a mutation.",
+            "CODE HEALTH: self-check every changed production file with the bundled CodeScene CLI (`$(ls -d ~/Library/Caches/codehealth-mcp/MCP-*/cs | tail -1) review --output-format json <file>`, run from the repo root, needs network) against the main baseline before COMMIT; gate >=9.5 approve, 9–9.5 report what remains, <9 rework. The orchestrator also reviews the step with the CodeScene MCP afterwards.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
+          ],
+          "deps": [
+            "02-06"
+          ]
+        }
+      ]
+    }
+  ],
+  "implementation_scope": {
+    "source_directories": [
+      "Sources/SwiftInkRuntime/"
+    ],
+    "test_directories": [
+      "Tests/SwiftInkRuntimeTests/",
+      "scripts/conformance/"
+    ],
+    "excluded_patterns": [
+      "*.ink.json"
+    ]
+  },
+  "validation": {
+    "status": "approved",
+    "reviewer": "nw-acceptance-designer-reviewer",
+    "approved_at": "2026-11-17T12:49:27Z",
+    "notes": "Approved on re-review (all 12 findings resolved). 02-03 and 02-04 (13 files each) accepted at that size by the orchestrator: a payload type change breaks compilation of every constructor/match site, so each must land in one commit; they are split by concern (S4a/S4b). 03-01 fixture (e): the crafter decides the expected outcome from the C# source and JS bridge BEFORE RED and writes it into criterion 3."
+  }
+}
