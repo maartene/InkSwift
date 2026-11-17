@@ -88,6 +88,9 @@ public enum InkParser {
         }
     }
 
+    /// An arm opener line of a block body, with its guard.
+    private typealias ArmLine = (armGuard: ArmGuard, line: BodyLine)
+
     /// An arm's guard, shaped like the reference's `ConditionalSingleBranch`:
     /// `isElse`, an `ownExpression`, or neither.
     private enum ArmGuard {
@@ -95,16 +98,23 @@ public enum InkParser {
         case otherwise
         /// `- <expr>:` (`ConditionExpression`, `ownExpression`), as source text.
         case condition(String)
-        /// A branch with neither: in the reference, a `-` line whose content is
-        /// not preceded by `<expr>:`. We only produce it for `- :` today, and
-        /// treat it as a default arm — the reference instead keeps the `:` as
-        /// content (`- : B` prints `: B`) and reads colon-less lines (`- B`) as
-        /// such branches too (issue #23).
+        /// A branch with neither: a `-` line whose content is not preceded by
+        /// `<expr>:` — `- B`, and also `- : B` or `- Two words: B`, whose colon
+        /// is content (issue #23). Under a header with no labelled arm it is the
+        /// binary true/else branch; as the final branch, the else.
         case unconditioned
 
         /// True when the arm is a switch label: it carries its own expression.
         var isLabel: Bool {
             if case .condition = self {
+                return true
+            }
+            return false
+        }
+
+        /// True for `- else:`.
+        var isElse: Bool {
+            if case .otherwise = self {
                 return true
             }
             return false
@@ -227,28 +237,31 @@ public enum InkParser {
         return (subject.isEmpty ? .none : .subject(subject), inline)
     }
 
-    /// The guard and inline content of an arm line `- <guard>: <inline>`, or
-    /// `nil` when the line has no top-level colon after its `-` and so is not an
-    /// arm here (see `ArmGuard.unconditioned` for how the reference differs).
+    /// The guard and inline content of a branch line, or `nil` when the line
+    /// does not start with `-` (or is a `->` divert). As in the reference
+    /// (`SingleMultilineCondition`, with no gather rule at `InnerBlock` level),
+    /// every other `-` line opens a branch; its `<expr>:` guard is optional.
+    /// Text before the colon that does not parse as an expression is content,
+    /// colon included — the reference's `ConditionExpression` fails and the
+    /// branch content starts right after the `-` (issue #23).
     private static func armParts(of text: String) -> (ArmGuard, inline: String)? {
-        guard text.hasPrefix("-") else {
+        guard text.hasPrefix("-"), text.hasPrefix(divertMarker) == false else {
             return nil
         }
         let afterMarker = String(text.dropFirst()).trimmingCharacters(in: .whitespaces)
         guard let colonIndex = topLevelColonIndex(in: afterMarker) else {
-            return nil
+            return (.unconditioned, afterMarker)
         }
         let guardText = String(afterMarker[..<colonIndex]).trimmingCharacters(in: .whitespaces)
         let inline = String(afterMarker[afterMarker.index(after: colonIndex)...])
             .trimmingCharacters(in: .whitespaces)
-        switch guardText {
-        case "else":
+        if guardText == "else" {
             return (.otherwise, inline)
-        case "":
-            return (.unconditioned, inline)
-        default:
-            return (.condition(guardText), inline)
         }
+        guard guardText.isEmpty == false, (try? InkExpressionParser.parse(guardText)) != nil else {
+            return (.unconditioned, afterMarker)
+        }
+        return (.condition(guardText), inline)
     }
 
     /// Content written inline after an opener's colon, as the block's first body line.
@@ -313,8 +326,8 @@ public enum InkParser {
     }
 
     /// Assemble a `.conditionalBlock` from the block's header and body lines.
-    /// Lines beginning `- <guard>:` open arms; lines without that shape are arm
-    /// content. A block with no `- guard:` arms is a single-guard block
+    /// Lines beginning `-` (not `->`) open arms, with or without a `<guard>:`;
+    /// other lines are arm content. A block with no arms is a single-guard block
     /// (`{ cond: ...true... }`), so its only arm is guarded by the subject.
     private static func buildConditionalBlock(
         header: BlockHeader,
@@ -348,12 +361,21 @@ public enum InkParser {
         // subject lacked a comparison operator (e.g. `not knot.label`) was misread as
         // a switch, dropping the implicit-first-arm content and its condition entirely.
         let opensWithArm = bodyLines.first?.shape.isArm ?? false
-        let isSwitch = subjectExpression != nil && opensWithArm && hasLabelledArm(bodyLines)
+        let armLines = armLinesAtDepth0(bodyLines)
+        let isSwitch = subjectExpression != nil && opensWithArm && hasLabelledArm(armLines)
+        if opensWithArm {
+            try checkBranchesWithoutExpression(armLines, hasHeader: subjectExpression != nil)
+        }
+        // A binary block (`{ cond: - when true - when false }`) guards its first
+        // explicit branch with the subject; the second is the else. An else-only
+        // block instead gets an empty true branch, opened before its `- else:`.
+        let subjectGuardsFirstArm = subjectExpression != nil && opensWithArm && isSwitch == false
+            && armLines.first?.armGuard.isElse == false
         // A switch compares the subject value against each arm's label; a guarded
         // block treats the subject as the first arm's guard and any content before
         // the first explicit `- guard:` arm as that arm's body.
         var arms = ArmAccumulator()
-        if isSwitch == false, let subjectExpression {
+        if isSwitch == false, subjectGuardsFirstArm == false, let subjectExpression {
             arms.open(match: subjectExpression)
         }
         // `{ cond:` followed by content: the subject guards that content, and
@@ -371,8 +393,10 @@ public enum InkParser {
             if subjectGuardsContent {
                 try checkArmAfterHeaderGuardedContent(armGuard, priorArmCount: explicitArmCount, line: line)
             }
+            try checkNoGatherDashes(inline, line: line)
+            let match = subjectGuardsFirstArm && explicitArmCount == 0 ? subjectExpression : try armGuard.match()
             explicitArmCount += 1
-            try openExplicitArm(armGuard, inline: inline, number: line.number, into: &arms)
+            try openExplicitArm(match: match, inline: inline, number: line.number, into: &arms)
             lineIndex += 1
         }
         let subject = (isSwitch ? subjectExpression : nil) ?? .boolLiteral(true)
@@ -391,19 +415,61 @@ public enum InkParser {
     /// guarded by the subject plus the else. The subject's operators never
     /// decide it; doing so made `- true:` always win under a comparison subject,
     /// and made `{ flag: - else: … }` take the else even when `flag` held.
-    private static func hasLabelledArm(_ bodyLines: [BodyLine]) -> Bool {
-        armGuardsAtDepth0(bodyLines).contains { $0.isLabel }
+    private static func hasLabelledArm(_ armLines: [ArmLine]) -> Bool {
+        armLines.contains { $0.armGuard.isLabel }
     }
 
-    /// Open the arm introduced by `- <guard>: …`, seeding its body with any
-    /// content written inline after the guard.
+    /// A branch without its own expression is only valid in a few places (the
+    /// same loops): under a header, as one of at most two binary branches or as
+    /// the final branch after a labelled one ("Only final branch can be an
+    /// 'else'"); without a header, only as the final branch ("Branch doesn't
+    /// have condition"). Misplaced `- else:` branches without a header are
+    /// issue #24.
+    private static func checkBranchesWithoutExpression(_ armLines: [ArmLine], hasHeader: Bool) throws {
+        for arm in armLines.dropLast() where arm.armGuard.isLabel == false {
+            if hasHeader, armLines.count > 2 {
+                throw CompileError(
+                    kind: .syntaxError,
+                    message: "Only final branch can be an 'else'. Did you miss a ':'?",
+                    line: arm.line.number,
+                    column: 1
+                )
+            }
+            if hasHeader == false, case .unconditioned = arm.armGuard {
+                throw CompileError(
+                    kind: .syntaxError,
+                    message: "Branch doesn't have condition. Are you missing a ':'?",
+                    line: arm.line.number,
+                    column: 1
+                )
+            }
+        }
+    }
+
+    /// Reject a second dash on a branch line (`- - B`): there are no gathers
+    /// inside a `{ … }` block, as `StatementsAtLevel(InnerBlock)` reports.
+    private static func checkNoGatherDashes(_ inline: String, line: BodyLine) throws {
+        guard inline.hasPrefix("-"), inline.hasPrefix(divertMarker) == false else {
+            return
+        }
+        throw CompileError(
+            kind: .syntaxError,
+            message: "You can't use a gather (the dashes) within the { curly braces } context. "
+                + "For multi-line sequences and conditions, you should only use one dash.",
+            line: line.number,
+            column: 1
+        )
+    }
+
+    /// Open the arm introduced by a `-` branch line with the given match,
+    /// seeding its body with any content written inline after the guard.
     private static func openExplicitArm(
-        _ armGuard: ArmGuard,
+        match: InkExpression?,
         inline: String,
         number: Int,
         into arms: inout ArmAccumulator
     ) throws {
-        arms.open(match: try armGuard.match())
+        arms.open(match: match)
         if inline.isEmpty == false {
             try appendStatements(from: inline, lineNumber: number, into: &arms.pendingBody)
         }
@@ -503,22 +569,22 @@ public enum InkParser {
 
     /// True when any body line at brace-nesting depth 0 is an arm opener.
     private static func hasArmOpenerAtDepth0(_ bodyLines: [BodyLine]) -> Bool {
-        armGuardsAtDepth0(bodyLines).isEmpty == false
+        armLinesAtDepth0(bodyLines).isEmpty == false
     }
 
-    /// The guards of the arm openers at brace-nesting depth 0. Lines inside
+    /// The arm openers at brace-nesting depth 0, with their guards. Lines inside
     /// nested `{…}` blocks are at depth > 0 and are excluded so inner block arms
     /// are not mistaken for arms of the enclosing block.
-    private static func armGuardsAtDepth0(_ bodyLines: [BodyLine]) -> [ArmGuard] {
+    private static func armLinesAtDepth0(_ bodyLines: [BodyLine]) -> [ArmLine] {
         var depth = 0
-        var guards: [ArmGuard] = []
+        var arms: [ArmLine] = []
         for line in bodyLines {
             if depth == 0, case .arm(let armGuard, _) = line.shape {
-                guards.append(armGuard)
+                arms.append((armGuard, line))
             }
             depth = max(0, depth + line.shape.depthChange)
         }
-        return guards
+        return arms
     }
 
     /// Process one logical unit from `bodyLines` at `index` into `statements`

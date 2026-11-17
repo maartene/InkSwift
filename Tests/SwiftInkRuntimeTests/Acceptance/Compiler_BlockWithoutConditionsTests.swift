@@ -8,7 +8,9 @@
 // We already rejected it, but only by accident: the empty subject was fed to
 // the expression parser, which failed with an unlocated `unexpectedEndOfInput`.
 // Typing the block header (`BlockHeader.none`) made the missing condition an
-// explicit case, so the rejection is now a located `CompileError`.
+// explicit case, so the rejection is now a located `CompileError`. Since colon-
+// less `- A` lines became branches (issue #23), the error is reported where
+// inklecate reports it: on the first branch without a condition.
 
 import Testing
 import Foundation
@@ -18,7 +20,7 @@ import Foundation
 struct Compiler_BlockWithoutConditionsTests {
 
     @Test
-    func `a bare block whose lines carry no condition is rejected at the opener`() throws {
+    func `a bare block whose lines carry no condition is rejected at its first branch`() throws {
         let source = """
             VAR x = 2
             {
@@ -34,6 +36,7 @@ struct Compiler_BlockWithoutConditionsTests {
         }
 
         #expect(error?.kind == .syntaxError)
-        #expect(error?.line == 2)
+        #expect(error?.line == 3)
+        #expect(error?.message.contains("Branch doesn't have condition. Are you missing a ':'?") == true)
     }
 }
