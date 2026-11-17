@@ -67,9 +67,15 @@ private enum FixturePathCorpus {
     private static let pathKeys: Set<String> = ["->", "->t->", "f()", "*", "^->", "CNT?"]
 
     static func collect() throws -> Set<String> {
-        let urls = Bundle.module.urls(forResourcesWithExtension: "json", subdirectory: nil) ?? []
+        // List the bundle directory rather than calling
+        // `Bundle.urls(forResourcesWithExtension:subdirectory:)`, which returns
+        // `[NSURL]?` in swift-corelibs-foundation and does not compile on Linux
+        // (swiftlang/swift-corelibs-foundation#5446).
+        guard let resources = Bundle.module.resourceURL else { return [] }
+        let names = FileManager.default.subpaths(atPath: resources.path) ?? []
         var paths: Set<String> = []
-        for url in urls where url.lastPathComponent.hasSuffix(".ink.json") {
+        for name in names where name.hasSuffix(".ink.json") {
+            let url = resources.appendingPathComponent(name)
             let json = try JSONSerialization.jsonObject(with: Data(contentsOf: url), options: [.fragmentsAllowed])
             walk(json, into: &paths)
         }
