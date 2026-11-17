@@ -53,12 +53,12 @@ struct UpstreamConformance06Tests {
         c.fail("not ported: lambdas")
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — lambdas"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — needs EvaluateFunction and external function binding APIs"))
     func `TestGameInkBackAndForth — native compiler and runtime`() {
         Conformance.run("TestGameInkBackAndForth", .native, Self.testGameInkBackAndForth)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — lambdas"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — needs EvaluateFunction and external function binding APIs"))
     func `TestGameInkBackAndForth — inklecate JSON on the runtime`() {
         Conformance.run("TestGameInkBackAndForth", .runtime, Self.testGameInkBackAndForth)
     }
@@ -108,12 +108,12 @@ struct UpstreamConformance06Tests {
         c.fail("not ported: external functions")
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — external functions"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — needs an external function binding API"))
     func `TestNewlinesTrimmingWithFuncExternalFallback — native compiler and runtime`() {
         Conformance.run("TestNewlinesTrimmingWithFuncExternalFallback", .native, Self.testNewlinesTrimmingWithFuncExternalFallback)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — external functions"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — needs an external function binding API"))
     func `TestNewlinesTrimmingWithFuncExternalFallback — inklecate JSON on the runtime`() {
         Conformance.run("TestNewlinesTrimmingWithFuncExternalFallback", .runtime, Self.testNewlinesTrimmingWithFuncExternalFallback)
     }
@@ -228,74 +228,39 @@ struct UpstreamConformance06Tests {
 
     // MARK: TestListRandom — Tests.cs:3532
 
-    /*  Upstream C# (not ported — loops):
-                    var storyStr =
-                        @"
-        LIST l = A, (B), (C), (D), E
-        {LIST_RANDOM(l)}
-        {LIST_RANDOM (l)}
-        {LIST_RANDOM (l)}
-        {LIST_RANDOM (l)}
-        {LIST_RANDOM (l)}
-        {LIST_RANDOM (l)}
-        {LIST_RANDOM (l)}
-        {LIST_RANDOM (l)}
-        {LIST_RANDOM (l)}
-        {LIST_RANDOM (l)}
-                            ";
-        
-                    var story = CompileString (storyStr);
-        
-                    while (story.canContinue) {
-                        var result = story.Continue ();
-                        Assert.IsTrue (result == "B\n" || result == "C\n" || result == "D\n");
-                    }
-        
-    */
     @Sendable private static func testListRandom(_ c: Conformance) throws {
-        c.fail("not ported: loops")
+        let story = try c.compile(0)
+        while story.canContinue {
+            c.isTrue(["B\n", "C\n", "D\n"].contains(story.continue()))
+        }
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — loops"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: unsupported lists, RANDOM"))
     func `TestListRandom — native compiler and runtime`() {
         Conformance.run("TestListRandom", .native, Self.testListRandom)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — loops"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: unsupported lists, RANDOM"))
     func `TestListRandom — inklecate JSON on the runtime`() {
         Conformance.run("TestListRandom", .runtime, Self.testListRandom)
     }
 
     // MARK: TestTurns — Tests.cs:3559
 
-    /*  Upstream C# (not ported — loops):
-                    var storyStr =
-                        @"
-        -> c
-        - (top)
-        + (c) [choice]
-            {TURNS ()}
-            -> top
-                            ";
-        
-                    var story = CompileString (storyStr);
-        
-                    for (int i = 0; i < 10; i++) {
-                        Assert.AreEqual(i + "\n", story.Continue ());
-                        story.ChooseChoiceIndex (0);
-                    }
-        
-    */
     @Sendable private static func testTurns(_ c: Conformance) throws {
-        c.fail("not ported: loops")
+        let story = try c.compile(0)
+        for turn in 0..<10 {
+            c.equal("\(turn)\n", story.continue())
+            try story.chooseChoice(at: 0)
+        }
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — loops"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: TURNS()"))
     func `TestTurns — native compiler and runtime`() {
         Conformance.run("TestTurns", .native, Self.testTurns)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — loops"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: TURNS()"))
     func `TestTurns — inklecate JSON on the runtime`() {
         Conformance.run("TestTurns", .runtime, Self.testTurns)
     }
@@ -336,43 +301,17 @@ struct UpstreamConformance06Tests {
 
     // MARK: TestListRange — Tests.cs:3623
 
-    /*  Upstream C# (not ported — unmapped API Replace):
-                    var storyStr =
-                @"
-        LIST Food = Pizza, Pasta, Curry, Paella
-        LIST Currency = Pound, Euro, Dollar
-        LIST Numbers = One, Two, Three, Four, Five, Six, Seven
-        
-        VAR all = ()
-        ~ all = LIST_ALL(Food) + LIST_ALL(Currency)
-        {all}
-        {LIST_RANGE(all, 2, 3)}
-        {LIST_RANGE(LIST_ALL(Numbers), Two, Six)}
-        {LIST_RANGE(LIST_ALL(Numbers), Currency, Three)}
-        {LIST_RANGE((Pizza, Pasta), -1, 100)} // allow out of range
-        ";
-        
-                    var story = CompileString(storyStr);
-        
-                    Assert.AreEqual(
-        @"Pound, Pizza, Euro, Pasta, Dollar, Curry, Paella
-        Euro, Pasta, Dollar, Curry
-        Two, Three, Four, Five, Six
-        One, Two, Three
-        Pizza, Pasta
-        ".Replace(Environment.NewLine, "\n"), story.ContinueMaximally());
-        
-    */
     @Sendable private static func testListRange(_ c: Conformance) throws {
-        c.fail("not ported: unmapped API Replace")
+        let story = try c.compile(0)
+        c.equal("Pound, Pizza, Euro, Pasta, Dollar, Curry, Paella\nEuro, Pasta, Dollar, Curry\nTwo, Three, Four, Five, Six\nOne, Two, Three\nPizza, Pasta\n", story.continueMaximally())
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — unmapped API Replace"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: unsupported lists"))
     func `TestListRange — native compiler and runtime`() {
         Conformance.run("TestListRange", .native, Self.testListRange)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — unmapped API Replace"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: unsupported lists"))
     func `TestListRange — inklecate JSON on the runtime`() {
         Conformance.run("TestListRange", .runtime, Self.testListRange)
     }
@@ -395,83 +334,17 @@ struct UpstreamConformance06Tests {
 
     // MARK: TestKnotStitchGatherCounts — Tests.cs:3670
 
-    /*  Upstream C# (not ported — unmapped API Replace):
-                    var storyStr =
-                @"
-        VAR knotCount = 0
-        VAR stitchCount = 0
-        
-        -> gather_count_test ->
-        
-        ~ knotCount = 0
-        -> knot_count_test ->
-        
-        ~ knotCount = 0
-        -> knot_count_test ->
-        
-        -> stitch_count_test ->
-        
-        == gather_count_test ==
-        VAR gatherCount = 0
-        - (loop)
-        ~ gatherCount++
-        {gatherCount} {loop}
-        {gatherCount<3:->loop}
-        ->->
-        
-        == knot_count_test ==
-        ~ knotCount++
-        {knotCount} {knot_count_test}
-        {knotCount<3:->knot_count_test}
-        ->->
-        
-        
-        == stitch_count_test ==
-        ~ stitchCount = 0
-        -> stitch ->
-        ~ stitchCount = 0
-        -> stitch ->
-        ->->
-        
-        = stitch
-        ~ stitchCount++
-        {stitchCount} {stitch}
-        {stitchCount<3:->stitch}
-        ->->
-        ";
-        
-                    // Ensure it just compiles
-                    var story = CompileString(storyStr);
-        
-                    Assert.AreEqual(
-        @"1 1
-        2 2
-        3 3
-        1 1
-        2 1
-        3 1
-        1 2
-        2 2
-        3 2
-        1 1
-        2 1
-        3 1
-        1 2
-        2 2
-        3 2
-        ".Replace(Environment.NewLine, "\n"), story.ContinueMaximally());
-        
-    */
     @Sendable private static func testKnotStitchGatherCounts(_ c: Conformance) throws {
-        c.fail("not ported: unmapped API Replace")
+        let story = try c.compile(0)
+        c.equal("1 1\n2 2\n3 3\n1 1\n2 1\n3 1\n1 2\n2 2\n3 2\n1 1\n2 1\n3 1\n1 2\n2 2\n3 2\n", story.continueMaximally())
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — unmapped API Replace"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: native compiler rejects a valid story: unexpectedToken('+')"))
     func `TestKnotStitchGatherCounts — native compiler and runtime`() {
         Conformance.run("TestKnotStitchGatherCounts", .native, Self.testKnotStitchGatherCounts)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — unmapped API Replace"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: read counts of knots, stitches and gathers"))
     func `TestKnotStitchGatherCounts — inklecate JSON on the runtime`() {
         Conformance.run("TestKnotStitchGatherCounts", .runtime, Self.testKnotStitchGatherCounts)
     }
@@ -515,12 +388,12 @@ struct UpstreamConformance06Tests {
         c.fail("not ported: state JSON save/load")
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — state JSON save/load"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — needs state save/load to JSON, and threads"))
     func `TestChoiceThreadForking — native compiler and runtime`() {
         Conformance.run("TestChoiceThreadForking", .native, Self.testChoiceThreadForking)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — state JSON save/load"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — needs state save/load to JSON, and threads"))
     func `TestChoiceThreadForking — inklecate JSON on the runtime`() {
         Conformance.run("TestChoiceThreadForking", .runtime, Self.testChoiceThreadForking)
     }
@@ -641,12 +514,12 @@ struct UpstreamConformance06Tests {
         c.fail("not ported: flows")
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — flows"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — needs a multiple flows API"))
     func `TestMultiFlowBasics — native compiler and runtime`() {
         Conformance.run("TestMultiFlowBasics", .native, Self.testMultiFlowBasics)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — flows"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — needs a multiple flows API"))
     func `TestMultiFlowBasics — inklecate JSON on the runtime`() {
         Conformance.run("TestMultiFlowBasics", .runtime, Self.testMultiFlowBasics)
     }
@@ -747,205 +620,152 @@ struct UpstreamConformance06Tests {
         c.fail("not ported: flows")
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — flows"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — needs a multiple flows API, state save/load and threads"))
     func `TestMultiFlowSaveLoadThreads — native compiler and runtime`() {
         Conformance.run("TestMultiFlowSaveLoadThreads", .native, Self.testMultiFlowSaveLoadThreads)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — flows"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — needs a multiple flows API, state save/load and threads"))
     func `TestMultiFlowSaveLoadThreads — inklecate JSON on the runtime`() {
         Conformance.run("TestMultiFlowSaveLoadThreads", .runtime, Self.testMultiFlowSaveLoadThreads)
     }
 
     // MARK: TestCharacterRangeIdentifiersForConstNamesWithAsciiPrefix — Tests.cs:4120
 
-    /*  Upstream C# (not ported — story built at runtime):
-                    var ranges = InkParser.ListAllCharacterRanges();
-                    for (int i = 0; i < ranges.Length; i++)
-                    {
-        
-                        var range = ranges[i];
-        
-                        var identifier = GenerateIdentifierFromCharacterRange(range);
-        
-                        var storyStr = string.Format(@"
-        CONST pi{0} = 3.1415
-        CONST a{0} = ""World""
-        CONST b{0} = 3
-        ", identifier);
-        
-                        var compiledStory = CompileStringWithoutRuntime(storyStr);
-        
-                        Assert.IsNotNull(compiledStory);
-                    }
-        
-    */
     @Sendable private static func testCharacterRangeIdentifiersForConstNamesWithAsciiPrefix(_ c: Conformance) throws {
-        c.fail("not ported: story built at runtime")
+        // Upstream compiles one story per identifier character range, using every
+        // character of the range as the identifier (`string.Format`).
+        for range in UpstreamCharacterRanges.all {
+            let identifier = range.identifier
+            try c.compile(source: """
+                CONST pi\(identifier) = 3.1415
+                CONST a\(identifier) = "World"
+                CONST b\(identifier) = 3
+                """, testingErrors: true)
+            if c.errorMessages.count > 0 {
+                c.fail("\(range.name): \(c.errorMessages.all)")
+            }
+        }
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — story built at runtime"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: non-ASCII identifier characters (Arabic, Armenian, Greek, Hebrew, Korean ranges)"))
     func `TestCharacterRangeIdentifiersForConstNamesWithAsciiPrefix — native compiler and runtime`() {
         Conformance.run("TestCharacterRangeIdentifiersForConstNamesWithAsciiPrefix", .native, Self.testCharacterRangeIdentifiersForConstNamesWithAsciiPrefix)
     }
 
     // MARK: TestCharacterRangeIdentifiersForConstNamesWithAsciiSuffix — Tests.cs:4142
 
-    /*  Upstream C# (not ported — story built at runtime):
-                    var ranges = InkParser.ListAllCharacterRanges();
-                    for (int i = 0; i < ranges.Length; i++)
-                    {
-        
-                        var range = ranges[i];
-        
-                        var identifier = GenerateIdentifierFromCharacterRange(range);
-        
-                        var storyStr = string.Format(@"
-        CONST {0}pi = 3.1415
-        CONST {0}a = ""World""
-        CONST {0}b = 3
-        ", identifier);
-        
-                        var compiledStory = CompileStringWithoutRuntime(storyStr);
-        
-                        Assert.IsNotNull(compiledStory);
-                    }
-        
-    */
     @Sendable private static func testCharacterRangeIdentifiersForConstNamesWithAsciiSuffix(_ c: Conformance) throws {
-        c.fail("not ported: story built at runtime")
+        // Upstream compiles one story per identifier character range, using every
+        // character of the range as the identifier (`string.Format`).
+        for range in UpstreamCharacterRanges.all {
+            let identifier = range.identifier
+            try c.compile(source: """
+                CONST \(identifier)pi = 3.1415
+                CONST \(identifier)a = "World"
+                CONST \(identifier)b = 3
+                """, testingErrors: true)
+            if c.errorMessages.count > 0 {
+                c.fail("\(range.name): \(c.errorMessages.all)")
+            }
+        }
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — story built at runtime"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: non-ASCII identifier characters (Arabic, Armenian, Greek, Hebrew, Korean ranges)"))
     func `TestCharacterRangeIdentifiersForConstNamesWithAsciiSuffix — native compiler and runtime`() {
         Conformance.run("TestCharacterRangeIdentifiersForConstNamesWithAsciiSuffix", .native, Self.testCharacterRangeIdentifiersForConstNamesWithAsciiSuffix)
     }
 
     // MARK: TestCharacterRangeIdentifiersForSimpleVariableNamesWithAsciiPrefix — Tests.cs:4165
 
-    /*  Upstream C# (not ported — story built at runtime):
-                    var ranges = InkParser.ListAllCharacterRanges();
-                    for (int i = 0; i < ranges.Length; i++)
-                    {
-        
-                        var range = ranges[i];
-        
-                        var identifier = GenerateIdentifierFromCharacterRange(range);
-        
-                        var storyStr = string.Format(@"
-        VAR pi{0} = 3.1415
-        VAR a{0} = ""World""
-        VAR b{0} = 3
-        ", identifier);
-        
-                        var compiledStory = CompileStringWithoutRuntime(storyStr);
-        
-                        Assert.IsNotNull(compiledStory);
-                    }
-        
-    */
     @Sendable private static func testCharacterRangeIdentifiersForSimpleVariableNamesWithAsciiPrefix(_ c: Conformance) throws {
-        c.fail("not ported: story built at runtime")
+        // Upstream compiles one story per identifier character range, using every
+        // character of the range as the identifier (`string.Format`).
+        for range in UpstreamCharacterRanges.all {
+            let identifier = range.identifier
+            try c.compile(source: """
+                VAR pi\(identifier) = 3.1415
+                VAR a\(identifier) = "World"
+                VAR b\(identifier) = 3
+                """, testingErrors: true)
+            if c.errorMessages.count > 0 {
+                c.fail("\(range.name): \(c.errorMessages.all)")
+            }
+        }
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — story built at runtime"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: non-ASCII identifier characters (Arabic, Armenian, Greek, Hebrew, Korean ranges)"))
     func `TestCharacterRangeIdentifiersForSimpleVariableNamesWithAsciiPrefix — native compiler and runtime`() {
         Conformance.run("TestCharacterRangeIdentifiersForSimpleVariableNamesWithAsciiPrefix", .native, Self.testCharacterRangeIdentifiersForSimpleVariableNamesWithAsciiPrefix)
     }
 
     // MARK: TestCharacterRangeIdentifiersForSimpleVariableNamesWithAsciiSuffix — Tests.cs:4188
 
-    /*  Upstream C# (not ported — story built at runtime):
-                    var ranges = InkParser.ListAllCharacterRanges();
-                    for (int i = 0; i < ranges.Length; i++)
-                    {
-        
-                        var range = ranges[i];
-        
-                        var identifier = GenerateIdentifierFromCharacterRange(range);
-        
-                        var storyStr = string.Format(@"
-        VAR {0}pi = 3.1415
-        VAR {0}a = ""World""
-        VAR {0}b = 3
-        ", identifier);
-        
-                        var compiledStory = CompileStringWithoutRuntime(storyStr);
-        
-                        Assert.IsNotNull(compiledStory);
-                    }
-        
-    */
     @Sendable private static func testCharacterRangeIdentifiersForSimpleVariableNamesWithAsciiSuffix(_ c: Conformance) throws {
-        c.fail("not ported: story built at runtime")
+        // Upstream compiles one story per identifier character range, using every
+        // character of the range as the identifier (`string.Format`).
+        for range in UpstreamCharacterRanges.all {
+            let identifier = range.identifier
+            try c.compile(source: """
+                VAR \(identifier)pi = 3.1415
+                VAR \(identifier)a = "World"
+                VAR \(identifier)b = 3
+                """, testingErrors: true)
+            if c.errorMessages.count > 0 {
+                c.fail("\(range.name): \(c.errorMessages.all)")
+            }
+        }
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — story built at runtime"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: non-ASCII identifier characters (Arabic, Armenian, Greek, Hebrew, Korean ranges)"))
     func `TestCharacterRangeIdentifiersForSimpleVariableNamesWithAsciiSuffix — native compiler and runtime`() {
         Conformance.run("TestCharacterRangeIdentifiersForSimpleVariableNamesWithAsciiSuffix", .native, Self.testCharacterRangeIdentifiersForSimpleVariableNamesWithAsciiSuffix)
     }
 
     // MARK: TestCharacterRangeIdentifiersForDivertNamesWithAsciiPrefix — Tests.cs:4212
 
-    /*  Upstream C# (not ported — story built at runtime):
-                    var ranges = InkParser.ListAllCharacterRanges();
-                    for (int i = 0; i < ranges.Length; i++) {
-        
-                        var range = ranges[i];
-                        var rangeString = GenerateIdentifierFromCharacterRange(range);
-        
-        
-                        var storyStr = string.Format(@"
-        VAR z{0} = -> divert{0}
-        
-        == divert{0} ==
-        -> END
-        ", rangeString);
-        
-                        var compiledStory = CompileStringWithoutRuntime (storyStr);
-        
-                        Assert.IsNotNull (compiledStory);
-                    }
-        
-    */
     @Sendable private static func testCharacterRangeIdentifiersForDivertNamesWithAsciiPrefix(_ c: Conformance) throws {
-        c.fail("not ported: story built at runtime")
+        // Upstream compiles one story per identifier character range, using every
+        // character of the range as the identifier (`string.Format`).
+        for range in UpstreamCharacterRanges.all {
+            let identifier = range.identifier
+            try c.compile(source: """
+                VAR z\(identifier) = -> divert\(identifier)
+                
+                == divert\(identifier) ==
+                -> END
+                """, testingErrors: true)
+            if c.errorMessages.count > 0 {
+                c.fail("\(range.name): \(c.errorMessages.all)")
+            }
+        }
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — story built at runtime"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: divert-target values (VAR x = -> knot) and non-ASCII identifier characters"))
     func `TestCharacterRangeIdentifiersForDivertNamesWithAsciiPrefix — native compiler and runtime`() {
         Conformance.run("TestCharacterRangeIdentifiersForDivertNamesWithAsciiPrefix", .native, Self.testCharacterRangeIdentifiersForDivertNamesWithAsciiPrefix)
     }
 
     // MARK: TestCharacterRangeIdentifiersForDivertNamesWithAsciiSuffix — Tests.cs:4234
 
-    /*  Upstream C# (not ported — story built at runtime):
-                    var ranges = InkParser.ListAllCharacterRanges();
-                    for (int i = 0; i < ranges.Length; i++)
-                    {
-        
-                        var range = ranges[i];
-                        var rangeString = GenerateIdentifierFromCharacterRange(range);
-        
-        
-                        var storyStr = string.Format(@"
-        VAR {0}z = -> {0}divert
-        
-        == {0}divert ==
-        -> END
-        ", rangeString);
-        
-                        var compiledStory = CompileStringWithoutRuntime(storyStr);
-        
-                        Assert.IsNotNull(compiledStory);
-                    }
-        
-    */
     @Sendable private static func testCharacterRangeIdentifiersForDivertNamesWithAsciiSuffix(_ c: Conformance) throws {
-        c.fail("not ported: story built at runtime")
+        // Upstream compiles one story per identifier character range, using every
+        // character of the range as the identifier (`string.Format`).
+        for range in UpstreamCharacterRanges.all {
+            let identifier = range.identifier
+            try c.compile(source: """
+                VAR \(identifier)z = -> \(identifier)divert
+                
+                == \(identifier)divert ==
+                -> END
+                """, testingErrors: true)
+            if c.errorMessages.count > 0 {
+                c.fail("\(range.name): \(c.errorMessages.all)")
+            }
+        }
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — story built at runtime"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: divert-target values (VAR x = -> knot) and non-ASCII identifier characters"))
     func `TestCharacterRangeIdentifiersForDivertNamesWithAsciiSuffix — native compiler and runtime`() {
         Conformance.run("TestCharacterRangeIdentifiersForDivertNamesWithAsciiSuffix", .native, Self.testCharacterRangeIdentifiersForDivertNamesWithAsciiSuffix)
     }

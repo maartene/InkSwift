@@ -68,7 +68,7 @@ Alternative — `withKnownIssue { … }`: wrap an AT body instead of disabling i
 
 `Tests/SwiftInkRuntimeTests/Conformance/` holds upstream ink's own test suite (`tests/Tests.cs` from inkle/ink, MIT, see `Fixtures/Conformance/UPSTREAM-LICENSE.txt`), translated by `scripts/conformance/import_upstream_tests.py`. Each upstream test runs in two modes: **native** (InkSwift compiler + runtime) and **runtime** (inklecate's committed JSON on the InkSwift runtime), so compiler and runtime gaps show up separately. Fixtures live in `Fixtures/Conformance/` (`upstream-<Test>-<n>.ink`, `.ink.json`, `.diagnostics.txt`).
 
-Unlike `Acceptance/`, a `.disabled` test here is a **backlog item, not unfinished delivery**, so the zero-`.disabled` finalize invariant above does not apply to this folder. Each one is `.disabled(if: Conformance.skipsBacklog, "conformance: <gap>")`, naming the gap (an unsupported feature, a behaviour area, or "not ported — <API>").
+Unlike `Acceptance/`, a `.disabled` test here is a **backlog item, not unfinished delivery**, so the zero-`.disabled` finalize invariant above does not apply to this folder. Each one is `.disabled(if: Conformance.skipsBacklog, "conformance: <gap>")`, naming the gap: an unsupported feature, a behaviour area, "not ported — needs <host API>", or "not applicable — <inklecate internals>". Hand ports of tests the generator cannot translate live in `scripts/conformance/overrides/`, so a re-import keeps them.
 
 - **List the backlog:** `grep -rho 'conformance: [^"]*' Tests/SwiftInkRuntimeTests/Conformance | sort | uniq -c | sort -rn`
 - **See what a change fixed:** `INKSWIFT_CONFORMANCE_BACKLOG=1 swift test --filter UpstreamConformance` runs the disabled tests too.

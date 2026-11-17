@@ -93,68 +93,19 @@ struct UpstreamConformance01Tests {
 
     // MARK: TestBlanksInInlineSequences — Tests.cs:119
 
-    /*  Upstream C# (not ported — story built at runtime):
-                    var story = CompileString(@"
-        1. -> seq1 ->
-        2. -> seq1 ->
-        3. -> seq1 ->
-        4. -> seq1 ->
-        \---
-        1. -> seq2 ->
-        2. -> seq2 ->
-        3. -> seq2 ->
-        \---
-        1. -> seq3 ->
-        2. -> seq3 ->
-        3. -> seq3 ->
-        \---
-        1. -> seq4 ->
-        2. -> seq4 ->
-        3. -> seq4 ->
-        
-        == seq1 ==
-        {a||b}
-        ->->
-        
-        == seq2 ==
-        {|a}
-        ->->
-        
-        == seq3 ==
-        {a|}
-        ->->
-        
-        == seq4 ==
-        {|}
-        ->->".Replace("\r", ""));
-        
-                    Assert.AreEqual(
-        @"1. a
-        2.
-        3. b
-        4. b
-        ---
-        1.
-        2. a
-        3. a
-        ---
-        1. a
-        2.
-        3.
-        ---
-        1.
-        2.
-        3.
-        ".Replace("\r", ""), story.ContinueMaximally().Replace("\r", ""));
-        
-    */
     @Sendable private static func testBlanksInInlineSequences(_ c: Conformance) throws {
-        c.fail("not ported: story built at runtime")
+        let story = try c.compile(0)
+        c.equal("1. a\n2.\n3. b\n4. b\n---\n1.\n2. a\n3. a\n---\n1. a\n2.\n3.\n---\n1.\n2.\n3.\n", story.continueMaximally())
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — story built at runtime"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: a tunnel call in the middle of a line is kept as text"))
     func `TestBlanksInInlineSequences — native compiler and runtime`() {
         Conformance.run("TestBlanksInInlineSequences", .native, Self.testBlanksInInlineSequences)
+    }
+
+    @Test
+    func `TestBlanksInInlineSequences — inklecate JSON on the runtime`() {
+        Conformance.run("TestBlanksInInlineSequences", .runtime, Self.testBlanksInInlineSequences)
     }
 
     // MARK: TestAllSequenceTypes — Tests.cs:176
@@ -251,53 +202,26 @@ struct UpstreamConformance01Tests {
 
     // MARK: TestCommentEliminator — Tests.cs:306
 
-    /*  Upstream C# (not ported — object construction):
-                    var testContent =
-        @"A// C
-        A /* C */ A
-        
-        A * A * /* * C *// A/*
-        C C C
-        
-        */";
-        
-                    CommentEliminator p = new CommentEliminator(testContent);
-                    var result = p.Process();
-        
-                    var expected = "A\nA  A\n\nA * A * / A\n\n\n";
-        
-                    Assert.AreEqual(expected.Replace("\r", ""), result.Replace("\r", "")); //Windows perculiarity
-        
-    */
     @Sendable private static func testCommentEliminator(_ c: Conformance) throws {
-        c.fail("not ported: object construction")
+        // Upstream runs inklecate's CommentEliminator directly; InkSwift's counterpart
+        // is `CommentEliminator.strip`.
+        let content = "A// C\nA /* C */ A\n\nA * A * /* * C *// A/*\nC C C\n\n*/"
+        c.equal("A\nA  A\n\nA * A * / A\n\n\n", CommentEliminator.strip(content))
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — object construction"))
+    @Test
     func `TestCommentEliminator — native compiler and runtime`() {
         Conformance.run("TestCommentEliminator", .native, Self.testCommentEliminator)
     }
 
     // MARK: TestCommentEliminatorMixedNewlines — Tests.cs:327
 
-    /*  Upstream C# (not ported — object construction):
-                    var testContent =
-                        "A B\nC D // comment\nA B\r\nC D // comment\r\n/* block comment\r\nsecond line\r\n */ ";
-        
-                    CommentEliminator p = new CommentEliminator(testContent);
-                    var result = p.Process();
-        
-                    var expected =
-                        "A B\nC D \nA B\nC D \n\n\n ";
-        
-                    Assert.AreEqual(expected, result);
-        
-    */
     @Sendable private static func testCommentEliminatorMixedNewlines(_ c: Conformance) throws {
-        c.fail("not ported: object construction")
+        let content = "A B\nC D // comment\nA B\r\nC D // comment\r\n/* block comment\r\nsecond line\r\n */ "
+        c.equal("A B\nC D \nA B\nC D \n\n\n ", CommentEliminator.strip(content))
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — object construction"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: comment stripping with CRLF line endings"))
     func `TestCommentEliminatorMixedNewlines — native compiler and runtime`() {
         Conformance.run("TestCommentEliminatorMixedNewlines", .native, Self.testCommentEliminatorMixedNewlines)
     }
@@ -555,31 +479,15 @@ struct UpstreamConformance01Tests {
 
     // MARK: TestEmptyChoice — Tests.cs:668
 
-    /*  Upstream C# (not ported — lambdas):
-                    int warningCount = 0;
-                    InkParser parser = new InkParser("*", null, (string message, ErrorType errorType) =>
-                    {
-                        if (errorType == ErrorType.Warning)
-                        {
-                            warningCount++;
-                            Assert.IsTrue(message.Contains("completely empty"));
-                        }
-                        else
-                        {
-                            Assert.Fail("Shouldn't have had any errors");
-                        }
-                    });
-        
-                    parser.Parse();
-        
-                    Assert.AreEqual(1, warningCount);
-        
-    */
     @Sendable private static func testEmptyChoice(_ c: Conformance) throws {
-        c.fail("not ported: lambdas")
+        // Upstream parses `*` and expects exactly one warning, and no errors.
+        try c.compile(0, testingErrors: true)
+        c.equal(0, c.errorMessages.count)
+        c.equal(1, c.warningMessages.count)
+        c.isTrue(c.warningMessages[safe: 0].contains("completely empty"))
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — lambdas"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: native compiler reports no warnings"))
     func `TestEmptyChoice — native compiler and runtime`() {
         Conformance.run("TestEmptyChoice", .native, Self.testEmptyChoice)
     }
@@ -603,29 +511,18 @@ struct UpstreamConformance01Tests {
 
     // MARK: TestAllSwitchBranchesFailIsClean — Tests.cs:705
 
-    /*  Upstream C# (not ported — story state API):
-                	var story = CompileString (@"
-        { 1:
-            - 2: x
-            - 3: y
-        }
-                ");
-        
-                    story.Continue ();
-        
-                	Assert.IsTrue (story.state.evaluationStack.Count == 0);
-        
-    */
     @Sendable private static func testAllSwitchBranchesFailIsClean(_ c: Conformance) throws {
-        c.fail("not ported: story state API")
+        let story = try c.compile(0)
+        story.continue()
+        c.equal(0, story.engine.state.evalStack.count)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — story state API"))
+    @Test
     func `TestAllSwitchBranchesFailIsClean — native compiler and runtime`() {
         Conformance.run("TestAllSwitchBranchesFailIsClean", .native, Self.testAllSwitchBranchesFailIsClean)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — story state API"))
+    @Test
     func `TestAllSwitchBranchesFailIsClean — inklecate JSON on the runtime`() {
         Conformance.run("TestAllSwitchBranchesFailIsClean", .runtime, Self.testAllSwitchBranchesFailIsClean)
     }

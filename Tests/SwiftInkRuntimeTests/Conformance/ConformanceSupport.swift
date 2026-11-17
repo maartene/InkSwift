@@ -147,6 +147,28 @@ final class Conformance: @unchecked Sendable {
         return story
     }
 
+    /// Compile `source` (built by the test itself, e.g. from a character range)
+    /// with InkSwift's compiler. Native mode only: there is no inklecate JSON.
+    @discardableResult
+    func compile(source: String, testingErrors: Bool = false) throws -> Story {
+        precondition(mode == .native, "compile(source:) has no inklecate JSON for runtime mode")
+        resetCompileMessages()
+        var story: Story?
+        do {
+            story = Story(blueprint: try InkCompiler.compile(source: source))
+        } catch let error as CompileError {
+            locked { compileErrors.append(error.message) }
+        } catch {
+            locked { compileErrors.append(String(describing: error)) }
+        }
+        try checkCompile("generated source", testingErrors: testingErrors)
+        guard let story else {
+            return try Self.placeholderStory()
+        }
+        locked { stories.append((story, testingErrors)) }
+        return story
+    }
+
     /// Upstream's `CompileStringWithoutRuntime`: only the diagnostics matter.
     func compileWithoutRuntime(_ index: Int, testingErrors: Bool = false) throws {
         _ = try compile(index, testingErrors: testingErrors)
@@ -359,4 +381,47 @@ final class Conformance: @unchecked Sendable {
         }
         return String(describing: value)
     }
+}
+
+/// The non-ASCII identifier character ranges inklecate accepts
+/// (`InkParser_CharacterRanges.cs`, `ListAllCharacterRanges`), each with its
+/// excluded characters; upstream's character-range tests use every
+/// character of a range as one identifier.
+enum UpstreamCharacterRanges {
+    struct Range {
+        let name: String
+        let first: UInt32
+        let last: UInt32
+        let excludes: [ClosedRange<UInt32>]
+
+        /// Every character of the range, minus its excludes, as one string.
+        var identifier: String {
+            var text = ""
+            for scalar in first...last where excludes.allSatisfy({ $0.contains(scalar) == false }) {
+                if let character = Unicode.Scalar(scalar) {
+                    text.unicodeScalars.append(character)
+                }
+            }
+            return text
+        }
+    }
+
+    static let all: [Range] = [
+        Range(name: "LatinBasic", first: 0x0041, last: 0x007A, excludes: [0x005B...0x0060]),
+        Range(name: "LatinExtendedA", first: 0x0100, last: 0x017F, excludes: []),
+        Range(name: "LatinExtendedB", first: 0x0180, last: 0x024F, excludes: []),
+        Range(name: "Arabic", first: 0x0600, last: 0x06FF, excludes: []),
+        Range(name: "Armenian", first: 0x0530, last: 0x058F,
+              excludes: [0x0530...0x0530, 0x0557...0x0560, 0x0588...0x058E]),
+        Range(name: "Cyrillic", first: 0x0400, last: 0x04FF, excludes: [0x0482...0x0489]),
+        Range(name: "Greek", first: 0x0370, last: 0x03FF,
+              excludes: [0x0378...0x0385, 0x0374...0x0375, 0x0387...0x0387, 0x038B...0x038B,
+                         0x038D...0x038D, 0x03A2...0x03A2]),
+        Range(name: "Hebrew", first: 0x0590, last: 0x05FF, excludes: []),
+        Range(name: "Korean", first: 0xAC00, last: 0xD7AF, excludes: []),
+        Range(name: "Latin1Supplement", first: 0x0080, last: 0x00FF, excludes: []),
+        Range(name: "CJKUnifiedIdeographs", first: 0x4E00, last: 0x9FFF, excludes: []),
+        Range(name: "Hiragana", first: 0x3041, last: 0x3096, excludes: []),
+        Range(name: "Katakana", first: 0x30A0, last: 0x30FC, excludes: []),
+    ]
 }

@@ -20,10 +20,16 @@ Known failures live in `known-failures.json` next to this script, as
 `.disabled(if: Conformance.skipsBacklog, "conformance: <reason>")` trait. Hand ports live in `overrides/<Test>.swift`
 (the Swift body, using `c` and the same helpers as generated bodies).
 
+An override may bring its own stories as `overrides/<Test>-<n>.ink` (used instead
+of any extracted ones), and may start with `// conformance-modes: native` to run in
+native mode only (for tests about compile diagnostics, which in runtime mode would
+only re-test inklecate).
+
 This is a bootstrap: run it to (re)import upstream, then commit the output. Usage:
 
     scripts/conformance/import_upstream_tests.py <ink-checkout> <inklecate>
 """
+import glob
 import json
 import os
 import re
@@ -112,6 +118,19 @@ def tokenize_strings(body):
     return "".join(out), lits
 
 
+def drop_newline_normalising(text, lits):
+    """Remove upstream's Windows-newline normalising (`.Replace("\\r", "")`,
+    `.Replace(Environment.NewLine, "\\n")`): a no-op for our `\\n`-only fixtures."""
+    def is_noop(m):
+        old = m.group(1)
+        new = lits[int(m.group(2))]["value"]
+        if old == "Environment.NewLine":
+            return new == "\n"
+        return lits[int(old[3:-2])]["value"] == "\r" and new == ""
+    pattern = r"\.Replace\s*\(\s*(__S\d+__|Environment\.NewLine)\s*,\s*__S(\d+)__\s*\)"
+    return re.sub(pattern, lambda m: "" if is_noop(m) else m.group(0), text)
+
+
 def statements(text):
     """Split placeholder text into top-level statements on `;`. A C# block
     (`if (…) { … }`, a lambda) stays inside one statement and is rejected later."""
@@ -198,7 +217,7 @@ class Port(Exception):
 def translate(name, body):
     """Translate a C# test body. Returns (stories, compile_flags, swift_lines)."""
     text, lits = tokenize_strings(body)
-    stmts = statements(text)
+    stmts = statements(drop_newline_normalising(text, lits))
 
     # Which literals are stories: passed (directly or via a variable) to
     # CompileString*. Variables are followed in order, as a test may reassign
@@ -322,18 +341,24 @@ def translate(name, body):
 
 
 def stories_only(body):
-    """Story literals for an untranslatable test (best effort, for fixtures only)."""
+    """Story literals for an untranslatable test (best effort, for fixtures only),
+    with the compile flags each was used with."""
     text, lits = tokenize_strings(body)
-    found = []
+    text = drop_newline_normalising(text, lits)
+    found, counted = [], set()
     var_lit = {m.group(1): int(m.group(2)) for m in re.finditer(r"(?:var|string)\s+(\w+)\s*=\s*__S(\d+)__", text)}
     for fn in ("CompileStringWithoutRuntime", "CompileString"):
         for _, a0, end in call_spans(text, fn):
-            arg = split_args(text[a0:end - 1])[0]
-            lit = re.fullmatch(r"__S(\d+)__", arg)
-            idx = int(lit.group(1)) if lit else var_lit.get(arg)
+            args = split_args(text[a0:end - 1])
+            lit = re.fullmatch(r"__S(\d+)__", args[0])
+            idx = int(lit.group(1)) if lit else var_lit.get(args[0])
             if idx is not None and idx not in found:
                 found.append(idx)
-    return [lits[i]["value"] for i in sorted(found)]
+            if idx is not None and any(re.fullmatch(r"countAllVisits\s*:\s*true", a) for a in args[1:]):
+                counted.add(idx)
+    ordered = sorted(found)
+    flags = {n: "countAllVisits" for n, idx in enumerate(ordered) if idx in counted}
+    return [lits[i]["value"] for i in ordered], flags
 
 
 # ---------------------------------------------------------------- output
@@ -419,16 +444,23 @@ def main():
             stories, flags, swift = translate(name, body)
             why = None
         except Port as port:
-            stories, flags, swift, why = stories_only(body), {}, None, str(port)
+            (stories, flags), swift, why = stories_only(body), None, str(port)
+        native_only = False
         if os.path.exists(override):
             swift = [l.rstrip("\n") for l in open(override).read().strip("\n").splitlines()]
             why = None
+            if swift and swift[0].strip() == "// conformance-modes: native":
+                native_only = True
+                swift = swift[1:]
+            own = sorted(glob.glob(os.path.join(HERE, "overrides", name + "-*.ink")))
+            if own:
+                stories = [open(f, encoding="utf-8").read() for f in own]
         accepted = True
         for n, story in enumerate(stories):
             base = f"upstream-{name}-{n}"
             open(os.path.join(FIXTURES, base + ".ink"), "w").write(story)
             accepted &= compile_fixture(inklecate, base, flags.get(n) == "countAllVisits")
-        modes = ["native"] + (["runtime"] if accepted and stories else [])
+        modes = ["native"] + (["runtime"] if accepted and stories and not native_only else [])
         tests.append(dict(name=name, line=line, body=swift, why=why, csharp=body, modes=modes))
 
     for f in os.listdir(SWIFT_DIR):

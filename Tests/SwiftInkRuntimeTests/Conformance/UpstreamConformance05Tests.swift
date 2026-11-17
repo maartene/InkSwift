@@ -27,65 +27,29 @@ struct UpstreamConformance05Tests {
 
     // MARK: TestTags — Tests.cs:2733
 
-    /*  Upstream C# (not ported — unmapped API Add):
-                    var storyStr =
-                        @"
-        VAR x = 2
-        # author: Joe
-        # title: My Great Story
-        This is the content
-        
-        == knot ==
-        # knot tag
-        Knot content
-        # end of knot tag
-        -> END
-        
-        = stitch
-        # stitch tag
-        Stitch content
-        # this tag is below some content so isn't included in the static tags for the stitch
-        -> END
-        ";
-                    var story = CompileString (storyStr);
-        
-                    var globalTags = new List<string> ();
-                    globalTags.Add ("author: Joe");
-                    globalTags.Add ("title: My Great Story");
-        
-                    var knotTags = new List<string> ();
-                    knotTags.Add ("knot tag");
-        
-                    var knotTagWhenContinuedTwice = new List<string> ();
-                    knotTagWhenContinuedTwice.Add ("end of knot tag");
-        
-                    var stitchTags = new List<string> ();
-                    stitchTags.Add ("stitch tag");
-        
-                    Assert.AreEqual (globalTags, story.globalTags);
-                    Assert.AreEqual ("This is the content\n", story.Continue ());
-                    Assert.AreEqual (globalTags, story.currentTags);
-        
-                    Assert.AreEqual (knotTags, story.TagsForContentAtPath ("knot"));
-                    Assert.AreEqual (stitchTags, story.TagsForContentAtPath ("knot.stitch"));
-        
-                    story.ChoosePathString ("knot");
-                    Assert.AreEqual ("Knot content\n", story.Continue ());
-                    Assert.AreEqual (knotTags, story.currentTags);
-                    Assert.AreEqual ("", story.Continue ());
-                    Assert.AreEqual (knotTagWhenContinuedTwice, story.currentTags);
-        
-    */
     @Sendable private static func testTags(_ c: Conformance) throws {
-        c.fail("not ported: unmapped API Add")
+        let story = try c.compile(0)
+        let globalTags = ["author: Joe", "title: My Great Story"]
+        let knotTags = ["knot tag"]
+        c.equal(globalTags, story.globalTags)
+        c.equal("This is the content\n", story.continue())
+        c.equal(globalTags, story.currentTags)
+        // Upstream also expects `TagsForContentAtPath("knot")` to be ["knot tag"] and
+        // `TagsForContentAtPath("knot.stitch")` to be ["stitch tag"].
+        c.fail("needs a TagsForContentAtPath API")
+        try story.choosePath("knot")
+        c.equal("Knot content\n", story.continue())
+        c.equal(knotTags, story.currentTags)
+        c.equal("", story.continue())
+        c.equal(["end of knot tag"], story.currentTags)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — unmapped API Add"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: needs a TagsForContentAtPath API; global tags before the first continue"))
     func `TestTags — native compiler and runtime`() {
         Conformance.run("TestTags", .native, Self.testTags)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — unmapped API Add"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: needs a TagsForContentAtPath API; global tags before the first continue"))
     func `TestTags — inklecate JSON on the runtime`() {
         Conformance.run("TestTags", .runtime, Self.testTags)
     }
@@ -246,12 +210,12 @@ struct UpstreamConformance05Tests {
         c.fail("not ported: state JSON save/load")
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — state JSON save/load"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — needs state save/load to JSON, and lists"))
     func `TestListSaveLoad — native compiler and runtime`() {
         Conformance.run("TestListSaveLoad", .native, Self.testListSaveLoad)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — state JSON save/load"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — needs state save/load to JSON, and lists"))
     func `TestListSaveLoad — inklecate JSON on the runtime`() {
         Conformance.run("TestListSaveLoad", .runtime, Self.testListSaveLoad)
     }
@@ -565,48 +529,18 @@ struct UpstreamConformance05Tests {
 
     // MARK: TestEvaluationStackLeaks — Tests.cs:3267
 
-    /*  Upstream C# (not ported — story state API):
-                	var storyStr =
-        @"
-        {false:
-        
-        - else:
-            else
-        }
-        
-        {6:
-        - 5: five
-        - else: else
-        }
-        
-        -> onceTest ->
-        -> onceTest ->
-        
-        == onceTest ==
-        {once:
-        - hi
-        }
-        ->->
-        ";
-        
-                	var story = CompileString (storyStr);
-        
-                	var result = story.ContinueMaximally ();
-        
-                	Assert.AreEqual ("else\nelse\nhi\n", result);
-                    Assert.IsTrue (story.state.evaluationStack.Count == 0);
-        
-    */
     @Sendable private static func testEvaluationStackLeaks(_ c: Conformance) throws {
-        c.fail("not ported: story state API")
+        let story = try c.compile(0)
+        c.equal("else\nelse\nhi\n", story.continueMaximally())
+        c.equal(0, story.engine.state.evalStack.count)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — story state API"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: once-only sequence inside a tunnel"))
     func `TestEvaluationStackLeaks — native compiler and runtime`() {
         Conformance.run("TestEvaluationStackLeaks", .native, Self.testEvaluationStackLeaks)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — story state API"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: runtime newline de-duplication (#26)"))
     func `TestEvaluationStackLeaks — inklecate JSON on the runtime`() {
         Conformance.run("TestEvaluationStackLeaks", .runtime, Self.testEvaluationStackLeaks)
     }

@@ -1,0 +1,2 @@
+WARNING: 'upstream-TestReturnTextWarning-0.ink' line 2: Do you need a '~' before 'return'? If not, perhaps use a glue: <> (since it's lowercase) or rewrite somehow?
+WARNING: 'upstream-TestReturnTextWarning-0.ink' line 2: Apparent loose end exists where the flow runs out. Do you need a '-> DONE' statement, choice or divert?

@@ -1,0 +1,18 @@
+let story = try c.compile(0)
+c.equal("5\n", story.continueMaximally())
+c.equal(5, story.getVariable("x"))
+story.setVariable("x", to: 10)
+try story.chooseChoice(at: 0)
+c.equal("10\n", story.continueMaximally())
+c.equal(10, story.getVariable("x"))
+story.setVariable("x", to: 8.5)
+try story.chooseChoice(at: 0)
+c.equal("8.5\n", story.continueMaximally())
+c.equal(8.5, story.getVariable("x"))
+story.setVariable("x", to: "a string")
+try story.chooseChoice(at: 0)
+c.equal("a string\n", story.continueMaximally())
+c.equal("a string", story.getVariable("x"))
+c.isNil(story.getVariable("z"))
+// Upstream also expects setting an unsupported value type to throw. InkSwift's
+// `setVariable(_:to:)` is non-throwing, so that check has no counterpart here.

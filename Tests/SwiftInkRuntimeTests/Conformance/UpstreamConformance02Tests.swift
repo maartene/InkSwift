@@ -164,12 +164,12 @@ struct UpstreamConformance02Tests {
         c.fail("not ported: lambdas")
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — lambdas"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — needs an external function binding API"))
     func `TestExternalBinding — native compiler and runtime`() {
         Conformance.run("TestExternalBinding", .native, Self.testExternalBinding)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — lambdas"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — needs an external function binding API"))
     func `TestExternalBinding — inklecate JSON on the runtime`() {
         Conformance.run("TestExternalBinding", .runtime, Self.testExternalBinding)
     }
@@ -221,12 +221,12 @@ struct UpstreamConformance02Tests {
         c.fail("not ported: lambdas")
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — lambdas"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — needs an external function binding API"))
     func `TestLookupSafeOrNot — native compiler and runtime`() {
         Conformance.run("TestLookupSafeOrNot", .native, Self.testLookupSafeOrNot)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — lambdas"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — needs an external function binding API"))
     func `TestLookupSafeOrNot — inklecate JSON on the runtime`() {
         Conformance.run("TestLookupSafeOrNot", .runtime, Self.testLookupSafeOrNot)
     }

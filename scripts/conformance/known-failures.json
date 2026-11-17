@@ -14,9 +14,30 @@
   "native": "glue across a tunnel call",
   "runtime": "glue across a tunnel call"
  },
+ "TestBlanksInInlineSequences": {
+  "native": "a tunnel call in the middle of a line is kept as text"
+ },
  "TestBools": {
   "native": "unsupported lists",
   "runtime": "unsupported lists"
+ },
+ "TestCharacterRangeIdentifiersForConstNamesWithAsciiPrefix": {
+  "native": "non-ASCII identifier characters (Arabic, Armenian, Greek, Hebrew, Korean ranges)"
+ },
+ "TestCharacterRangeIdentifiersForConstNamesWithAsciiSuffix": {
+  "native": "non-ASCII identifier characters (Arabic, Armenian, Greek, Hebrew, Korean ranges)"
+ },
+ "TestCharacterRangeIdentifiersForDivertNamesWithAsciiPrefix": {
+  "native": "divert-target values (VAR x = -> knot) and non-ASCII identifier characters"
+ },
+ "TestCharacterRangeIdentifiersForDivertNamesWithAsciiSuffix": {
+  "native": "divert-target values (VAR x = -> knot) and non-ASCII identifier characters"
+ },
+ "TestCharacterRangeIdentifiersForSimpleVariableNamesWithAsciiPrefix": {
+  "native": "non-ASCII identifier characters (Arabic, Armenian, Greek, Hebrew, Korean ranges)"
+ },
+ "TestCharacterRangeIdentifiersForSimpleVariableNamesWithAsciiSuffix": {
+  "native": "non-ASCII identifier characters (Arabic, Armenian, Greek, Hebrew, Korean ranges)"
  },
  "TestChoiceCount": {
   "native": "unsupported threads",
@@ -25,6 +46,13 @@
  "TestChoiceDivertsToDone": {
   "native": "a divert to DONE on a choice line is kept as text",
   "runtime": "line ending before -> DONE"
+ },
+ "TestChoiceThreadForking": {
+  "native": "not ported \u2014 needs state save/load to JSON, and threads",
+  "runtime": "not ported \u2014 needs state save/load to JSON, and threads"
+ },
+ "TestCommentEliminatorMixedNewlines": {
+  "native": "comment stripping with CRLF line endings"
  },
  "TestCompareDivertTargets": {
   "native": "native compiler rejects a valid story: unexpectedToken('>')"
@@ -80,6 +108,9 @@
   "native": "else branches",
   "runtime": "else branches"
  },
+ "TestEmptyChoice": {
+  "native": "native compiler reports no warnings"
+ },
  "TestEmptyListOrigin": {
   "native": "unsupported lists",
   "runtime": "unsupported lists"
@@ -104,6 +135,26 @@
  "TestEscapeCharacter": {
   "native": "escaped characters in alternatives"
  },
+ "TestEvaluatingFunctionVariableStateBug": {
+  "native": "not ported \u2014 needs an EvaluateFunction API",
+  "runtime": "not ported \u2014 needs an EvaluateFunction API"
+ },
+ "TestEvaluatingInkFunctionsFromGame": {
+  "native": "not ported \u2014 needs an EvaluateFunction API",
+  "runtime": "not ported \u2014 needs an EvaluateFunction API"
+ },
+ "TestEvaluatingInkFunctionsFromGame2": {
+  "native": "not ported \u2014 needs an EvaluateFunction API",
+  "runtime": "not ported \u2014 needs an EvaluateFunction API"
+ },
+ "TestEvaluationStackLeaks": {
+  "native": "once-only sequence inside a tunnel",
+  "runtime": "runtime newline de-duplication (#26)"
+ },
+ "TestExternalBinding": {
+  "native": "not ported \u2014 needs an external function binding API",
+  "runtime": "not ported \u2014 needs an external function binding API"
+ },
  "TestFactorialByReference": {
   "native": "pass-by-reference (ref) parameters",
   "runtime": "pass-by-reference (ref) parameters"
@@ -124,6 +175,10 @@
  },
  "TestFunctionPurityChecks": {
   "native": "native accepts a story inklecate rejects (function purity)"
+ },
+ "TestGameInkBackAndForth": {
+  "native": "not ported \u2014 needs EvaluateFunction and external function binding APIs",
+  "runtime": "not ported \u2014 needs EvaluateFunction and external function binding APIs"
  },
  "TestGatherChoiceSameLine": {
   "native": "a gather and a choice on the same line"
@@ -150,6 +205,10 @@
  "TestIncrement": {
   "native": "native compiler rejects a valid story: unexpectedToken('+')"
  },
+ "TestKnotStitchGatherCounts": {
+  "native": "native compiler rejects a valid story: unexpectedToken('+')",
+  "runtime": "read counts of knots, stitches and gathers"
+ },
  "TestKnotThreadInteraction": {
   "native": "unsupported threads",
   "runtime": "unsupported threads"
@@ -173,6 +232,18 @@
   "native": "unsupported lists",
   "runtime": "unsupported lists"
  },
+ "TestListRandom": {
+  "native": "unsupported lists, RANDOM",
+  "runtime": "unsupported lists, RANDOM"
+ },
+ "TestListRange": {
+  "native": "unsupported lists",
+  "runtime": "unsupported lists"
+ },
+ "TestListSaveLoad": {
+  "native": "not ported \u2014 needs state save/load to JSON, and lists",
+  "runtime": "not ported \u2014 needs state save/load to JSON, and lists"
+ },
  "TestLogicInChoices": {
   "native": "logic in choice text",
   "runtime": "logic in choice text"
@@ -180,12 +251,24 @@
  "TestLogicLinesWithNewlines": {
   "runtime": "runtime newline de-duplication (#26)"
  },
+ "TestLookupSafeOrNot": {
+  "native": "not ported \u2014 needs an external function binding API",
+  "runtime": "not ported \u2014 needs an external function binding API"
+ },
  "TestLooseEnds": {
   "native": "native compiler reports no warnings"
  },
  "TestMoreListOperations": {
   "native": "unsupported lists",
   "runtime": "unsupported lists"
+ },
+ "TestMultiFlowBasics": {
+  "native": "not ported \u2014 needs a multiple flows API",
+  "runtime": "not ported \u2014 needs a multiple flows API"
+ },
+ "TestMultiFlowSaveLoadThreads": {
+  "native": "not ported \u2014 needs a multiple flows API, state save/load and threads",
+  "runtime": "not ported \u2014 needs a multiple flows API, state save/load and threads"
  },
  "TestMultiThread": {
   "native": "unsupported threads",
@@ -208,6 +291,10 @@
  "TestNewlineConsistency": {
   "native": "a divert after choice text is kept as text"
  },
+ "TestNewlinesTrimmingWithFuncExternalFallback": {
+  "native": "not ported \u2014 needs an external function binding API",
+  "runtime": "not ported \u2014 needs an external function binding API"
+ },
  "TestNewlinesWithStringEval": {
   "native": "newlines around string evaluation",
   "runtime": "newlines around string evaluation"
@@ -222,6 +309,14 @@
  "TestPathToSelf": {
   "native": "a choice that diverts to its own knot",
   "runtime": "a choice that diverts to its own knot"
+ },
+ "TestPaths": {
+  "native": "not applicable yet \u2014 unit-tests the runtime Path type (see #25)",
+  "runtime": "not applicable yet \u2014 unit-tests the runtime Path type (see #25)"
+ },
+ "TestPrintNum": {
+  "native": "native compiler rejects a valid story: unexpectedToken('mod')",
+  "runtime": "glue and conditionals in a recursive function"
  },
  "TestQuoteCharacterSignificance": {
   "native": "native compiler rejects a valid story: unexpectedToken('o')",
@@ -241,6 +336,9 @@
  "TestRequireVariableTargetsTyped": {
   "native": "native accepts a story inklecate rejects ('it should be marked as: ->')"
  },
+ "TestReturnTextWarning": {
+  "native": "native compiler reports no warnings"
+ },
  "TestShuffleStackMuddying": {
   "native": "unsupported shuffle",
   "runtime": "unsupported shuffle"
@@ -259,6 +357,26 @@
   "native": "string contains operator (?)",
   "runtime": "string contains operator (?)"
  },
+ "TestStringParserA": {
+  "native": "not applicable \u2014 unit-tests inklecate's StringParser internals",
+  "runtime": "not applicable \u2014 unit-tests inklecate's StringParser internals"
+ },
+ "TestStringParserABAB": {
+  "native": "not applicable \u2014 unit-tests inklecate's StringParser internals",
+  "runtime": "not applicable \u2014 unit-tests inklecate's StringParser internals"
+ },
+ "TestStringParserABAOptional": {
+  "native": "not applicable \u2014 unit-tests inklecate's StringParser internals",
+  "runtime": "not applicable \u2014 unit-tests inklecate's StringParser internals"
+ },
+ "TestStringParserABAOptional2": {
+  "native": "not applicable \u2014 unit-tests inklecate's StringParser internals",
+  "runtime": "not applicable \u2014 unit-tests inklecate's StringParser internals"
+ },
+ "TestStringParserB": {
+  "native": "not applicable \u2014 unit-tests inklecate's StringParser internals",
+  "runtime": "not applicable \u2014 unit-tests inklecate's StringParser internals"
+ },
  "TestStringTypeCoersion": {
   "native": "string and number comparison coercion",
   "runtime": "string and number comparison coercion"
@@ -266,6 +384,10 @@
  "TestStringsInChoices": {
   "native": "string literals in choice text",
   "runtime": "string literals in choice text"
+ },
+ "TestTags": {
+  "native": "needs a TagsForContentAtPath API; global tags before the first continue",
+  "runtime": "needs a TagsForContentAtPath API; global tags before the first continue"
  },
  "TestTagsDynamicContent": {
   "native": "tags with dynamic content",
@@ -324,6 +446,10 @@
   "native": "unsupported threads",
   "runtime": "unsupported threads"
  },
+ "TestTurns": {
+  "native": "TURNS()",
+  "runtime": "TURNS()"
+ },
  "TestTurnsSince": {
   "native": "TURNS_SINCE",
   "runtime": "TURNS_SINCE"
@@ -342,11 +468,18 @@
  "TestVariableDivertTarget": {
   "native": "native compiler rejects a valid story: unexpectedToken('>')"
  },
+ "TestVariableGetSetAPI": {
+  "runtime": "runtime newline de-duplication (#26)"
+ },
  "TestVariableNamingCollisionWithArg": {
   "native": "native accepts a story inklecate rejects ('has already been used')"
  },
  "TestVariableNamingCollisionWithFlow": {
   "native": "unsupported lists"
+ },
+ "TestVariableObserver": {
+  "native": "not ported \u2014 needs a variable observer API",
+  "runtime": "not ported \u2014 needs a variable observer API"
  },
  "TestVariableSwapRecurse": {
   "runtime": "runtime newline de-duplication (#26)"
@@ -365,6 +498,10 @@
  "TestVisitCountBugDueToNestedContainers": {
   "native": "visit counts in nested containers",
   "runtime": "visit counts in nested containers"
+ },
+ "TestVisitCountsWhenChoosing": {
+  "native": "visit counts when choosing a path or a choice",
+  "runtime": "visit counts when choosing a path or a choice"
  },
  "TestWeaveOptions": {
   "runtime": "choice text with [bracketed] options"

@@ -209,67 +209,33 @@ struct UpstreamConformance04Tests {
 
     // MARK: TestVariableGetSetAPI — Tests.cs:2153
 
-    /*  Upstream C# (not ported — lambdas):
-                    var story = CompileString(@"
-        VAR x = 5
-        
-        {x}
-        
-        * [choice]
-        -
-        {x}
-        
-        * [choice]
-        -
-        
-        {x}
-        
-        * [choice]
-        -
-        
-        {x}
-        
-        -> DONE
-        ");
-        
-                    // Initial state
-                    Assert.AreEqual("5\n", story.ContinueMaximally());
-                    Assert.AreEqual(5, story.variablesState["x"]);
-        
-                    story.variablesState["x"] = 10;
-                    story.ChooseChoiceIndex(0);
-                    Assert.AreEqual("10\n", story.ContinueMaximally());
-                    Assert.AreEqual(10, story.variablesState["x"]);
-        
-                    story.variablesState["x"] = 8.5f;
-                    story.ChooseChoiceIndex(0);
-                    Assert.AreEqual("8"+ System.Globalization.NumberFormatInfo.CurrentInfo.NumberDecimalSeparator+"5\n", story.ContinueMaximally());
-                    Assert.AreEqual(8.5f, story.variablesState["x"]);
-        
-                    story.variablesState["x"] = "a string";
-                    story.ChooseChoiceIndex(0);
-                    Assert.AreEqual("a string\n", story.ContinueMaximally());
-                    Assert.AreEqual("a string", story.variablesState["x"]);
-        
-                    Assert.AreEqual(null, story.variablesState["z"]);
-        
-                    // Not allowed arbitrary types
-                    Assert.Throws<Exception>(() =>
-                    {
-                        story.variablesState["x"] = new System.Text.StringBuilder();
-                    });
-        
-    */
     @Sendable private static func testVariableGetSetAPI(_ c: Conformance) throws {
-        c.fail("not ported: lambdas")
+        let story = try c.compile(0)
+        c.equal("5\n", story.continueMaximally())
+        c.equal(5, story.getVariable("x"))
+        story.setVariable("x", to: 10)
+        try story.chooseChoice(at: 0)
+        c.equal("10\n", story.continueMaximally())
+        c.equal(10, story.getVariable("x"))
+        story.setVariable("x", to: 8.5)
+        try story.chooseChoice(at: 0)
+        c.equal("8.5\n", story.continueMaximally())
+        c.equal(8.5, story.getVariable("x"))
+        story.setVariable("x", to: "a string")
+        try story.chooseChoice(at: 0)
+        c.equal("a string\n", story.continueMaximally())
+        c.equal("a string", story.getVariable("x"))
+        c.isNil(story.getVariable("z"))
+        // Upstream also expects setting an unsupported value type to throw. InkSwift's
+        // `setVariable(_:to:)` is non-throwing, so that check has no counterpart here.
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — lambdas"))
+    @Test
     func `TestVariableGetSetAPI — native compiler and runtime`() {
         Conformance.run("TestVariableGetSetAPI", .native, Self.testVariableGetSetAPI)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — lambdas"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: runtime newline de-duplication (#26)"))
     func `TestVariableGetSetAPI — inklecate JSON on the runtime`() {
         Conformance.run("TestVariableGetSetAPI", .runtime, Self.testVariableGetSetAPI)
     }
@@ -322,12 +288,12 @@ struct UpstreamConformance04Tests {
         c.fail("not ported: lambdas")
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — lambdas"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — needs a variable observer API"))
     func `TestVariableObserver — native compiler and runtime`() {
         Conformance.run("TestVariableObserver", .native, Self.testVariableObserver)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — lambdas"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — needs a variable observer API"))
     func `TestVariableObserver — inklecate JSON on the runtime`() {
         Conformance.run("TestVariableObserver", .runtime, Self.testVariableObserver)
     }
@@ -448,57 +414,31 @@ struct UpstreamConformance04Tests {
 
     // MARK: TestVisitCountsWhenChoosing — Tests.cs:2384
 
-    /*  Upstream C# (not ported — story state API):
-                    var storyStr =
-                        @"
-        == TestKnot ==
-        this is a test
-        + [Next] -> TestKnot2
-        
-        == TestKnot2 ==
-        this is the end
-        -> END
-        ";
-        
-                    Story story = CompileString(storyStr, countAllVisits:true);
-        
-                    Assert.AreEqual (0, story.state.VisitCountAtPathString ("TestKnot"));
-                    Assert.AreEqual (0, story.state.VisitCountAtPathString ("TestKnot2"));
-        
-                    story.ChoosePathString ("TestKnot");
-        
-                    Assert.AreEqual (1, story.state.VisitCountAtPathString ("TestKnot"));
-                    Assert.AreEqual (0, story.state.VisitCountAtPathString ("TestKnot2"));
-        
-                    story.Continue ();
-        
-                    Assert.AreEqual (1, story.state.VisitCountAtPathString ("TestKnot"));
-                    Assert.AreEqual (0, story.state.VisitCountAtPathString ("TestKnot2"));
-        
-                    story.ChooseChoiceIndex (0);
-        
-                    Assert.AreEqual (1, story.state.VisitCountAtPathString ("TestKnot"));
-        
-                    // At this point, we have made the choice, but the divert *within* the choice
-                    // won't yet have been evaluated.
-                    Assert.AreEqual (0, story.state.VisitCountAtPathString ("TestKnot2"));
-        
-                    story.Continue ();
-        
-                    Assert.AreEqual (1, story.state.VisitCountAtPathString ("TestKnot"));
-                    Assert.AreEqual (1, story.state.VisitCountAtPathString ("TestKnot2"));
-        
-    */
     @Sendable private static func testVisitCountsWhenChoosing(_ c: Conformance) throws {
-        c.fail("not ported: story state API")
+        let story = try c.compile(0, countAllVisits: true)
+        c.equal(0, story.visitCount(forKnot: "TestKnot"))
+        c.equal(0, story.visitCount(forKnot: "TestKnot2"))
+        try story.choosePath("TestKnot")
+        c.equal(1, story.visitCount(forKnot: "TestKnot"))
+        c.equal(0, story.visitCount(forKnot: "TestKnot2"))
+        story.continue()
+        c.equal(1, story.visitCount(forKnot: "TestKnot"))
+        c.equal(0, story.visitCount(forKnot: "TestKnot2"))
+        try story.chooseChoice(at: 0)
+        c.equal(1, story.visitCount(forKnot: "TestKnot"))
+        // The choice is made, but the divert within it is not yet evaluated.
+        c.equal(0, story.visitCount(forKnot: "TestKnot2"))
+        story.continue()
+        c.equal(1, story.visitCount(forKnot: "TestKnot"))
+        c.equal(1, story.visitCount(forKnot: "TestKnot2"))
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — story state API"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: visit counts when choosing a path or a choice"))
     func `TestVisitCountsWhenChoosing — native compiler and runtime`() {
         Conformance.run("TestVisitCountsWhenChoosing", .native, Self.testVisitCountsWhenChoosing)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — story state API"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: visit counts when choosing a path or a choice"))
     func `TestVisitCountsWhenChoosing — inklecate JSON on the runtime`() {
         Conformance.run("TestVisitCountsWhenChoosing", .runtime, Self.testVisitCountsWhenChoosing)
     }
@@ -607,12 +547,12 @@ struct UpstreamConformance04Tests {
         c.fail("not ported: EvaluateFunction")
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — EvaluateFunction"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — needs an EvaluateFunction API"))
     func `TestEvaluatingInkFunctionsFromGame — native compiler and runtime`() {
         Conformance.run("TestEvaluatingInkFunctionsFromGame", .native, Self.testEvaluatingInkFunctionsFromGame)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — EvaluateFunction"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — needs an EvaluateFunction API"))
     func `TestEvaluatingInkFunctionsFromGame — inklecate JSON on the runtime`() {
         Conformance.run("TestEvaluatingInkFunctionsFromGame", .runtime, Self.testEvaluatingInkFunctionsFromGame)
     }
@@ -665,12 +605,12 @@ struct UpstreamConformance04Tests {
         c.fail("not ported: EvaluateFunction")
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — EvaluateFunction"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — needs an EvaluateFunction API"))
     func `TestEvaluatingInkFunctionsFromGame2 — native compiler and runtime`() {
         Conformance.run("TestEvaluatingInkFunctionsFromGame2", .native, Self.testEvaluatingInkFunctionsFromGame2)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — EvaluateFunction"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — needs an EvaluateFunction API"))
     func `TestEvaluatingInkFunctionsFromGame2 — inklecate JSON on the runtime`() {
         Conformance.run("TestEvaluatingInkFunctionsFromGame2", .runtime, Self.testEvaluatingInkFunctionsFromGame2)
     }
@@ -719,12 +659,12 @@ struct UpstreamConformance04Tests {
         c.fail("not ported: EvaluateFunction")
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — EvaluateFunction"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — needs an EvaluateFunction API"))
     func `TestEvaluatingFunctionVariableStateBug — native compiler and runtime`() {
         Conformance.run("TestEvaluatingFunctionVariableStateBug", .native, Self.testEvaluatingFunctionVariableStateBug)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — EvaluateFunction"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — needs an EvaluateFunction API"))
     func `TestEvaluatingFunctionVariableStateBug — inklecate JSON on the runtime`() {
         Conformance.run("TestEvaluatingFunctionVariableStateBug", .runtime, Self.testEvaluatingFunctionVariableStateBug)
     }
@@ -777,31 +717,22 @@ struct UpstreamConformance04Tests {
 
     // MARK: TestSetNonExistantVariable — Tests.cs:2685
 
-    /*  Upstream C# (not ported — lambdas):
-                    var storyStr =
-                        @"
-        VAR x = ""world""
-        Hello {x}.
-        ";
-                    var story = CompileString (storyStr);
-        
-                    Assert.AreEqual ("Hello world.\n", story.Continue());
-        
-                    Assert.Throws<StoryException>(() => {
-                        story.variablesState ["y"] = "earth";
-                    });
-        
-    */
     @Sendable private static func testSetNonExistantVariable(_ c: Conformance) throws {
-        c.fail("not ported: lambdas")
+        let story = try c.compile(0)
+        c.equal("Hello world.\n", story.continue())
+        // Upstream expects setting an undeclared variable to throw. InkSwift's
+        // `setVariable(_:to:)` is non-throwing; the observable counterpart is that the
+        // variable is not created.
+        story.setVariable("y", to: "earth")
+        c.isNil(story.getVariable("y"))
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — lambdas"))
+    @Test
     func `TestSetNonExistantVariable — native compiler and runtime`() {
         Conformance.run("TestSetNonExistantVariable", .native, Self.testSetNonExistantVariable)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not ported — lambdas"))
+    @Test
     func `TestSetNonExistantVariable — inklecate JSON on the runtime`() {
         Conformance.run("TestSetNonExistantVariable", .runtime, Self.testSetNonExistantVariable)
     }

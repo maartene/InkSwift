@@ -1,0 +1,15 @@
+// conformance-modes: native
+// Upstream compiles one story per identifier character range, using every
+// character of the range as the identifier (`string.Format`).
+for range in UpstreamCharacterRanges.all {
+    let identifier = range.identifier
+    try c.compile(source: """
+        VAR z\(identifier) = -> divert\(identifier)
+        
+        == divert\(identifier) ==
+        -> END
+        """, testingErrors: true)
+    if c.errorMessages.count > 0 {
+        c.fail("\(range.name): \(c.errorMessages.all)")
+    }
+}
