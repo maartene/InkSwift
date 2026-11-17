@@ -297,3 +297,72 @@ Swift 5.6 tools, Foundation `Codable` (`JSONEncoder`/`JSONDecoder`, already used
 ### Upstream Changes
 
 None — no DISCUSS wave existed; requirements came from issue #25.
+
+---
+
+## Wave: DELIVER / [REF] Implementation Summary
+
+Nine steps, all RED → GREEN → COMMIT on `main` (`deliver/execution-log.json`;
+`des-verify-integrity` passes). Retrospective: `docs/evolution/2026-11-17-typed-runtime-paths.md`.
+
+| Step | Slice | Commit | Outcome |
+|---|---|---|---|
+| 01-01 | S0 | `215d178` | Four golden legacy saves (captured at `e7d0830`) + restore/re-save tests; frame-less-save normalisation recorded in ADR-018 |
+| 01-02 | S1 | `67dc90f` | `ContainerPath`/`PathReference`/`PathComponent`; `TestPaths` hand-ported |
+| 02-01 | S2 | `2698487` | `ContainerPathResolver` extracted; dead `TreeWalker` read-count + pointer write deleted |
+| 02-02 | S3 | `3a7f9f3` | Engine/`StoryState` paths typed, legacy-string `Codable` |
+| 02-03 | S4a | `f34cae6` | Four payloads → `PathReference`; two resolver fallbacks with no C# counterpart deleted |
+| 02-04 | S4b | `e7ae82e` | `DivertTarget` replaces `isVariable`; conditional variable divert checks the condition first (`Story.cs`) |
+| 02-05 | S5 | `4a5b397` | `NodeKind.functionCall`; every `f():` deleted |
+| 02-06 | S6 | `0f8e555` | `CallStackElement` on `returnStack`; malformed entries rejected (ADR-018) |
+| 03-01 | S7 | `b071056` | Type-checked pops: exact C# message in `currentErrors`, flow ends — the one behaviour change |
+
+Supporting commits: `a75919f` (deterministic conformance messages), `b5f7eeb` (Linux test
+portability), `3c0607c` (review M3/M5), `8bab3b5` (docs alignment).
+
+## Wave: DELIVER / [REF] Files Modified
+
+- **Production (new)**: `Decoder/ContainerPath.swift`, `Engine/ContainerPathResolver.swift`, `Engine/CallStack.swift`
+- **Production (changed)**: `Decoder/{InkDecoder,NodeKind}.swift`, `Engine/{InkEngine,StoryState,TreeWalker}.swift`, `Compiler/Codegen/{ExpressionLowering,WeaveEmitter,ConditionalEmitter,VariableTextEmitter,RuntimeObjectEmitter,RuntimePathReconciler}.swift`
+- **Tests (new)**: `Acceptance/TypedPaths_LegacySaveCompatibilityTests`, `Acceptance/Engine_TypeCheckedPopTests`, `Unit/{ContainerPath,ContainerPathResolver,CallStackElement}Tests`
+- **Tests (changed)**: `Unit/{InkDecoder,NodeKind,StoryState,TreeWalker,InkEngineVisitCount,WeaveEmitterChoiceKeying,Compiler_FunctionTunnelRef}Tests`, `Acceptance/Compiler_S4_CeilingTests`, `Conformance/UpstreamConformance{03,06}Tests` (regenerated)
+- **Fixtures**: `legacy-save-{mid-tunnel,once-only-chosen,visit-counts,choice-point}.json`; `pop-{tunnel-onwards-over-function,function-return-over-tunnel,tunnel-onwards-empty-stack,function-return-empty-stack,function-exhaustion-over-tunnel}.ink` + `.ink.json`
+- **Tooling**: `scripts/conformance/overrides/TestPaths.swift` (new), six character-range overrides (short messages), `scripts/conformance/known-failures.json`
+- **Docs**: ADR-018 (two recorded exceptions), ADR-004 (partly superseded), `brief.md`, `how-to/migrate-from-js-bridge.md`, `reference/js-bridge-vs-native-parity.md`, `reference/native-compiler-known-gaps.md`, `docs/evolution/2026-11-17-typed-runtime-paths.md`
+
+## Wave: DELIVER / [REF] Quality Gates
+
+| Phase | Gate | Result |
+|---|---|---|
+| Roadmap | `nw-acceptance-designer-reviewer` | Rejected (12 findings), approved on re-review 2026-11-17 |
+| Every step | Pre-commit: SwiftLint `--strict` + full `swift test` | Green (780 → 800 tests) |
+| Behaviour-preserving steps | Conformance backlog failure list vs baseline (`--no-parallel`) | Empty diff (360 lines); 01-02: only `TestPaths` left the backlog |
+| Every step | CodeScene, changed files ≥ main baseline | Met; `InkEngine` 9.38 → 9.84, new files 10.0, nothing dropped |
+| Every step | Manual mutation check (3–6 mutations) | All caught, or killed by an added test, or recorded as equivalent |
+| Mutation testing | Automated | Skipped — disabled project-wide (CLAUDE.md) |
+| Feature review | Adversarial review | NEEDS_REVISION: B1 a false positive (disproved by a build); M3/M5 fixed in `3c0607c`; remaining findings accepted |
+| Linux CI | `test-linux` | Broke on `Bundle.urls` (swift-corelibs-foundation#5446); green after `b5f7eeb` |
+| Finalize | `des-verify-integrity`; zero `.disabled` ATs | Pass |
+
+## Wave: DELIVER / [REF] Pre-requisites
+
+No DISTILL wave (D8). Each step wrote its own tests: S0 characterization (green from the
+start, test-only), S1 `TestPaths` port, and the S7 ATs written red inside step 03-01. No AT
+was ever `.disabled`.
+
+## Wave: DELIVER / [REF] DoD Check
+
+| Criterion (roadmap) | Status |
+|---|---|
+| 01-01 goldens captured by unmodified `saveState()`, restore-and-continue, canonical re-save | Met. Captured at `e7d0830` (main had moved past `54481ef`, as the roadmap allowed); frame-less goldens re-save with the accepted normalisation |
+| 01-02 round-trip over all fixture paths + edge cases; int-first typing; `TestPaths` passes | Met |
+| 02-01 oracle/conformance unchanged; resolver tested without an engine; TreeWalker dead code deleted | Met |
+| 02-02 goldens restore; typed state re-saves byte-identically; same keys and values | Met |
+| 02-03 / 02-04 payloads parsed once; native = decoded inklecate; results unchanged | Met. 02-04 weave-internal diverts compared layout-independently (ADR-006 index-0 layout) |
+| 02-05 `.functionCall` decoded; no `f():` in `Sources/` | Met |
+| 02-06 legacy return-stack strings round-trip per kind; returns unchanged | Met; malformed entries now rejected (ADR-018) |
+| 03-01 exact C# messages; flow ends, continuation never plays; errors not saved, cleared by `restoreState`/`moveToKnot` | Met |
+| Every step: manual mutation check reported; Code Health ≥ baseline | Met |
+
+Demo: none. This is a library refactor with no CLI; the observable change is
+`Story.currentErrors` on the `pop-*` fixtures, covered by `Engine_TypeCheckedPopTests`.

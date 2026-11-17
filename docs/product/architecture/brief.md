@@ -1712,8 +1712,12 @@ Issue #25. Replace string-encoded container paths, relative paths, return addres
 `Pointer`, `CallStack.Element`/`PushPopType`, `Divert.pushesToStack`). Paths are parsed
 once in `InkDecoder`, emitted typed by the native compiler, and persisted in the
 **unchanged** save format. Behaviour-preserving except one slice: type-checked
-tunnel/function pops. **Status: DESIGN complete — all decisions accepted by the maintainer
-(2026-11-17).**
+tunnel/function pops. **Status: DELIVERED (2026-11-17)** — see
+[`docs/evolution/2026-11-17-typed-runtime-paths.md`](../../evolution/2026-11-17-typed-runtime-paths.md).
+Shipped: `ContainerPath`/`PathReference`/`PathComponent` in `Decoder/ContainerPath.swift`
+(including the `root`, `appending(_:)`, `parent`, `isStrictPrefix(of:)` and `isAnchor`
+helpers); `ContainerPathResolver` in `Engine/ContainerPathResolver.swift`;
+`CallStackElement`/`CallKind` in `Engine/CallStack.swift`.
 Full option analysis: `docs/feature/typed-runtime-paths/feature-delta.md`; ADR-016/017/018.
 
 #### Quality Attributes (ranked)
