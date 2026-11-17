@@ -252,7 +252,7 @@ final class InkEngine {
     }
 
     /// Implicit void return: the function's OWN BODY container exhausted
-    /// with a pending function return address (identified by "fnret:").
+    /// with a function element on top of the return stack.
     /// Push void sentinel so the caller's "out" command has something to consume.
     ///
     /// The depth test matters: a nested sub-container inside the body must
@@ -269,13 +269,12 @@ final class InkEngine {
     /// loop does not otherwise produce) the guard falls back to the previous
     /// always-return behaviour rather than stranding the call.
     private func returnFromExhaustedFunctionBody() -> Bool {
-        guard let returnAddr = state.returnStack.last, returnAddr.hasPrefix("fnret:"),
-              containerStack.count <= (functionRootDepths.last ?? Int.max) else {
+        guard containerStack.count <= (functionRootDepths.last ?? Int.max),
+              let element = state.returnStack.pop(.function) else {
             return false
         }
-        state.returnStack.removeLast()
         state.evalStack.append(.string("void"))
-        applyFunctionReturn(returnAddr: returnAddr)
+        applyFunctionReturn(to: element)
         return true
     }
 
@@ -344,23 +343,24 @@ final class InkEngine {
         case .choicePoint(let target, let flags):
             collectChoicePoint(
                 target: target, flags: flags, pendingInvisibleDefaultPath: &context.pendingInvisibleDefaultPath)
-        // ~ret: pop function return address (fnret: prefix) and jump back to caller.
+        // ~ret: pop the function element and jump back to the caller. With no
+        // function element on top nothing happens (step 03-01 makes it an error).
         case .controlCommand("~ret"):
-            if let returnAddr = state.returnStack.last, returnAddr.hasPrefix("fnret:") {
-                state.returnStack.removeLast()
-                applyFunctionReturn(returnAddr: returnAddr)
+            if let element = state.returnStack.pop(.function) {
+                applyFunctionReturn(to: element)
             }
-        // ->t->: tunnel entry — push return address and jump to tunnel target.
-        // The return address encodes the current container path and the next
-        // execution index (already incremented past the ->t-> node).
+        // ->t->: tunnel entry — push a tunnel element for the current position
+        // (index already incremented past the ->t-> node) and jump to the target.
         case .tunnelDivert(let target):
-            state.returnStack.append(buildTunnelReturnAddress())
+            state.returnStack.append(returnElement(.tunnel))
             applyDivert(to: target)
             context.noteDivert(outputEndsInNewline: state.outputStream.last == "\n")
-        // ->->: tunnel return — pop return address and resume at that position.
+        // ->->: tunnel return — pop the top element and resume at its position.
+        // A function element on top is dropped without resuming, as its legacy
+        // string never resolved as a divert (step 03-01 makes it an error).
         case .controlCommand("->->"):
-            if let returnAddr = state.returnStack.popLast() {
-                applyDivert(target: returnAddr)
+            if let element = state.returnStack.popLast(), element.kind == .tunnel {
+                applyAbsoluteDivert(element.returnPath.appending(.index(element.returnIndex)))
             }
             context.noteDivert(outputEndsInNewline: state.outputStream.last == "\n")
         default:
@@ -590,35 +590,20 @@ final class InkEngine {
 
     // MARK: - Function call / return
 
-    /// Build a return-address string for tunnel entry.
-    /// Format: "path.N" where path is the dot-joined containerStack pathFromRoot
-    /// and N is the current execution index (already incremented past the ->t-> node).
-    /// This format is resolved by applyDivert via the numeric-last-component path.
-    private func buildTunnelReturnAddress() -> String {
-        guard let top = containerStack.last else { return "0" }
-        let pathStr = top.pathFromRoot.description
-        if pathStr.isEmpty {
-            return "\(top.index)"
+    /// A call-stack element returning to the current execution position: the
+    /// top frame's path and its execution index (already past the call node).
+    private func returnElement(_ kind: CallKind) -> CallStackElement {
+        guard let top = containerStack.last else {
+            return CallStackElement(kind: kind, returnPath: .root, returnIndex: 0)
         }
-        return "\(pathStr).\(top.index)"
-    }
-
-    /// Build a return-address string for the current execution position.
-    /// Format: "fnret:path|index" where path is the joined containerStack pathFromRoot
-    /// and index is the current execution index (already past the call node).
-    /// The "fnret:" prefix distinguishes function return addresses from
-    /// choice-text push-divert-target entries in the returnStack.
-    private func buildFunctionReturnAddress() -> String {
-        guard let top = containerStack.last else { return "fnret:|0" }
-        let pathStr = top.pathFromRoot.description
-        return "fnret:\(pathStr)|\(top.index)"
+        return CallStackElement(kind: kind, returnPath: top.pathFromRoot, returnIndex: top.index)
     }
 
     /// Push a function return address for the current execution position and
     /// divert to the function body. Called for a `.functionCall` node (an Ink
     /// function call rather than a plain goto).
     private func applyFunctionCall(target: PathReference) {
-        state.returnStack.append(buildFunctionReturnAddress())
+        state.returnStack.append(returnElement(.function))
         // Push a new empty per-frame temp-variable scope so `temp= x` declarations
         // inside the function body don't leak into `variablesState` (or get
         // confused with the caller's locals with the same name).
@@ -630,10 +615,9 @@ final class InkEngine {
         functionRootDepths.append(containerStack.count)
     }
 
-    /// Restore execution to the position encoded in a function return address.
-    /// Expected format: "fnret:path|index" where path is the dot-joined
-    /// containerStack pathFromRoot and index is the execution index after the call.
-    private func applyFunctionReturn(returnAddr: String) {
+    /// Restore execution to a function element's return position: the caller's
+    /// container path and the execution index after the call.
+    private func applyFunctionReturn(to element: CallStackElement) {
         // Pop the function's per-frame temp-variable scope. Local `temp= x`
         // declarations made inside the function body are discarded here.
         if !state.callFrameVariables.isEmpty {
@@ -643,29 +627,19 @@ final class InkEngine {
         if !functionRootDepths.isEmpty {
             functionRootDepths.removeLast()
         }
-        // Strip the "fnret:" prefix
-        let addr = returnAddr.hasPrefix("fnret:") ? String(returnAddr.dropFirst(6)) : returnAddr
-        guard let pipeIdx = addr.lastIndex(of: "|") else {
-            applyDivert(target: addr)
-            return
-        }
-        let pathStr = String(addr[addr.startIndex..<pipeIdx])
-        let idxStr  = String(addr[addr.index(after: pipeIdx)...])
-        let targetIndex = Int(idxStr) ?? 0
-
-        if pathStr.isEmpty {
+        let path = element.returnPath
+        let targetIndex = element.returnIndex
+        if path == .root {
             // Root container return: rebuild from root at targetIndex
             containerStack = [ContainerFrame(container: root, index: targetIndex, pathFromRoot: .root)]
             state.pointer.containerPath = .root
         } else {
-            let components = pathStr.split(separator: ".").map(String.init)
-            let path = ContainerPath(savedComponents: components)
             // Always rebuild the full ancestor stack so relative diverts in the caller
             // body (e.g. ".^.^.^.g-3") can find their anchor container at the correct
             // depth. A single-frame stack would make those caret counts fail.
             if let container = resolver.node(at: path) {
                 rebuildFullStack(to: path, container: container, targetIndex: targetIndex)
-            } else if let startIndex = Int(components.last ?? ""),
+            } else if case .index(let startIndex)? = path.components.last,
                       let parentContainer = resolver.node(at: path.parent) {
                 rebuildStackForParentPath(path.parent, container: parentContainer, startIndex: startIndex)
                 containerStack[containerStack.count - 1].index = targetIndex

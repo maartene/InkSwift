@@ -354,8 +354,9 @@ struct StoryState: Codable {
     // current execution index within that container.
     var stackFrames: [ContainerStackFrame]
 
-    // Call/return stack: push-divert-target nodes write here; variable-divert nodes pop from here.
-    var returnStack: [String]
+    /// Pending tunnel and function returns, top last (ADR-017). Saved as the
+    /// legacy return-address strings (ADR-018, see `CallStackElement`).
+    var returnStack: [CallStackElement]
 
     /// Paths of choices that have already been taken (once-only suppression).
     /// Serialised as a sorted array of dotted strings for deterministic JSON output.
@@ -431,7 +432,7 @@ struct StoryState: Codable {
         stringModeTags       = try container.decodeIfPresent([String].self,    forKey: .stringModeTags) ?? []
         lastCompletedLine    = try container.decode(String.self,               forKey: .lastCompletedLine)
         stackFrames          = try container.decode([ContainerStackFrame].self, forKey: .stackFrames)
-        returnStack          = try container.decodeIfPresent([String].self,    forKey: .returnStack) ?? []
+        returnStack          = try container.decodeIfPresent([CallStackElement].self, forKey: .returnStack) ?? []
         let chosenTargetsArray = try container.decodeIfPresent([String].self,  forKey: .chosenChoiceTargets) ?? []
         chosenChoiceTargets  = Set(chosenTargetsArray.map(ContainerPath.init(savedKey:)))
         suppressNextNewline  = try container.decodeIfPresent(Bool.self,        forKey: .suppressNextNewline) ?? false
