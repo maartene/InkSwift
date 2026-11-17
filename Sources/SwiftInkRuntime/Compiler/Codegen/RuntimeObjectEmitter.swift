@@ -31,57 +31,19 @@ enum RuntimeObjectEmitter {
 
     /// Build the runnable root container from the parsed statement stream.
     static func emitRoot(statements: [InkStatement]) throws -> ContainerNode {
-        let constants = collectConstants(statements)
-        let functions = collectFunctionSignatures(statements)
-        let (rootBody, rootStitches, knots, functionDefinitions) = partitionTopLevel(statements)
-        // Discovery pre-pass (ADR-011 EXTEND #3): record the labelled weave-point
-        // paths before lowering so read-count references resolve order-independently.
-        // Weave labels live in the root body AND inside knot/stitch bodies (e.g.
-        // TheIntercept's `(delay)` under `start`, `(tellme)` under `start.waited`);
-        // each is keyed by its enclosing knot/stitch prefix so a dotted read-count
-        // (`start.delay`) resolves to the absolute container path.
-        var weaveLabelPaths = WeaveEmitter.discover(rootBody).labelPaths
-        for knot in knots {
-            mergeWeaveLabelPaths(of: knot, into: &weaveLabelPaths)
-        }
-        // A top-level stitch is a root section, so its weave labels are keyed by the
-        // bare stitch name prefix (`[stitch]`) — the same way a knot's own body
-        // labels are keyed by `[knot]` — so a read-count reference into one resolves.
-        for stitch in rootStitches {
-            for (key, path) in WeaveEmitter.discoverLabelPaths(stitch.body, keyPrefix: [stitch.name]) {
-                weaveLabelPaths[key] = path
-            }
-        }
-        // Bare-name local resolution (step 01-04): a read-count subject spelled by
-        // its BARE label (`{lift_up_cup:he|Harris}` referencing the `(lift_up_cup)`
-        // choice in the same stitch) resolves in inklecate's local scope. Register
-        // each bare label that is UNIQUE story-wide so the bare reference resolves;
-        // duplicated bare labels (e.g. `opts`/`yes` reused across knots) stay
-        // dotted-only — registering them would mis-resolve to the last knot's path.
-        mergeUniqueBareLabels(
-            rootBody: rootBody, rootStitches: rootStitches, knots: knots, into: &weaveLabelPaths
-        )
-        // Knot/stitch read-count addressing (ADR-011 EXTEND #2): record every
-        // knot's and stitch's already-built namedContent path so a dotted
-        // read-count subject (`knot.stitch`) resolves to its container path,
-        // reusing the SAME path arithmetic emitKnot/emitStitch address by — never
-        // re-derived. The runtime resolves the dotted key as-is against visitCounts.
-        let knotStitchPaths = collectKnotStitchPaths(knots, rootStitches: rootStitches)
-        let context = LoweringContext(
-            constants: constants, functions: functions,
-            weaveLabelPaths: weaveLabelPaths, knotStitchPaths: knotStitchPaths
-        )
+        let outline = StoryOutline(statements)
+        let context = LoweringContext(statements: statements, outline: outline)
 
         var namedContent: [String: ContainerNode] = [:]
-        let rootChildren = try lowerRootBody(rootBody, context: context, named: &namedContent)
+        let rootChildren = try lowerRootBody(outline.rootBody, context: context, named: &namedContent)
 
-        for stitch in rootStitches {
+        for stitch in outline.rootStitches {
             namedContent[stitch.name] = try emitStitch(stitch, keyPrefix: [stitch.name], context: context)
         }
-        for knot in knots {
+        for knot in outline.knots {
             namedContent[knot.name] = try emitKnot(knot, context: context)
         }
-        for function in functionDefinitions {
+        for function in outline.functions {
             namedContent[function.name] = emitFunction(function, context: context)
         }
         if let globalDecl = emitGlobalDecl(statements, context: context) {
@@ -89,89 +51,6 @@ enum RuntimeObjectEmitter {
         }
         let builtRoot = ContainerNode(children: rootChildren, namedContent: namedContent, flags: 0, name: nil)
         return RuntimePathReconciler.reconcile(builtRoot)
-    }
-
-    /// Register the labelled weave points inside a knot's body and each of its
-    /// stitch bodies, keyed by their dotted source name (`knot.label`,
-    /// `knot.stitch.label`) so a knot-qualified read-count reference resolves to the
-    /// absolute container path. Reuses the same key arithmetic the weave resolver
-    /// addresses the containers by — never re-derived.
-    private static func mergeWeaveLabelPaths(of knot: KnotGroup, into table: inout [String: [String]]) {
-        for (key, path) in WeaveEmitter.discoverLabelPaths(knot.body, keyPrefix: [knot.name]) {
-            table[key] = path
-        }
-        for stitch in knot.stitches {
-            let prefix = [knot.name, stitch.name]
-            for (key, path) in WeaveEmitter.discoverLabelPaths(stitch.body, keyPrefix: prefix) {
-                table[key] = path
-            }
-        }
-    }
-
-    /// Register each BARE weave label that is unique across the whole story into the
-    /// read-count table, so a bare-named read-count subject resolves in local scope.
-    /// A bare name occurring in two or more bodies is left dotted-only (ambiguous).
-    private static func mergeUniqueBareLabels(
-        rootBody: [InkStatement],
-        rootStitches: [StitchGroup],
-        knots: [KnotGroup],
-        into table: inout [String: [String]]
-    ) {
-        var occurrences: [String: [[String]]] = [:]
-        func collect(_ body: [InkStatement], keyPrefix: [String]) {
-            for (label, path) in WeaveEmitter.discoverBareLabelPaths(body, keyPrefix: keyPrefix) {
-                occurrences[label, default: []].append(path)
-            }
-        }
-        collect(rootBody, keyPrefix: [])
-        for stitch in rootStitches {
-            collect(stitch.body, keyPrefix: [stitch.name])
-        }
-        for knot in knots {
-            collect(knot.body, keyPrefix: [knot.name])
-            for stitch in knot.stitches {
-                collect(stitch.body, keyPrefix: [knot.name, stitch.name])
-            }
-        }
-        for (label, paths) in occurrences where paths.count == 1 {
-            if table[label] == nil { table[label] = paths[0] }
-        }
-    }
-
-    /// Build the knot/stitch read-count path table (ADR-011 EXTEND #2). A knot is
-    /// addressed by `[knot.name]`; a stitch nested under it by `[knot.name,
-    /// stitch.name]` — the same namedContent path `emitKnot`/`emitStitch` key their
-    /// containers by. The dotted source name (`knot.stitch`) is the lookup key.
-    private static func collectKnotStitchPaths(
-        _ knots: [KnotGroup], rootStitches: [StitchGroup]
-    ) -> [String: [String]] {
-        var paths: [String: [String]] = [:]
-        for knot in knots {
-            paths[knot.name] = [knot.name]
-            for stitch in knot.stitches {
-                paths["\(knot.name).\(stitch.name)"] = [knot.name, stitch.name]
-            }
-        }
-        // A top-level stitch is addressed by its bare name (`[stitch]`) directly under
-        // root — so a `-> stitch` divert (or `knot.stitch`-style read-count) resolves
-        // to the container `emitRoot` keys it by.
-        for stitch in rootStitches {
-            paths[stitch.name] = [stitch.name]
-        }
-        return paths
-    }
-
-    /// Collect the parameter list of every function definition, keyed by name, so
-    /// call sites can tell which arguments bind to `ref` parameters.
-    private static func collectFunctionSignatures(
-        _ statements: [InkStatement]
-    ) -> [String: [FunctionParameter]] {
-        var functions: [String: [FunctionParameter]] = [:]
-        for statement in statements {
-            guard case .functionDefinition(let name, let parameters, _) = statement.kind else { continue }
-            functions[name] = parameters
-        }
-        return functions
     }
 
     /// Lower the pre-knot root body. A body containing a weave routes through the
@@ -298,18 +177,6 @@ enum RuntimeObjectEmitter {
     }
 
     // MARK: - Declarations
-
-    /// Build the CONST inlining table (D6 / DDD-9): CONSTs never become runtime
-    /// variables; references to them are substituted with their literal value at
-    /// codegen.
-    private static func collectConstants(_ statements: [InkStatement]) -> [String: InkExpression] {
-        var constants: [String: InkExpression] = [:]
-        for statement in statements {
-            guard case .constant(let name, let value) = statement.kind else { continue }
-            constants[name] = value
-        }
-        return constants
-    }
 
     /// Emit the `global decl` container running every `VAR` declaration once at
     /// startup: a single `ev`…`/ev` block of `<value> {VAR=:name}` assignments,
@@ -449,150 +316,9 @@ enum RuntimeObjectEmitter {
         lowerExpression(expression, context: context)
     }
 
-    // MARK: - Grouping
-
-    /// A knot and its body, plus the stitches declared inside it.
-    private struct KnotGroup {
-        let name: String
-        let body: [InkStatement]
-        let stitches: [StitchGroup]
-    }
-
-    /// A stitch and its body.
-    private struct StitchGroup {
-        let name: String
-        let body: [InkStatement]
-    }
-
-    /// A function definition and the body lines that follow its header.
-    private struct FunctionGroup {
-        let name: String
-        let parameters: [FunctionParameter]
-        let body: [InkStatement]
-    }
-
-    /// Split the flat stream into the pre-stitch root body, the ordered TOP-LEVEL
-    /// stitches, the ordered knots, and the ordered function definitions. Knot and
-    /// function headers terminate the preceding group; a top-level stitch header
-    /// (`= name` before the first knot) opens an addressable root section whose body
-    /// runs until the next stitch/knot/function header — mirroring how `readKnot`
-    /// groups a knot's own stitches, so a `-> name` divert resolves to a real
-    /// container instead of dead-ending in the flattened root body.
-    private static func partitionTopLevel(
-        _ statements: [InkStatement]
-    ) -> (rootBody: [InkStatement], rootStitches: [StitchGroup], knots: [KnotGroup], functions: [FunctionGroup]) {
-        var rootBody: [InkStatement] = []
-        var rootStitches: [StitchGroup] = []
-        var knots: [KnotGroup] = []
-        var functions: [FunctionGroup] = []
-        var pendingStitch: (name: String, body: [InkStatement])?
-        var index = 0
-        while index < statements.count {
-            if case .functionDefinition(let name, let parameters, _) = statements[index].kind {
-                appendStitch(pendingStitch, into: &rootStitches); pendingStitch = nil
-                let (body, nextIndex) = readDefinitionBody(after: index, in: statements)
-                functions.append(FunctionGroup(name: name, parameters: parameters, body: body))
-                index = nextIndex
-                continue
-            }
-            if case .knot(let name) = statements[index].kind {
-                appendStitch(pendingStitch, into: &rootStitches); pendingStitch = nil
-                let (knot, nextIndex) = readKnot(named: name, after: index, in: statements)
-                knots.append(knot)
-                index = nextIndex
-                continue
-            }
-            if case .stitch(let stitchName) = statements[index].kind {
-                appendStitch(pendingStitch, into: &rootStitches)
-                pendingStitch = (stitchName, [])
-                index += 1
-                continue
-            }
-            if pendingStitch != nil {
-                pendingStitch?.body.append(statements[index])
-            } else {
-                rootBody.append(statements[index])
-            }
-            index += 1
-        }
-        appendStitch(pendingStitch, into: &rootStitches)
-        return (rootBody, rootStitches, knots, functions)
-    }
-
-    /// Read one knot starting just after its header at `headerIndex`, consuming
-    /// statements up to (but not including) the next knot/function header.
-    private static func readKnot(
-        named name: String,
-        after headerIndex: Int,
-        in statements: [InkStatement]
-    ) -> (knot: KnotGroup, nextIndex: Int) {
-        var body: [InkStatement] = []
-        var stitches: [StitchGroup] = []
-        var index = headerIndex + 1
-        var pendingStitch: (name: String, body: [InkStatement])?
-
-        while index < statements.count {
-            let kind = statements[index].kind
-            if isDefinitionHeader(kind) {
-                break
-            }
-            if case .stitch(let stitchName) = kind {
-                appendStitch(pendingStitch, into: &stitches)
-                pendingStitch = (stitchName, [])
-                index += 1
-                continue
-            }
-            if pendingStitch != nil {
-                pendingStitch?.body.append(statements[index])
-            } else {
-                body.append(statements[index])
-            }
-            index += 1
-        }
-        appendStitch(pendingStitch, into: &stitches)
-        return (KnotGroup(name: name, body: body, stitches: stitches), index)
-    }
-
-    /// Read a function body just after its header at `headerIndex`, consuming
-    /// statements up to (but not including) the next knot/function header.
-    private static func readDefinitionBody(
-        after headerIndex: Int,
-        in statements: [InkStatement]
-    ) -> (body: [InkStatement], nextIndex: Int) {
-        var body: [InkStatement] = []
-        var index = headerIndex + 1
-        while index < statements.count {
-            if isDefinitionHeader(statements[index].kind) {
-                break
-            }
-            body.append(statements[index])
-            index += 1
-        }
-        return (body, index)
-    }
-
-    /// True when a statement kind opens a top-level definition (knot or function),
-    /// terminating the preceding knot/function body.
-    private static func isDefinitionHeader(_ kind: InkStatementKind) -> Bool {
-        switch kind {
-        case .knot, .functionDefinition:
-            return true
-        default:
-            return false
-        }
-    }
-
-    private static func appendStitch(
-        _ pending: (name: String, body: [InkStatement])?,
-        into stitches: inout [StitchGroup]
-    ) {
-        guard let pending else { return }
-        stitches.append(StitchGroup(name: pending.name, body: pending.body))
-    }
-
     // MARK: - Lowering
 
-    private static func emitKnot(_ knot: KnotGroup, context: LoweringContext) throws -> ContainerNode {
+    private static func emitKnot(_ knot: StoryOutline.Knot, context: LoweringContext) throws -> ContainerNode {
         // Bind the enclosing knot scope so a bare stitch-local divert (`-> waited`)
         // qualifies to its absolute `knot.stitch` path (the runtime resolves divert
         // targets absolutely from root; an un-qualified sibling-stitch target would
@@ -620,7 +346,7 @@ enum RuntimeObjectEmitter {
     /// become real `namedContent` containers rather than flattening into the root
     /// body (where a `-> stitch` divert would find no container to resolve).
     private static func emitStitch(
-        _ stitch: StitchGroup, keyPrefix: [String], context: LoweringContext
+        _ stitch: StoryOutline.Stitch, keyPrefix: [String], context: LoweringContext
     ) throws -> ContainerNode {
         var stitchNamed: [String: ContainerNode] = [:]
         let children = try lowerBodyRoutingWeave(
@@ -636,7 +362,7 @@ enum RuntimeObjectEmitter {
     /// bindings are emitted in REVERSE parameter order, matching the oracle), then
     /// lower the body. A body whose last statement is not an explicit `~ return`
     /// relies on the runtime's implicit void return at container exhaustion.
-    private static func emitFunction(_ function: FunctionGroup, context: LoweringContext) -> ContainerNode {
+    private static func emitFunction(_ function: StoryOutline.Function, context: LoweringContext) -> ContainerNode {
         var named: [String: ContainerNode] = [:]
         var children: [NodeKind] = []
         for parameter in function.parameters.reversed() {
@@ -652,7 +378,7 @@ enum RuntimeObjectEmitter {
     /// The function-local names: its parameters plus any `~ temp` declarations in
     /// the body. Assignments to these names lower to `temp=` so the runtime writes
     /// through the call frame (the ref-param mutation path).
-    private static func localNames(of function: FunctionGroup) -> Set<String> {
+    private static func localNames(of function: StoryOutline.Function) -> Set<String> {
         var names = Set(function.parameters.map(\.name))
         for statement in function.body {
             if case .temporaryVariable(let name, _) = statement.kind {

@@ -102,3 +102,39 @@ struct LoweringContext {
         return knotStitchPaths[name]
     }
 }
+
+extension LoweringContext {
+
+    /// The root lowering context for a story: its CONST table, its function
+    /// signatures, and the outline's label and path tables.
+    init(statements: [InkStatement], outline: StoryOutline) {
+        self.init(
+            constants: Self.constants(in: statements),
+            functions: Self.functionSignatures(of: outline),
+            weaveLabelPaths: outline.weaveLabelPaths(),
+            knotStitchPaths: outline.knotStitchPaths()
+        )
+    }
+
+    /// Build the CONST inlining table (D6 / DDD-9): CONSTs never become runtime
+    /// variables; references to them are substituted with their literal value at
+    /// codegen.
+    private static func constants(in statements: [InkStatement]) -> [String: InkExpression] {
+        var constants: [String: InkExpression] = [:]
+        for statement in statements {
+            guard case .constant(let name, let value) = statement.kind else { continue }
+            constants[name] = value
+        }
+        return constants
+    }
+
+    /// The parameter list of every function definition, keyed by name, so call
+    /// sites can tell which arguments bind to `ref` parameters.
+    private static func functionSignatures(of outline: StoryOutline) -> [String: [FunctionParameter]] {
+        var functions: [String: [FunctionParameter]] = [:]
+        for function in outline.functions {
+            functions[function.name] = function.parameters
+        }
+        return functions
+    }
+}
