@@ -48,6 +48,17 @@ committed fixtures. Each typed slice must (1) restore them and continue with ide
 and (2) re-encode a typed state to JSON structurally equal to its golden file — so saves from
 the new build also restore on the previous build (rollback-safe).
 
+**Known normalisation, accepted (2026-11-17, maintainer)**: the step that captured the goldens
+(01-01) found that today's build does not re-save every save verbatim. A save taken with an
+empty container stack (a top-level choice point) has `stackFrames: []`; on restore,
+`InkEngine.rebuildContainerStack` synthesises one frame from `pointer`, and the next save
+writes that frame out. The save plays identically, every build reads both forms (it is the
+shape any save with frames already has), and the result is a fixed point after one round. This
+is existing behaviour, not something #25 introduces, so the refactor preserves it: for such
+goldens, re-save equality is checked against the golden with the synthesised frame, and a
+second round must be identical (`TypedPaths_LegacySaveCompatibilityTests`). No issue is filed;
+the normalisation is harmless and stable.
+
 ## Alternatives Considered
 
 ### Option B — versioned migration (`formatVersion: 2`, structured JSON; reader accepts v1 and v2)
