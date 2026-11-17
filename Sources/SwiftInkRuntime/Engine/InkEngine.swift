@@ -136,214 +136,297 @@ final class InkEngine {
 
     // MARK: - Step loop
 
+    /// Loop-local bookkeeping of one `stepToNextLine` call.
+    private struct StepContext {
+        /// Resolved absolute path components for an invisible default target. Set
+        /// while the choice-collection container is still on the stack (so relative
+        /// path resolution succeeds), checked after the container exhausts.
+        var pendingInvisibleDefaultPath: [String]?
+        /// After a divert fires, the destination may start with glue (<>) that removes
+        /// a trailing \n from the output stream. Suppress consumeNextLine for the rest
+        /// of the current evaluation block (ev…/ev) following a divert so the glue has
+        /// a chance to fire before we return the buffered line.
+        var suppressConsumeAfterDivert = false
+        /// Depth inside ev/.../ev blocks. While > 0, defer line flushing: the
+        /// eval block may contain a function-call divert whose return + a downstream
+        /// divert can land on a destination that starts with `<>` glue (removing the
+        /// pending newline). Flushing inside the eval block would yield a line that
+        /// should have been glued away.
+        /// Matches the canonical C# runtime semantic where Continue() steps until
+        /// outputStreamEndsInNewline is stable (see ink-engine-runtime/Story.cs:462).
+        var evalBlockDepth = 0
+
+        mutating func noteDivert(outputEndsInNewline: Bool) {
+            suppressConsumeAfterDivert = outputEndsInNewline
+        }
+
+        /// Update the flush bookkeeping for a node that was just dispatched.
+        mutating func track(_ node: NodeKind) {
+            switch node {
+            case .controlCommand("ev"):
+                evalBlockDepth += 1
+            case .controlCommand("/ev"):
+                evalBlockDepth = max(0, evalBlockDepth - 1)
+            // Glue either removes the pending \n or confirms it won't be removed;
+            // a text node means any earlier \n ends a completed line that's safe
+            // to return on the next iteration. Either way the post-divert
+            // suppression is over.
+            case .controlCommand("<>"), .text:
+                suppressConsumeAfterDivert = false
+            default:
+                break
+            }
+        }
+    }
+
+    /// What the step loop does after one step.
+    private enum StepOutcome {
+        /// Keep stepping.
+        case proceed
+        /// Leave the loop and flush whatever output remains.
+        case stop
+        /// Return this value from `stepToNextLine` immediately.
+        case returnLine(String?)
+    }
+
     /// Advance the walker until a complete line of output is ready, then return it.
     /// Returns nil when there is no more output to produce.
     func stepToNextLine() -> String? {
         let walker = TreeWalker()
-        // Resolved absolute path components for an invisible default target. Set
-        // while the choice-collection container is still on the stack (so relative
-        // path resolution succeeds), checked after the container exhausts.
-        var pendingInvisibleDefaultPath: [String]? = nil
-        // After a divert fires, the destination may start with glue (<>) that removes
-        // a trailing \n from the output stream. Suppress consumeNextLine for the rest
-        // of the current evaluation block (ev…/ev) following a divert so the glue has
-        // a chance to fire before we return the buffered line.
-        var suppressConsumeAfterDivert = false
-        // Track depth inside ev/.../ev blocks. While > 0, defer line flushing: the
-        // eval block may contain a function-call divert whose return + a downstream
-        // divert can land on a destination that starts with `<>` glue (removing the
-        // pending newline). Flushing inside the eval block would yield a line that
-        // should have been glued away.
-        // Matches the canonical C# runtime semantic where Continue() steps until
-        // outputStreamEndsInNewline is stable (see ink-engine-runtime/Story.cs:462).
-        var evalBlockDepth = 0
-        while !state.isEnded {
+        var context = StepContext()
+        stepping: while !state.isEnded {
             guard let top = containerStack.last else { break }
-
-            if top.index >= top.container.children.count {
-                if top.isChoiceContinuationRoot {
-                    // Before stopping, check for a pending invisible default that should fire
-                    // now that all visible choices have been exhausted. This allows the
-                    // auto-continuation pattern (`+ [] -> target`) to work inside a choice
-                    // continuation (e.g., after "Ask about the shop." is exhausted).
-                    if state.currentChoices.isEmpty, let autoPath = pendingInvisibleDefaultPath {
-                        popContainer()
-                        pendingInvisibleDefaultPath = nil
-                        applyDivert(target: autoPath.joined(separator: "."))
-                        continue
-                    }
-                    break
-                }
-                // Implicit void return: the function's OWN BODY container exhausted
-                // with a pending function return address (identified by "fnret:").
-                // Push void sentinel so the caller's "out" command has something to consume.
-                //
-                // The depth test matters: a nested sub-container inside the body must
-                // pop one level, NOT end the function. An inline conditional lowers to
-                // two sibling sub-containers (a conditional divert into the true
-                // branch, then an unconditional divert into the else branch), so
-                // without this test a FALSE condition exhausted the first sub-container
-                // and was mistaken for the body finishing — returning to the caller and
-                // skipping the else branch plus everything after it.
-                //
-                // `functionRootDepths` records `containerStack.count` immediately after
-                // the call's divert installed the body frame; deeper frames are nested.
-                // With no depth recorded (a state restored mid-function, which the step
-                // loop does not otherwise produce) the guard falls back to the previous
-                // always-return behaviour rather than stranding the call.
-                if let returnAddr = state.returnStack.last, returnAddr.hasPrefix("fnret:"),
-                   containerStack.count <= (functionRootDepths.last ?? Int.max) {
-                    state.returnStack.removeLast()
-                    state.evalStack.append(.string("void"))
-                    applyFunctionReturn(returnAddr: returnAddr)
-                    continue
-                }
-                popContainer()
-                if state.currentChoices.isEmpty, let autoPath = pendingInvisibleDefaultPath {
-                    pendingInvisibleDefaultPath = nil
-                    applyDivert(target: autoPath.joined(separator: "."))
-                    continue
-                }
-                if containerStack.isEmpty { break }
+            let outcome = top.index >= top.container.children.count
+                ? stepOutOfExhaustedContainer(top, context: &context)
+                : executeNextChild(of: top, walker: walker, context: &context)
+            switch outcome {
+            case .proceed:
                 continue
-            }
-
-            let currentChild = top.container.children[top.index]
-
-            if case .container(let sub) = currentChild {
-                containerStack[containerStack.count - 1].index += 1
-                enterContainer(sub)
-                continue
-            }
-
-            containerStack[containerStack.count - 1].index += 1
-
-            if case .choicePoint(let target, let flags) = currentChild {
-                collectChoicePoint(target: target, flags: flags, pendingInvisibleDefaultPath: &pendingInvisibleDefaultPath)
-                continue
-            }
-
-            // ~ret: pop function return address (fnret: prefix) and jump back to caller.
-            if case .controlCommand("~ret") = currentChild {
-                if let returnAddr = state.returnStack.last, returnAddr.hasPrefix("fnret:") {
-                    state.returnStack.removeLast()
-                    applyFunctionReturn(returnAddr: returnAddr)
-                }
-                continue
-            }
-
-            // ->t->: tunnel entry — push return address and jump to tunnel target.
-            // The return address encodes the current container path and the next
-            // execution index (already incremented past the ->t-> node).
-            if case .tunnelDivert(let target) = currentChild {
-                let returnAddr = buildTunnelReturnAddress()
-                state.returnStack.append(returnAddr)
-                applyDivert(target: target)
-                suppressConsumeAfterDivert = state.outputStream.last == "\n"
-                continue
-            }
-
-            // ->->: tunnel return — pop return address and resume at that position.
-            if case .controlCommand("->->") = currentChild {
-                if let returnAddr = state.returnStack.popLast() {
-                    applyDivert(target: returnAddr)
-                }
-                suppressConsumeAfterDivert = state.outputStream.last == "\n"
-                continue
-            }
-
-            // Keep state.pointer.containerPath in sync with the actual current frame so
-            // the `visit` control command reads the correct container's visit count.
-            state.pointer.containerPath = containerStack.last?.pathFromRoot ?? []
-
-            // Intercept readCount before dispatching to TreeWalker so we can resolve
-            // relative CNT? paths using the actual containerStack frame paths.
-            if case .readCount(let key) = currentChild {
-                let resolvedKey = resolveReadCountKey(key)
-                state.evalStack.append(.int(state.visitCounts[resolvedKey] ?? 0))
-                continue
-            }
-
-            walker.dispatchNode(currentChild, state: &state)
-
-            if case .divert(let target, let isConditional, let isVariable) = currentChild {
-                if target.hasPrefix("f():") {
-                    applyFunctionCall(target: String(target.dropFirst(4)))
-                    suppressConsumeAfterDivert = state.outputStream.last == "\n"
-                    continue
-                }
-                let (shouldReturn, line) = handleDivertNode(target: target, isConditional: isConditional, isVariable: isVariable)
-                if shouldReturn { return line }
-                suppressConsumeAfterDivert = state.outputStream.last == "\n"
-                continue
-            }
-
-            if state.isEnded { break }
-
-            // Track ev/.../ev depth so we can defer flushes inside eval blocks.
-            // The block may contain a function-call divert whose return is followed
-            // by a divert to a glued destination, and a flush at the block boundary
-            // would emit a line that should have been glued.
-            if case .controlCommand(let cmd) = currentChild {
-                if cmd == "ev" { evalBlockDepth += 1 }
-                if cmd == "/ev" { evalBlockDepth = max(0, evalBlockDepth - 1) }
-            }
-
-            // Clear the post-divert suppression when we encounter a glue (<>) node,
-            // since glue either removes the pending \n or confirms it won't be removed.
-            if case .controlCommand(let cmd) = currentChild, cmd == "<>" {
-                suppressConsumeAfterDivert = false
-            }
-            // Also clear when we encounter a text node — at that point any earlier \n
-            // is part of a completed line that's safe to return on the next iteration.
-            if case .text = currentChild {
-                suppressConsumeAfterDivert = false
-            }
-
-            // Only check for a completed line after nodes that don't add newlines,
-            // aren't suppressed by a recent divert, and aren't inside an eval block.
-            // After a .newline node we defer the check so that a subsequent glue
-            // (<>) has a chance to remove the newline before we return. The line
-            // will be flushed on a later iteration (after the next text/glue node).
-            // Defer flush across a multi-choice cluster: once a choicePoint
-            // has been collected (`currentChoices` non-empty), continue stepping
-            // through the rest of the cluster's choicePoints + their eval blocks
-            // in the same stepToNextLine call. Otherwise a buffered line
-            // (e.g. a gather text emitted just before the cluster) flushes at
-            // the first /ev boundary AFTER c-0, returning early and leaving
-            // c-1, c-2, ... unvisited. This matches the canonical C# runtime:
-            // `state.canContinue` depends on pointer position, NOT on
-            // currentChoices, so its Continue() loop keeps stepping past
-            // choicePoints until the container exhausts. Any pending line
-            // here will be returned by `flushRemainingOutput` when the loop
-            // exits (with a single line at a time per the consumeNextLine
-            // semantic).
-            // After /ev, peek at the next node: if it is a VAR= assignment, defer
-            // the flush so that the assignment executes before the buffered line is
-            // returned. This matches the C# runtime where Continue() keeps stepping
-            // past /ev when the immediately-following node is a pure side-effect
-            // (writes to variablesState, no output). A VAR= node after /ev is
-            // semantically part of the same Ink statement as the preceding eval block.
-            let nextIsAssignment: Bool = {
-                guard case .controlCommand("/ev") = currentChild,
-                      evalBlockDepth == 0,
-                      let nextTop = containerStack.last,
-                      nextTop.index < nextTop.container.children.count,
-                      case .variableAssignment = nextTop.container.children[nextTop.index]
-                else { return false }
-                return true
-            }()
-            if case .newline = currentChild { }
-            else if suppressConsumeAfterDivert { }
-            else if evalBlockDepth > 0 { }
-            else if nextIsAssignment { }
-            else if !state.currentChoices.isEmpty { }
-            else {
-                if let line = consumeNextLine() { return line }
+            case .stop:
+                break stepping
+            case .returnLine(let line):
+                return line
             }
         }
-
         return flushRemainingOutput()
+    }
+
+    /// The top frame has no children left: fire a pending invisible default,
+    /// return from a function body, or pop back into the parent.
+    private func stepOutOfExhaustedContainer(_ top: ContainerFrame, context: inout StepContext) -> StepOutcome {
+        if top.isChoiceContinuationRoot {
+            // Before stopping, check for a pending invisible default that should fire
+            // now that all visible choices have been exhausted. This allows the
+            // auto-continuation pattern (`+ [] -> target`) to work inside a choice
+            // continuation (e.g., after "Ask about the shop." is exhausted).
+            return firePendingInvisibleDefault(context: &context, poppingFrame: true) ? .proceed : .stop
+        }
+        if returnFromExhaustedFunctionBody() {
+            return .proceed
+        }
+        popContainer()
+        if firePendingInvisibleDefault(context: &context, poppingFrame: false) {
+            return .proceed
+        }
+        return containerStack.isEmpty ? .stop : .proceed
+    }
+
+    /// Divert to the pending invisible default once no visible choice remains.
+    /// Returns whether it fired.
+    private func firePendingInvisibleDefault(context: inout StepContext, poppingFrame: Bool) -> Bool {
+        guard state.currentChoices.isEmpty, let autoPath = context.pendingInvisibleDefaultPath else {
+            return false
+        }
+        if poppingFrame {
+            popContainer()
+        }
+        context.pendingInvisibleDefaultPath = nil
+        applyDivert(target: autoPath.joined(separator: "."))
+        return true
+    }
+
+    /// Implicit void return: the function's OWN BODY container exhausted
+    /// with a pending function return address (identified by "fnret:").
+    /// Push void sentinel so the caller's "out" command has something to consume.
+    ///
+    /// The depth test matters: a nested sub-container inside the body must
+    /// pop one level, NOT end the function. An inline conditional lowers to
+    /// two sibling sub-containers (a conditional divert into the true
+    /// branch, then an unconditional divert into the else branch), so
+    /// without this test a FALSE condition exhausted the first sub-container
+    /// and was mistaken for the body finishing — returning to the caller and
+    /// skipping the else branch plus everything after it.
+    ///
+    /// `functionRootDepths` records `containerStack.count` immediately after
+    /// the call's divert installed the body frame; deeper frames are nested.
+    /// With no depth recorded (a state restored mid-function, which the step
+    /// loop does not otherwise produce) the guard falls back to the previous
+    /// always-return behaviour rather than stranding the call.
+    private func returnFromExhaustedFunctionBody() -> Bool {
+        guard let returnAddr = state.returnStack.last, returnAddr.hasPrefix("fnret:"),
+              containerStack.count <= (functionRootDepths.last ?? Int.max) else {
+            return false
+        }
+        state.returnStack.removeLast()
+        state.evalStack.append(.string("void"))
+        applyFunctionReturn(returnAddr: returnAddr)
+        return true
+    }
+
+    /// Execute the top frame's next child and decide whether a line is ready.
+    private func executeNextChild(
+        of top: ContainerFrame,
+        walker: TreeWalker,
+        context: inout StepContext
+    ) -> StepOutcome {
+        let currentChild = top.container.children[top.index]
+        containerStack[containerStack.count - 1].index += 1
+
+        if case .container(let sub) = currentChild {
+            enterContainer(sub)
+            return .proceed
+        }
+        if executeFlowNode(currentChild, context: &context) {
+            return .proceed
+        }
+
+        // Keep state.pointer.containerPath in sync with the actual current frame so
+        // the `visit` control command reads the correct container's visit count.
+        state.pointer.containerPath = containerStack.last?.pathFromRoot ?? []
+
+        // Intercept readCount before dispatching to TreeWalker so we can resolve
+        // relative CNT? paths using the actual containerStack frame paths.
+        if case .readCount(let key) = currentChild {
+            let resolvedKey = resolveReadCountKey(key)
+            state.evalStack.append(.int(state.visitCounts[resolvedKey] ?? 0))
+            return .proceed
+        }
+
+        walker.dispatchNode(currentChild, state: &state)
+
+        if case .divert(let target, let isConditional, let isVariable) = currentChild {
+            return followDivert(target: target, isConditional: isConditional, isVariable: isVariable, context: &context)
+        }
+        return settleLine(after: currentChild, context: &context)
+    }
+
+    /// After an ordinary node has been dispatched: stop if it ended the story,
+    /// otherwise update the flush bookkeeping and return a completed line if
+    /// one may be returned now.
+    private func settleLine(after node: NodeKind, context: inout StepContext) -> StepOutcome {
+        if state.isEnded {
+            return .stop
+        }
+        context.track(node)
+        if mayFlushLine(after: node, context: context), let line = consumeNextLine() {
+            return .returnLine(line)
+        }
+        return .proceed
+    }
+
+    /// Choice points, function returns and tunnels: nodes the engine handles
+    /// itself rather than dispatching to the TreeWalker. Returns whether the
+    /// node was one of them.
+    private func executeFlowNode(_ node: NodeKind, context: inout StepContext) -> Bool {
+        switch node {
+        case .choicePoint(let target, let flags):
+            collectChoicePoint(
+                target: target, flags: flags, pendingInvisibleDefaultPath: &context.pendingInvisibleDefaultPath)
+        // ~ret: pop function return address (fnret: prefix) and jump back to caller.
+        case .controlCommand("~ret"):
+            if let returnAddr = state.returnStack.last, returnAddr.hasPrefix("fnret:") {
+                state.returnStack.removeLast()
+                applyFunctionReturn(returnAddr: returnAddr)
+            }
+        // ->t->: tunnel entry — push return address and jump to tunnel target.
+        // The return address encodes the current container path and the next
+        // execution index (already incremented past the ->t-> node).
+        case .tunnelDivert(let target):
+            state.returnStack.append(buildTunnelReturnAddress())
+            applyDivert(target: target)
+            context.noteDivert(outputEndsInNewline: state.outputStream.last == "\n")
+        // ->->: tunnel return — pop return address and resume at that position.
+        case .controlCommand("->->"):
+            if let returnAddr = state.returnStack.popLast() {
+                applyDivert(target: returnAddr)
+            }
+            context.noteDivert(outputEndsInNewline: state.outputStream.last == "\n")
+        default:
+            return false
+        }
+        return true
+    }
+
+    /// Follow a divert node the TreeWalker has just dispatched: a function call
+    /// (`f():`) or an ordinary / conditional / variable divert.
+    private func followDivert(
+        target: String,
+        isConditional: Bool,
+        isVariable: Bool,
+        context: inout StepContext
+    ) -> StepOutcome {
+        if target.hasPrefix("f():") {
+            applyFunctionCall(target: String(target.dropFirst(4)))
+        } else {
+            let (shouldReturn, line) = handleDivertNode(target: target, isConditional: isConditional, isVariable: isVariable)
+            if shouldReturn {
+                return .returnLine(line)
+            }
+        }
+        context.noteDivert(outputEndsInNewline: state.outputStream.last == "\n")
+        return .proceed
+    }
+
+    /// Whether a completed line may be returned after `node`.
+    ///
+    /// Only check for a completed line after nodes that don't add newlines,
+    /// aren't suppressed by a recent divert, and aren't inside an eval block.
+    /// After a .newline node we defer the check so that a subsequent glue
+    /// (<>) has a chance to remove the newline before we return. The line
+    /// will be flushed on a later iteration (after the next text/glue node).
+    ///
+    /// Defer flush across a multi-choice cluster: once a choicePoint
+    /// has been collected (`currentChoices` non-empty), continue stepping
+    /// through the rest of the cluster's choicePoints + their eval blocks
+    /// in the same stepToNextLine call. Otherwise a buffered line
+    /// (e.g. a gather text emitted just before the cluster) flushes at
+    /// the first /ev boundary AFTER c-0, returning early and leaving
+    /// c-1, c-2, ... unvisited. This matches the canonical C# runtime:
+    /// `state.canContinue` depends on pointer position, NOT on
+    /// currentChoices, so its Continue() loop keeps stepping past
+    /// choicePoints until the container exhausts. Any pending line
+    /// here will be returned by `flushRemainingOutput` when the loop
+    /// exits (with a single line at a time per the consumeNextLine
+    /// semantic).
+    private func mayFlushLine(after node: NodeKind, context: StepContext) -> Bool {
+        if case .newline = node {
+            return false
+        }
+        if context.suppressConsumeAfterDivert {
+            return false
+        }
+        if context.evalBlockDepth > 0 {
+            return false
+        }
+        if assignmentFollowsEvalBlock(endingWith: node) {
+            return false
+        }
+        return state.currentChoices.isEmpty
+    }
+
+    /// After /ev, peek at the next node: if it is a VAR= assignment, defer
+    /// the flush so that the assignment executes before the buffered line is
+    /// returned. This matches the C# runtime where Continue() keeps stepping
+    /// past /ev when the immediately-following node is a pure side-effect
+    /// (writes to variablesState, no output). A VAR= node after /ev is
+    /// semantically part of the same Ink statement as the preceding eval block.
+    private func assignmentFollowsEvalBlock(endingWith node: NodeKind) -> Bool {
+        guard case .controlCommand("/ev") = node,
+              let nextTop = containerStack.last,
+              nextTop.index < nextTop.container.children.count,
+              case .variableAssignment = nextTop.container.children[nextTop.index]
+        else { return false }
+        return true
     }
 
     /// Process a `.choicePoint` node encountered during step execution.
