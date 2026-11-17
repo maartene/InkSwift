@@ -310,10 +310,6 @@
   "native": "a choice that diverts to its own knot",
   "runtime": "a choice that diverts to its own knot"
  },
- "TestPaths": {
-  "native": "not applicable yet \u2014 unit-tests the runtime Path type (see #25)",
-  "runtime": "not applicable yet \u2014 unit-tests the runtime Path type (see #25)"
- },
  "TestPrintNum": {
   "native": "native compiler rejects a valid story: unexpectedToken('mod')",
   "runtime": "glue and conditionals in a recursive function"

@@ -174,26 +174,24 @@ struct UpstreamConformance03Tests {
 
     // MARK: TestPaths — Tests.cs:1526
 
-    /*  Upstream C# (not ported — object construction):
-                    // Different instances should ensure different instances of individual components
-                    var path1 = new Path("hello.1.world");
-                    var path2 = new Path("hello.1.world");
-        
-                    var path3 = new Path(".hello.1.world");
-                    var path4 = new Path(".hello.1.world");
-        
-                    Assert.AreEqual(path1, path2);
-        
-                    Assert.AreEqual(path3, path4);
-        
-                    Assert.AreNotEqual(path1, path3);
-        
-    */
     @Sendable private static func testPaths(_ c: Conformance) throws {
-        c.fail("not ported: object construction")
+        // Upstream builds C# `Path` objects; InkSwift parses the same strings into
+        // `PathReference` (ADR-016), whose relative and absolute forms are distinct
+        // cases — so `.hello.1.world` can never equal `hello.1.world`.
+        let path1 = PathReference(parsing: "hello.1.world")
+        let path2 = PathReference(parsing: "hello.1.world")
+        
+        let path3 = PathReference(parsing: ".hello.1.world")
+        let path4 = PathReference(parsing: ".hello.1.world")
+        
+        c.equal(path1, path2)
+        
+        c.equal(path3, path4)
+        
+        c.notEqual(path1, path3)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: not applicable yet — unit-tests the runtime Path type (see #25)"))
+    @Test
     func `TestPaths — native compiler and runtime`() {
         Conformance.run("TestPaths", .native, Self.testPaths)
     }
