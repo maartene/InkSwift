@@ -43,7 +43,8 @@ struct TreeWalker {
             // The caller (ev…/ev block) stores it in a temp variable via {temp=: "$r"};
             // later, a variable divert {->: "$r", var: true} looks it up and jumps there.
             // The value stays a string (the variablesState wire format); the variable
-            // divert parses it back — the one runtime parse of a path string.
+            // divert parses it back in `InkEngine.applyDivert(target:)` — the one
+            // runtime parse of a path string.
             state.evalStack.append(.string(path.description))
 
         case .choicePoint:

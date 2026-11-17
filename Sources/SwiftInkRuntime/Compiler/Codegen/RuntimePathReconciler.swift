@@ -21,7 +21,7 @@ enum RuntimePathReconciler {
     /// Reconcile read-count keys and divert targets against the emitted tree,
     /// then flag every read-count-referenced container for visit counting.
     static func reconcile(_ builtRoot: ContainerNode) -> ContainerNode {
-        // Read-count path reconciliation (step 01-06): the discovery pre-pass predicts
+        // Read-count path reconciliation: the discovery pre-pass predicts
         // a label's compiled path from the WEAVE structure alone, but a labelled choice
         // that trails an inline-conditional / variable-text gather lead is physically
         // nested under that line's `cond{N}-end` continuation container(s) — e.g. the

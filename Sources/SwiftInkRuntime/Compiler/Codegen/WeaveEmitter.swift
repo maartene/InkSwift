@@ -35,7 +35,7 @@
 //     gather's loose end is `end`. A body that already diverts away (sealed) gets
 //     no fall-through divert.
 //   - Addressing uses absolute-qualified paths from root (SPIKE findings §4): the
-//     engine's `navigateAbsolute`/`resolveNamedPath` walk namedContent/numeric
+//     engine's `ContainerPathResolver.node(at:)` walks namedContent/numeric
 //     children from root, so qualified names resolve unambiguously regardless of
 //     execution position — no relative `.^.` caret arithmetic required.
 

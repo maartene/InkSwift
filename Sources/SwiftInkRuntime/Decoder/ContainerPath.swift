@@ -84,3 +84,32 @@ extension PathReference: CustomStringConvertible {
         }
     }
 }
+
+extension PathComponent {
+    /// A `$`-prefixed name: an anchor marker inside its parent's children, such as
+    /// the `$r1` that a choice's return-address divert target points at.
+    var isAnchor: Bool {
+        guard case .name(let name) = self else { return false }
+        return name.hasPrefix("$")
+    }
+}
+
+extension ContainerPath {
+    /// The story root: no components.
+    static let root = ContainerPath(components: [])
+
+    /// This path one level deeper, through `component`.
+    func appending(_ component: PathComponent) -> ContainerPath {
+        ContainerPath(components: components + [component])
+    }
+
+    /// This path without its last component; the root stays the root.
+    var parent: ContainerPath {
+        ContainerPath(components: Array(components.dropLast()))
+    }
+
+    /// Whether this path is an ancestor of `other`: a prefix of it, but not `other` itself.
+    func isStrictPrefix(of other: ContainerPath) -> Bool {
+        components.count < other.components.count && other.components.starts(with: components)
+    }
+}

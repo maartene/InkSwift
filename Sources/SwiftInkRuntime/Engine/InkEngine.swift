@@ -911,7 +911,7 @@ final class InkEngine {
 
     func saveState() throws -> Data {
         // Snapshot the full container execution stack so restore can rebuild it exactly.
-        // Each frame records which child-index was followed from the parent (nil = root)
+        // Each frame records the container's absolute path from the story root
         // and the current execution position within that container.
         var snapshot = state
         snapshot.stackFrames = buildStackFrameSnapshot()

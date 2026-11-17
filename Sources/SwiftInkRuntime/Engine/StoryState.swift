@@ -350,8 +350,8 @@ struct StoryState: Codable {
     var lastCompletedLine: String
 
     // Full container execution stack for save/restore.
-    // Each frame holds the child-index used to enter it (nil = root) and the
-    // current execution index within that container.
+    // Each frame holds the container's absolute path from the story root
+    // (`pathFromRoot`) and the current execution index within that container.
     var stackFrames: [ContainerStackFrame]
 
     /// Pending tunnel and function returns, top last (ADR-017). Saved as the
