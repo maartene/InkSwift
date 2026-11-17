@@ -310,10 +310,16 @@ final class InkEngine {
 
         walker.dispatchNode(currentChild, state: &state)
 
-        if case .divert(let target, let isConditional) = currentChild {
-            return followDivert(target: target, isConditional: isConditional, context: &context)
+        switch currentChild {
+        case .divert(let target, let isConditional):
+            followPlainDivert(target: target, isConditional: isConditional)
+        case .functionCall(let target):
+            applyFunctionCall(target: target)
+        default:
+            return settleLine(after: currentChild, context: &context)
         }
-        return settleLine(after: currentChild, context: &context)
+        context.noteDivert(outputEndsInNewline: state.outputStream.last == "\n")
+        return .proceed
     }
 
     /// After an ordinary node has been dispatched: stop if it ended the story,
@@ -361,22 +367,6 @@ final class InkEngine {
             return false
         }
         return true
-    }
-
-    /// Follow a divert node the TreeWalker has just dispatched: a function call
-    /// (`f():`) or an ordinary / conditional / variable divert.
-    private func followDivert(
-        target: DivertTarget,
-        isConditional: Bool,
-        context: inout StepContext
-    ) -> StepOutcome {
-        if let function = Self.functionCallTarget(target) {
-            applyFunctionCall(target: function)
-        } else {
-            followPlainDivert(target: target, isConditional: isConditional)
-        }
-        context.noteDivert(outputEndsInNewline: state.outputStream.last == "\n")
-        return .proceed
     }
 
     /// Whether a completed line may be returned after `node`.
@@ -544,14 +534,7 @@ final class InkEngine {
         return state.outputStream.filter { $0 != "\n" }.joined()
     }
 
-    /// The function a function-call divert (a path target spelled `f():name`) calls, else nil.
-    private static func functionCallTarget(_ target: DivertTarget) -> String? {
-        guard case .path(let reference) = target else { return nil }
-        let spelling = reference.description
-        return spelling.hasPrefix("f():") ? String(spelling.dropFirst(4)) : nil
-    }
-
-    /// Follow a non-function `.divert` node encountered during step execution.
+    /// Follow a `.divert` node encountered during step execution.
     private func followPlainDivert(target: DivertTarget, isConditional: Bool) {
         // Do NOT flush the output stream before the divert. The divert destination
         // may begin with a glue (<>) node that removes a pending \n from the stream —
@@ -632,15 +615,15 @@ final class InkEngine {
     }
 
     /// Push a function return address for the current execution position and
-    /// divert to the function body. Called when a divert node's target is
-    /// `f():`-prefixed (an Ink function call rather than a plain goto).
-    private func applyFunctionCall(target: String) {
+    /// divert to the function body. Called for a `.functionCall` node (an Ink
+    /// function call rather than a plain goto).
+    private func applyFunctionCall(target: PathReference) {
         state.returnStack.append(buildFunctionReturnAddress())
         // Push a new empty per-frame temp-variable scope so `temp= x` declarations
         // inside the function body don't leak into `variablesState` (or get
         // confused with the caller's locals with the same name).
         state.callFrameVariables.append([:])
-        applyDivert(target: target)
+        applyDivert(to: target)
         // Record the stack depth of the function's own body frame. Anything deeper
         // is a nested sub-container whose exhaustion must pop one level instead of
         // ending the call — see the implicit-void-return branch in stepToNextLine.

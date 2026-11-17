@@ -13,11 +13,6 @@ import Foundation
 /// Lowers expressions to the runtime's postfix eval-stack nodes.
 enum ExpressionLowering {
 
-    /// The runtime intercepts a divert whose target carries this prefix as a
-    /// function call (push a return address before jumping). Matches the decoder's
-    /// lowering of an inklecate `{"f()": path}` divert.
-    static let functionCallTargetPrefix = "f():"
-
     /// Reference arguments use `ci == -1` to denote global scope (brief tier3); a
     /// non-negative index would point into a call frame's temp scope.
     private static let globalContextIndex = -1
@@ -47,7 +42,7 @@ enum ExpressionLowering {
     /// stack; non-CONST identifiers lower to `.variableReference`; string
     /// literals lower to a `str`/`^text`/`/str` group that pushes the string; a
     /// function call lowers its arguments onto the eval stack then emits the
-    /// `f():`-tagged divert that calls the function and leaves its result there.
+    /// `.functionCall` node that calls the function and leaves its result there.
     static func lowerExpression(
         _ expression: InkExpression,
         context: LoweringContext
@@ -90,8 +85,9 @@ enum ExpressionLowering {
 
     /// Lower a function call `f(args)`: push each argument onto the eval stack —
     /// an argument bound to a `ref` parameter becomes a `variablePointer` so the
-    /// callee mutates the caller's variable — then emit the `f():`-tagged divert
-    /// the runtime intercepts to push a return address and jump into the function.
+    /// callee mutates the caller's variable — then emit the `.functionCall` node
+    /// (inklecate's `{"f()": name}`) on which the runtime pushes a return address
+    /// and jumps into the function.
     private static func lowerFunctionCall(
         name: String,
         arguments: [InkExpression],
@@ -107,7 +103,7 @@ enum ExpressionLowering {
             }
             nodes.append(contentsOf: lowerExpression(argument, context: context))
         }
-        nodes.append(.divert(target: .path(PathReference(parsing: functionCallTargetPrefix + name)), isConditional: false))
+        nodes.append(.functionCall(target: PathReference(parsing: name)))
         return nodes
     }
 }

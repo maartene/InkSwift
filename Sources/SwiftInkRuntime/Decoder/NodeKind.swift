@@ -6,6 +6,7 @@ internal enum NodeKind {
     case divert(target: DivertTarget, isConditional: Bool)
     case pushDivertTarget(PathReference)
     case tunnelDivert(target: PathReference)
+    case functionCall(target: PathReference)
     case choicePoint(target: PathReference, flags: ChoiceFlags)
     case controlCommand(String)
     case nativeFunction(String)

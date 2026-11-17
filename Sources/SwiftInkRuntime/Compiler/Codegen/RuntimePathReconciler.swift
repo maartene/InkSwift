@@ -83,9 +83,9 @@ enum RuntimePathReconciler {
     /// container whose absolute path ENDS with the dangling target's final label
     /// segment AND shares its leading knot segment; uniqueness within that knot
     /// prevents cross-scope mis-resolution. Only absolute, non-END,
-    /// non-function-call, currently-dangling path targets are considered — a
-    /// relative (`.^.`), END, function (`f():`), variable, or already-resolving
-    /// target is untouched.
+    /// currently-dangling path targets are considered — a relative (`.^.`), END,
+    /// variable, or already-resolving target is untouched, and a `.functionCall`
+    /// is not a `.divert` at all, so its target is never reconciled.
     /// `.choicePoint` targets are deliberately excluded — they are already emitted
     /// correctly — and preserved verbatim.
     private static func reconcilingDivertPaths(_ root: ContainerNode) -> ContainerNode {
@@ -101,13 +101,10 @@ enum RuntimePathReconciler {
     }
 
     /// The target of a divert that is a candidate for path reconciliation: an
-    /// absolute path target that is neither the `END` sentinel nor a function-call
-    /// target (which the runtime intercepts by its `f():` prefix), else nil.
+    /// absolute path target other than the `END` sentinel, else nil.
     private static func reconcilableDivertPath(of node: NodeKind) -> ContainerPath? {
-        guard case .divert(.path(.absolute(let path)), _) = node else { return nil }
-        let spelling = path.description
-        guard spelling != "END",
-              spelling.hasPrefix(ExpressionLowering.functionCallTargetPrefix) == false else { return nil }
+        guard case .divert(.path(.absolute(let path)), _) = node,
+              path.description != "END" else { return nil }
         return path
     }
 

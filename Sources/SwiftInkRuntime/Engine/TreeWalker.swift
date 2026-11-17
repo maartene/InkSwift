@@ -35,7 +35,7 @@ struct TreeWalker {
         case .controlCommand(let cmd):
             handleControlCommand(cmd, state: &state)
 
-        case .divert:
+        case .divert, .functionCall:
             break  // resolved and followed by InkEngine, which owns the container stack
 
         case .pushDivertTarget(let path):

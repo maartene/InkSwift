@@ -11,11 +11,11 @@ struct InkDecoderTests {
 
     // Test Budget:
     // Behavior 1: CNT? dict node is classified as .readCount(key), not .controlCommand("CNT?")
-    // Behavior 2: f() dict node is classified as .divert, not .controlCommand
+    // Behavior 2: f() dict node is classified as .functionCall(target:), not .controlCommand
     // Behavior 3: ->t-> dict node is classified as .tunnelDivert(target:)
     // Behavior 4: {"^var":"name","ci":-1} dict is classified as .variablePointer(name:contextIndex:)
-    // Behavior 5: every path-bearing payload (CNT?, *, ->t->, ^->) decodes to a typed
-    //             PathReference, relative or absolute (typed-runtime-paths 02-03)
+    // Behavior 5: every path-bearing payload (CNT?, *, ->t->, f(), ^->) decodes to a
+    //             typed PathReference, relative or absolute (typed-runtime-paths 02-03, 02-05)
     // Behavior 6: a "->" divert decodes to a typed DivertTarget — a variable target
     //             when "var" is present, else a path — with its "c" flag (02-04)
     // Budget = 6 behaviors × 2 = 12 unit tests max
@@ -72,6 +72,7 @@ struct InkDecoderTests {
         (#"{"*":".^.^.c-0","flg":20}"#, "choicePoint", .relative(parentSteps: 2, tail: [.name("c-0")])),
         (#"{"*":"0.c-1","flg":20}"#, "choicePoint", .absolute(ContainerPath(components: [.index(0), .name("c-1")]))),
         (#"{"->t->":"detour"}"#, "tunnelDivert", .absolute(ContainerPath(components: [.name("detour")]))),
+        (#"{"f()":"double"}"#, "functionCall", .absolute(ContainerPath(components: [.name("double")]))),
         (#"{"^->":"0.c-0.$r2"}"#, "pushDivertTarget",
          .absolute(ContainerPath(components: [.index(0), .name("c-0"), .name("$r2")]))),
     ])
@@ -91,6 +92,7 @@ struct InkDecoderTests {
         case .readCount(let reference): return ("readCount", reference)
         case .choicePoint(let reference, _): return ("choicePoint", reference)
         case .tunnelDivert(let reference): return ("tunnelDivert", reference)
+        case .functionCall(let reference): return ("functionCall", reference)
         case .pushDivertTarget(let reference): return ("pushDivertTarget", reference)
         default: return nil
         }
@@ -122,9 +124,9 @@ struct InkDecoderTests {
         #expect(decodedIsConditional == isConditional)
     }
 
-    // MARK: - Behavior 2: f() dict classified as .divert
+    // MARK: - Behavior 2: f() dict classified as .functionCall
 
-    @Test func `InkDecoder classifies f() dict node as divert to named function`() throws {
+    @Test func `InkDecoder classifies f() dict node as a function call to the named function`() throws {
         let json = """
         {"inkVersion":21,"root":[{"f()":"double"},null]}
         """
@@ -133,12 +135,10 @@ struct InkDecoderTests {
         let root = try decoder.decode(data)
 
         let firstChild = try #require(root.children.first)
-        if case .divert(let target, let isConditional) = firstChild {
-            // f() diverts carry "f():" prefix so the engine can push a return address
-            #expect(target == .path(PathReference(parsing: "f():double")))
-            #expect(isConditional == false)
+        if case .functionCall(let target) = firstChild {
+            #expect(target == .absolute(ContainerPath(components: [.name("double")])))
         } else {
-            Issue.record("Expected .divert(\"f():double\", ...) but got \(firstChild)")
+            Issue.record("Expected .functionCall(target: double) but got \(firstChild)")
         }
     }
 

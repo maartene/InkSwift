@@ -73,18 +73,20 @@ struct InkDecoder {
     }
 
     /// Earned Trust (typed-runtime-paths): path payloads are parsed once, here, so a
-    /// relative `.^` read count and a `->t->` tunnel target must reach the engine as
-    /// the typed references it resolves — never re-parsed later.
+    /// relative `.^` read count, a `->t->` tunnel target and a function-call target
+    /// must reach the engine as the typed nodes it resolves — never re-parsed later.
     private func probePathPayloads() throws {
-        let pathProbe = #"{"inkVersion":21,"root":[{"CNT?":".^"},{"->t->":"t"},null],"listDefs":{}}"#
+        let pathProbe = #"{"inkVersion":21,"root":[{"CNT?":".^"},{"->t->":"t"},{"f()":"f"},null],"listDefs":{}}"#
         guard let pathData = pathProbe.data(using: .utf8) else {
             throw InkDecodeError.malformedJSON
         }
         let pathRoot = try decode(pathData)
-        guard pathRoot.children.count == 2,
+        guard pathRoot.children.count == 3,
               case .readCount(.relative(parentSteps: 1, tail: [])) = pathRoot.children[0],
               case .tunnelDivert(.absolute(let tunnelTarget)) = pathRoot.children[1],
-              tunnelTarget.components == [.name("t")] else {
+              tunnelTarget.components == [.name("t")],
+              case .functionCall(.absolute(let functionTarget)) = pathRoot.children[2],
+              functionTarget.components == [.name("f")] else {
             throw InkDecodeError.probeClassificationDrift
         }
     }
@@ -185,9 +187,7 @@ struct InkDecoder {
             return .divert(target: divertTarget, isConditional: isConditional)
         }
         if let target = dict["f()"]?.stringValue {
-            // Function-call divert: tagged with "f():" prefix so the engine
-            // knows to push a return address before jumping.
-            return .divert(target: .path(PathReference(parsing: "f():" + target)), isConditional: false)
+            return .functionCall(target: PathReference(parsing: target))
         }
         if let target = dict["*"]?.stringValue {
             let rawFlags = dict["flg"]?.intValue ?? 0
