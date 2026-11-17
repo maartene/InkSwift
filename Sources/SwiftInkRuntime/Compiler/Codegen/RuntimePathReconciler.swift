@@ -185,7 +185,7 @@ enum RuntimePathReconciler {
     private static func isReconcilableDivertTarget(_ target: String) -> Bool {
         target.hasPrefix(".") == false
             && target != "END"
-            && target.hasPrefix(RuntimeObjectEmitter.functionCallTargetPrefix) == false
+            && target.hasPrefix(ExpressionLowering.functionCallTargetPrefix) == false
     }
 
     /// Collect every `.divert` target anywhere in the tree. `.choicePoint` targets

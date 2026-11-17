@@ -132,7 +132,7 @@ enum RuntimeObjectEmitter {
                 bodyNamed.merge(weaveNamed)
                 return WeaveEmitter.BodyLowering(children: children)
             },
-            lowerCondition: { expression in lowerExpression(expression, context: context) }
+            lowerCondition: { expression in ExpressionLowering.lowerExpression(expression, context: context) }
         )
         for (key, container) in weave.named {
             named[key] = container
@@ -193,127 +193,20 @@ enum RuntimeObjectEmitter {
 
         var assignments: [NodeKind] = []
         for global in globals {
-            assignments.append(contentsOf: lowerValue(global.value, context: context))
+            // The value is left on the eval stack for the `{VAR=}` that follows.
+            assignments.append(contentsOf: ExpressionLowering.lowerExpression(global.value, context: context))
             assignments.append(.variableAssignment(name: global.name, isGlobal: true))
         }
-        let children = evalGroup(assignments) + [.controlCommand("end")]
+        let children = ExpressionLowering.evalGroup(assignments) + [.controlCommand("end")]
         return ContainerNode(children: children, namedContent: [:], flags: 0, name: nil)
     }
 
     // MARK: - Expression lowering
 
-    /// Lower an inline-printed expression `{ <expr> }` into the runtime nodes
-    /// that evaluate it and emit the result, matching the committed oracle
-    /// token order for `{2 + 3 * 4}`: `ev, 2, 3, 4, *, +, out, /ev`. The
-    /// expression body is lowered to POSTFIX (RPN) so it drives the runtime's
-    /// evaluation stack directly; `out` pops the result and prints it.
+    /// Lower an inline-printed expression with no surrounding declaration or
+    /// function tables (see `ExpressionLowering.lowerInlineExpression`).
     static func lowerInlineExpression(_ expression: InkExpression) -> [NodeKind] {
-        lowerInlineExpression(expression, context: emptyContext)
-    }
-
-    /// An empty lowering context (no CONSTs, no functions) for callers that lower
-    /// a standalone expression with no surrounding declaration/function tables.
-    private static let emptyContext = LoweringContext(constants: [:], functions: [:])
-
-    private static func lowerInlineExpression(
-        _ expression: InkExpression,
-        context: LoweringContext
-    ) -> [NodeKind] {
-        evalGroup(lowerExpression(expression, context: context) + [.controlCommand("out")])
-    }
-
-    /// Wrap eval-stack nodes in the runtime's `ev` … `/ev` evaluation block. The
-    /// shared shape behind inline-print, return, assignment, and discarded-call
-    /// lowering: each supplies the body that runs between the markers.
-    private static func evalGroup(_ body: [NodeKind]) -> [NodeKind] {
-        [.controlCommand("ev")] + body + [.controlCommand("/ev")]
-    }
-
-    /// Lower an expression to POSTFIX runtime nodes, inlining any CONST
-    /// reference to its literal value (D6 / DDD-9). `a OP b` becomes
-    /// `<lower a> <lower b> .nativeFunction(OP)`; literals push onto the eval
-    /// stack; non-CONST identifiers lower to `.variableReference`; string
-    /// literals lower to a `str`/`^text`/`/str` group that pushes the string; a
-    /// function call lowers its arguments onto the eval stack then emits the
-    /// `f():`-tagged divert that calls the function and leaves its result there.
-    private static func lowerExpression(
-        _ expression: InkExpression,
-        context: LoweringContext
-    ) -> [NodeKind] {
-        switch expression {
-        case .intLiteral(let value):
-            return [.intValue(value)]
-        case .boolLiteral(let value):
-            return [.boolValue(value)]
-        case .floatLiteral(let value):
-            return [.floatValue(value)]
-        case .stringLiteral(let value):
-            return [.controlCommand("str"), .text(value), .controlCommand("/str")]
-        case .variableReference(let name):
-            if let inlined = context.constants[name] {
-                return lowerExpression(inlined, context: context)
-            }
-            // A name resolving to a known weave label or knot/stitch is a
-            // read-count subject (ADR-011 EXTEND #2): emit `.readCount(path)`
-            // addressing the resolved container. A true miss (a real qualified
-            // variable) falls through to `.variableReference`.
-            if let path = context.readCountPath(for: name) {
-                return [.readCount(path.joined(separator: "."))]
-            }
-            return [.variableReference(name: name)]
-        case .binary(let oper, let left, let right):
-            var nodes = lowerExpression(left, context: context)
-            nodes.append(contentsOf: lowerExpression(right, context: context))
-            nodes.append(.nativeFunction(oper))
-            return nodes
-        case .unary(let oper, let operand):
-            var nodes = lowerExpression(operand, context: context)
-            nodes.append(.nativeFunction(oper))
-            return nodes
-        case .functionCall(let name, let arguments):
-            return lowerFunctionCall(name: name, arguments: arguments, context: context)
-        }
-    }
-
-    /// Lower a function call `f(args)`: push each argument onto the eval stack —
-    /// an argument bound to a `ref` parameter becomes a `variablePointer` so the
-    /// callee mutates the caller's variable — then emit the `f():`-tagged divert
-    /// the runtime intercepts to push a return address and jump into the function.
-    private static func lowerFunctionCall(
-        name: String,
-        arguments: [InkExpression],
-        context: LoweringContext
-    ) -> [NodeKind] {
-        let parameters = context.functions[name] ?? []
-        var nodes: [NodeKind] = []
-        for (offset, argument) in arguments.enumerated() {
-            let isReference = offset < parameters.count && parameters[offset].isReference
-            if isReference, case .variableReference(let variableName) = argument {
-                nodes.append(.variablePointer(name: variableName, contextIndex: globalContextIndex))
-                continue
-            }
-            nodes.append(contentsOf: lowerExpression(argument, context: context))
-        }
-        nodes.append(.divert(target: functionCallTargetPrefix + name, isConditional: false, isVariable: false))
-        return nodes
-    }
-
-    /// The runtime intercepts a divert whose target carries this prefix as a
-    /// function call (push a return address before jumping). Matches the decoder's
-    /// lowering of an inklecate `{"f()": path}` divert.
-    static let functionCallTargetPrefix = "f():"
-
-    /// Reference arguments use `ci == -1` to denote global scope (brief tier3); a
-    /// non-negative index would point into a call frame's temp scope.
-    private static let globalContextIndex = -1
-
-    /// Lower a declaration/assignment RHS value (no `out`): the value is left on
-    /// the eval stack for a following `{VAR=}`/`{temp=}` to consume.
-    private static func lowerValue(
-        _ expression: InkExpression,
-        context: LoweringContext
-    ) -> [NodeKind] {
-        lowerExpression(expression, context: context)
+        ExpressionLowering.lowerInlineExpression(expression, context: LoweringContext(constants: [:], functions: [:]))
     }
 
     // MARK: - Lowering
@@ -413,7 +306,7 @@ enum RuntimeObjectEmitter {
                     lowerContinuation: inlineConditionalContinuationLowerer(
                         context: context, enclosingKeyPrefix: keyPrefix
                     ),
-                    lowerExpression: { lowerExpression($0, context: context) }
+                    lowerExpression: { ExpressionLowering.lowerExpression($0, context: context) }
                 ))
                 return children
             }
@@ -545,7 +438,7 @@ enum RuntimeObjectEmitter {
                           )
                           return WeaveEmitter.BodyLowering(children: children, named: weaveNamed)
                       },
-                      lowerCondition: { expression in lowerExpression(expression, context: context) }
+                      lowerCondition: { expression in ExpressionLowering.lowerExpression(expression, context: context) }
                   ) else {
                 // Address the chained segment's containers under `enclosingKeyPrefix`
                 // (not the continuation's own `prefix`): like the weave branch above,
@@ -594,7 +487,7 @@ enum RuntimeObjectEmitter {
             lowerContinuation: inlineConditionalContinuationLowerer(
                 context: context, enclosingKeyPrefix: keyPrefix
             ),
-            lowerExpression: { lowerExpression($0, context: context) },
+            lowerExpression: { ExpressionLowering.lowerExpression($0, context: context) },
             qualifyDivertTarget: { context.qualifiedDivertTarget($0) }
         ))
         return children
@@ -650,7 +543,7 @@ enum RuntimeObjectEmitter {
                       // conditional whose rejoin is a guarded choice menu (e.g.
                       // `admitted_to_something`'s `{not drugged}[…]` / `{drugged}[…]`
                       // choices) otherwise lowered every choice unguarded (all shown).
-                      lowerCondition: { expression in lowerExpression(expression, context: context) }
+                      lowerCondition: { expression in ExpressionLowering.lowerExpression(expression, context: context) }
                   ) else {
                 return lowerBody(
                     body, context: context, keyPrefix: prefix,
@@ -744,7 +637,7 @@ enum RuntimeObjectEmitter {
         _ call: InkExpression,
         context: LoweringContext
     ) -> [NodeKind] {
-        evalGroup(lowerExpression(call, context: context) + [.controlCommand("pop")])
+        ExpressionLowering.evalGroup(ExpressionLowering.lowerExpression(call, context: context) + [.controlCommand("pop")])
     }
 
     /// Lower a function return `~ return [expr]`: evaluate the optional value onto
@@ -754,8 +647,8 @@ enum RuntimeObjectEmitter {
         _ value: InkExpression?,
         context: LoweringContext
     ) -> [NodeKind] {
-        let valueNodes = value.map { lowerExpression($0, context: context) } ?? []
-        return evalGroup(valueNodes) + [.controlCommand("~ret")]
+        let valueNodes = value.map { ExpressionLowering.lowerExpression($0, context: context) } ?? []
+        return ExpressionLowering.evalGroup(valueNodes) + [.controlCommand("~ret")]
     }
 
     /// Lower a content line: literal segments emit text, expression segments emit
@@ -783,7 +676,7 @@ enum RuntimeObjectEmitter {
             case .literal(let text):
                 nodes.append(.text(text))
             case .expression(let expression):
-                nodes.append(contentsOf: lowerInlineExpression(expression, context: context))
+                nodes.append(contentsOf: ExpressionLowering.lowerInlineExpression(expression, context: context))
             case .tag(let tag):
                 nodes.append(contentsOf: [.tagOpen, .text(tag), .tagClose])
             case .conditional:
@@ -806,7 +699,7 @@ enum RuntimeObjectEmitter {
         isGlobal: Bool,
         context: LoweringContext
     ) -> [NodeKind] {
-        evalGroup(lowerExpression(value, context: context))
+        ExpressionLowering.evalGroup(ExpressionLowering.lowerExpression(value, context: context))
             + [.variableAssignment(name: name, isGlobal: isGlobal)]
     }
 

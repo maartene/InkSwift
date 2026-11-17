@@ -107,7 +107,7 @@ enum WeaveEmitter {
     /// that keys the outcome/gather containers records the labelled-only path —
     /// never re-derived. Unlabelled `c-N`/`g-N` containers are not registered.
     /// `lowerCondition` lowers a choice's `{guard}` expression to POSTFIX eval-stack
-    /// nodes (the `RuntimeObjectEmitter.lowerExpression` idiom, reused — not edited).
+    /// nodes (the `ExpressionLowering.lowerExpression` idiom, reused — not edited).
     /// `keyPrefix` is the enclosing knot/stitch path: choicePoint divert targets and
     /// loose-end diverts are absolute-qualified from root, so a weave nested in a
     /// knot addresses its `c-N`/`g-N` containers as `knot.c-N` (the engine resolves
@@ -793,7 +793,7 @@ private final class WeaveResolver {
     /// the container's own key prefix (see `lowerStatement`).
     let lowerStatementWithFallThrough: (([InkStatement], FallThrough, [String]) -> WeaveEmitter.BodyLowering)?
     /// Lowers a choice's `{guard}` expression to POSTFIX eval-stack nodes, reusing
-    /// the `RuntimeObjectEmitter.lowerExpression` idiom (composes with 02-03's dotted
+    /// the `ExpressionLowering.lowerExpression` idiom (composes with 02-03's dotted
     /// read-count operands). The resolver wraps the result in an `ev … /ev` block.
     let lowerCondition: (InkExpression) -> [NodeKind]
 
