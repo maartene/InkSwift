@@ -846,7 +846,7 @@ private final class WeaveResolver {
         // choicePoints inline (the existing path below).
         if case .gather? = block.items.first, let firstGather = gathers.first {
             children.append(.divert(
-                target: firstGather.path.joined(separator: "."), isConditional: false, isVariable: false
+                target: .path(PathReference(parsing: firstGather.path.joined(separator: "."))), isConditional: false
             ))
         }
 
@@ -1101,7 +1101,7 @@ private final class WeaveResolver {
         var children = lead
         if endsWithControlFlowNode(lead) == false {
             children.append(.divert(
-                target: rejoinPath.joined(separator: "."), isConditional: false, isVariable: false
+                target: .path(PathReference(parsing: rejoinPath.joined(separator: "."))), isConditional: false
             ))
         }
         return ContainerNode(children: children, namedContent: named, flags: 0, name: key)
@@ -1190,7 +1190,7 @@ private final class WeaveResolver {
     private func fallThroughNodes(_ fallThrough: FallThrough) -> [NodeKind] {
         switch fallThrough {
         case .gather(let path):
-            return [.divert(target: path.joined(separator: "."), isConditional: false, isVariable: false)]
+            return [.divert(target: .path(PathReference(parsing: path.joined(separator: "."))), isConditional: false)]
         case .end:
             return [.controlCommand("end")]
         }

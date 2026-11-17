@@ -310,8 +310,8 @@ final class InkEngine {
 
         walker.dispatchNode(currentChild, state: &state)
 
-        if case .divert(let target, let isConditional, let isVariable) = currentChild {
-            return followDivert(target: target, isConditional: isConditional, isVariable: isVariable, context: &context)
+        if case .divert(let target, let isConditional) = currentChild {
+            return followDivert(target: target, isConditional: isConditional, context: &context)
         }
         return settleLine(after: currentChild, context: &context)
     }
@@ -366,15 +366,14 @@ final class InkEngine {
     /// Follow a divert node the TreeWalker has just dispatched: a function call
     /// (`f():`) or an ordinary / conditional / variable divert.
     private func followDivert(
-        target: String,
+        target: DivertTarget,
         isConditional: Bool,
-        isVariable: Bool,
         context: inout StepContext
     ) -> StepOutcome {
-        if target.hasPrefix("f():") {
-            applyFunctionCall(target: String(target.dropFirst(4)))
+        if let function = Self.functionCallTarget(target) {
+            applyFunctionCall(target: function)
         } else {
-            followPlainDivert(target: target, isConditional: isConditional, isVariable: isVariable)
+            followPlainDivert(target: target, isConditional: isConditional)
         }
         context.noteDivert(outputEndsInNewline: state.outputStream.last == "\n")
         return .proceed
@@ -545,8 +544,15 @@ final class InkEngine {
         return state.outputStream.filter { $0 != "\n" }.joined()
     }
 
+    /// The function a function-call divert (a path target spelled `f():name`) calls, else nil.
+    private static func functionCallTarget(_ target: DivertTarget) -> String? {
+        guard case .path(let reference) = target else { return nil }
+        let spelling = reference.description
+        return spelling.hasPrefix("f():") ? String(spelling.dropFirst(4)) : nil
+    }
+
     /// Follow a non-function `.divert` node encountered during step execution.
-    private func followPlainDivert(target: String, isConditional: Bool, isVariable: Bool) {
+    private func followPlainDivert(target: DivertTarget, isConditional: Bool) {
         // Do NOT flush the output stream before the divert. The divert destination
         // may begin with a glue (<>) node that removes a pending \n from the stream —
         // flushing here would return the line before the glue has a chance to join it
@@ -554,20 +560,20 @@ final class InkEngine {
         if isConditional {
             // Conditional diverts pop a bool from the eval stack; false = skip divert.
             let condition = state.evalStack.popLast() ?? .bool(false)
-            if condition.asBool {
-                applyDivert(target: target)
+            guard condition.asBool else { return }
+        }
+        // As in Story.cs (PerformLogicAndFlowControl): the condition gates the divert,
+        // then the target resolves — a variable target too, conditional or not.
+        switch target {
+        case .path(let reference):
+            applyDivert(to: reference)
+        case .variable(let name):
+            // Variable divert: look up the target variable in variablesState.
+            // The variable holds a divert-target path stored as a string value
+            // (placed there by the {^->: "path"} + {temp=: "$varName"} mechanism).
+            if case .string(let path)? = state.variablesState[name] {
+                applyDivert(target: path)
             }
-            return
-        }
-        guard isVariable else {
-            applyDivert(target: target)
-            return
-        }
-        // Variable divert: look up the target variable in variablesState.
-        // The variable holds a divert-target path stored as a string value
-        // (placed there by the {^->: "path"} + {temp=: "$varName"} mechanism).
-        if case .string(let path)? = state.variablesState[target] {
-            applyDivert(target: path)
         }
     }
 

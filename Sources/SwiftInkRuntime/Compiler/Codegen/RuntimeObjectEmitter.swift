@@ -11,8 +11,8 @@
 //     The knot's own body lines are the knot container's children; each stitch
 //     becomes a `namedContent` entry NESTED under its knot container, keyed by
 //     the stitch name with `.name` set.
-//   - Diverts emit `.divert(target:, isConditional:false, isVariable:false)`
-//     carrying the unresolved path string verbatim — the runtime resolves
+//   - Diverts emit `.divert(target: .path(…), isConditional: false)` carrying
+//     the unresolved path, parsed but not resolved — the runtime resolves
 //     absolute (`intro`), qualified (`investigation.arrival`), and relative
 //     (`.^.arrival`) forms by named/relative navigation (no tree-shape parity
 //     with inklecate's anonymous-0 nesting required).
@@ -595,8 +595,8 @@ enum RuntimeObjectEmitter {
             return lowerAssignment(name: name, value: value, isGlobal: isGlobal, context: context)
         case .divert(let target):
             return [.divert(
-                target: context.qualifiedDivertTarget(target),
-                isConditional: false, isVariable: false
+                target: .path(PathReference(parsing: context.qualifiedDivertTarget(target))),
+                isConditional: false
             )]
         case .tunnelDivert(let target):
             return [.tunnelDivert(target: PathReference(parsing: target))]

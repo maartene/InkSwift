@@ -179,13 +179,15 @@ struct InkDecoder {
         }
         if let target = dict["->"]?.stringValue {
             let isConditional = dict["c"]?.boolValue ?? false
-            let isVariable = dict["var"] != nil
-            return .divert(target: target, isConditional: isConditional, isVariable: isVariable)
+            let divertTarget: DivertTarget = dict["var"] != nil
+                ? .variable(name: target)
+                : .path(PathReference(parsing: target))
+            return .divert(target: divertTarget, isConditional: isConditional)
         }
         if let target = dict["f()"]?.stringValue {
             // Function-call divert: tagged with "f():" prefix so the engine
             // knows to push a return address before jumping.
-            return .divert(target: "f():" + target, isConditional: false, isVariable: false)
+            return .divert(target: .path(PathReference(parsing: "f():" + target)), isConditional: false)
         }
         if let target = dict["*"]?.stringValue {
             let rawFlags = dict["flg"]?.intValue ?? 0

@@ -107,7 +107,7 @@ enum ExpressionLowering {
             }
             nodes.append(contentsOf: lowerExpression(argument, context: context))
         }
-        nodes.append(.divert(target: functionCallTargetPrefix + name, isConditional: false, isVariable: false))
+        nodes.append(.divert(target: .path(PathReference(parsing: functionCallTargetPrefix + name)), isConditional: false))
         return nodes
     }
 }

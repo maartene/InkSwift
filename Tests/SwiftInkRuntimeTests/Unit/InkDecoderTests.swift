@@ -16,7 +16,9 @@ struct InkDecoderTests {
     // Behavior 4: {"^var":"name","ci":-1} dict is classified as .variablePointer(name:contextIndex:)
     // Behavior 5: every path-bearing payload (CNT?, *, ->t->, ^->) decodes to a typed
     //             PathReference, relative or absolute (typed-runtime-paths 02-03)
-    // Budget = 5 behaviors × 2 = 10 unit tests max
+    // Behavior 6: a "->" divert decodes to a typed DivertTarget — a variable target
+    //             when "var" is present, else a path — with its "c" flag (02-04)
+    // Budget = 6 behaviors × 2 = 12 unit tests max
 
     // MARK: - Behavior 1: CNT? dict classified as readCount
 
@@ -94,6 +96,32 @@ struct InkDecoderTests {
         }
     }
 
+    // MARK: - Behavior 6: diverts decode to typed divert targets
+
+    /// Divert shapes as inklecate writes them (compare `compile-ceiling.ink.json`
+    /// for path and conditional diverts, `TheIntercept.ink.json` for `"var":true`).
+    @Test(arguments: [
+        (#"{"->":"$r","var":true}"#, DivertTarget.variable(name: "$r"), false),
+        (#"{"->":"knot_target","var":true,"c":true}"#, .variable(name: "knot_target"), true),
+        (#"{"->":"knot.stitch"}"#, .path(.absolute(ContainerPath(components: [.name("knot"), .name("stitch")]))), false),
+        (#"{"->":".^.b","c":true}"#, .path(.relative(parentSteps: 1, tail: [.name("b")])), true),
+        (#"{"->":"0.g-0"}"#, .path(.absolute(ContainerPath(components: [.index(0), .name("g-0")]))), false),
+    ])
+    func `a divert decodes to its typed target and conditionality`(
+        node: String, expected: DivertTarget, isConditional: Bool
+    ) throws {
+        let json = #"{"inkVersion":21,"root":["# + node + #",null]}"#
+        let root = try InkDecoder().decode(try #require(json.data(using: .utf8)))
+
+        let decoded = try #require(root.children.first)
+        guard case .divert(let target, let decodedIsConditional) = decoded else {
+            Issue.record("Expected .divert but got \(decoded)")
+            return
+        }
+        #expect(target == expected)
+        #expect(decodedIsConditional == isConditional)
+    }
+
     // MARK: - Behavior 2: f() dict classified as .divert
 
     @Test func `InkDecoder classifies f() dict node as divert to named function`() throws {
@@ -105,9 +133,9 @@ struct InkDecoderTests {
         let root = try decoder.decode(data)
 
         let firstChild = try #require(root.children.first)
-        if case .divert(let target, let isConditional, _) = firstChild {
+        if case .divert(let target, let isConditional) = firstChild {
             // f() diverts carry "f():" prefix so the engine can push a return address
-            #expect(target == "f():double")
+            #expect(target == .path(PathReference(parsing: "f():double")))
             #expect(isConditional == false)
         } else {
             Issue.record("Expected .divert(\"f():double\", ...) but got \(firstChild)")

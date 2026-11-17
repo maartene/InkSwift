@@ -178,11 +178,11 @@ enum VariableTextEmitter {
     // MARK: - Divert nodes
 
     private static func conditionalDivert(to path: [String]) -> NodeKind {
-        .divert(target: path.joined(separator: "."), isConditional: true, isVariable: false)
+        .divert(target: .path(PathReference(parsing: path.joined(separator: "."))), isConditional: true)
     }
 
     private static func unconditionalDivert(to path: [String]) -> NodeKind {
-        .divert(target: path.joined(separator: "."), isConditional: false, isVariable: false)
+        .divert(target: .path(PathReference(parsing: path.joined(separator: "."))), isConditional: false)
     }
 
     // MARK: - Helpers

@@ -83,40 +83,32 @@ enum RuntimePathReconciler {
     /// container whose absolute path ENDS with the dangling target's final label
     /// segment AND shares its leading knot segment; uniqueness within that knot
     /// prevents cross-scope mis-resolution. Only absolute, non-END,
-    /// non-function-call, currently-dangling targets are considered — a relative
-    /// (`.^.`), END, function (`f():`), or already-resolving target is untouched.
+    /// non-function-call, currently-dangling path targets are considered — a
+    /// relative (`.^.`), END, function (`f():`), variable, or already-resolving
+    /// target is untouched.
     /// `.choicePoint` targets are deliberately excluded — they are already emitted
     /// correctly — and preserved verbatim.
     private static func reconcilingDivertPaths(_ root: ContainerNode) -> ContainerNode {
-        let targets = collecting(in: root) { node -> String? in
-            guard case .divert(let target, _, _) = node else { return nil }
-            return target
-        }
-        let candidates = Set(targets.filter(isReconcilableDivertTarget).map(absolutePath(of:)))
+        let candidates = collecting(in: root, reconcilableDivertPath(of:))
         let rewrites = reconciliations(of: candidates, in: root)
         guard rewrites.isEmpty == false else { return root }
         return mappingNodes(in: root) { node in
-            guard case .divert(let target, let isConditional, let isVariable) = node,
-                  isReconcilableDivertTarget(target),
-                  let rewrite = rewrites[absolutePath(of: target)] else { return node }
-            return .divert(target: rewrite.description, isConditional: isConditional, isVariable: isVariable)
+            guard case .divert(_, let isConditional) = node,
+                  let path = reconcilableDivertPath(of: node),
+                  let rewrite = rewrites[path] else { return node }
+            return .divert(target: .path(.absolute(rewrite)), isConditional: isConditional)
         }
     }
 
-    /// True when a divert target is a candidate for path reconciliation: it must
-    /// be absolute (no leading `.` relative form), not the `END` sentinel, and not
-    /// a function-call target (which the runtime intercepts by its `f():` prefix).
-    private static func isReconcilableDivertTarget(_ target: String) -> Bool {
-        target.hasPrefix(".") == false
-            && target != "END"
-            && target.hasPrefix(ExpressionLowering.functionCallTargetPrefix) == false
-    }
-
-    /// A reconcilable (absolute) divert target as a path. `.divert` payloads are
-    /// still strings until step 02-04 types them.
-    private static func absolutePath(of target: String) -> ContainerPath {
-        ContainerPath(components: target.split(separator: ".", omittingEmptySubsequences: false)
-            .map { PathComponent(parsing: String($0)) })
+    /// The target of a divert that is a candidate for path reconciliation: an
+    /// absolute path target that is neither the `END` sentinel nor a function-call
+    /// target (which the runtime intercepts by its `f():` prefix), else nil.
+    private static func reconcilableDivertPath(of node: NodeKind) -> ContainerPath? {
+        guard case .divert(.path(.absolute(let path)), _) = node else { return nil }
+        let spelling = path.description
+        guard spelling != "END",
+              spelling.hasPrefix(ExpressionLowering.functionCallTargetPrefix) == false else { return nil }
+        return path
     }
 
     // MARK: - Shared reconciliation
