@@ -107,7 +107,7 @@ enum WeaveEmitter {
     /// that keys the outcome/gather containers records the labelled-only path —
     /// never re-derived. Unlabelled `c-N`/`g-N` containers are not registered.
     /// `lowerCondition` lowers a choice's `{guard}` expression to POSTFIX eval-stack
-    /// nodes (the `RuntimeObjectEmitter.lowerExpression` idiom, reused — not edited).
+    /// nodes (the `ExpressionLowering.lowerExpression` idiom, reused — not edited).
     /// `keyPrefix` is the enclosing knot/stitch path: choicePoint divert targets and
     /// loose-end diverts are absolute-qualified from root, so a weave nested in a
     /// knot addresses its `c-N`/`g-N` containers as `knot.c-N` (the engine resolves
@@ -523,16 +523,13 @@ private enum WeaveParser {
         guard case .gather(_, let label, let outcome) = header.kind else {
             fatalError("parseGather requires a gather statement")
         }
-        var body: [InkStatement] = []
-        if outcome.isEmpty == false {
-            // A gather whose outcome is a divert (`- -> target`, parser bug #1)
-            // lowers via the shared inline-body helper so the leading `->` becomes
-            // a real divert, not literal text. An outcome carrying a `{…}` group
-            // (variable-text / inline-conditional gather lead, #3b layer 1) lowers
-            // to a `.content` statement so `lowerBody` threads it — not echoed as
-            // literal text. Plain prose still lowers to `.text`.
-            body.append(contentsOf: inlineBodyStatements(outcome, at: header.position))
-        }
+        // A gather whose outcome is a divert (`- -> target`, parser bug #1)
+        // lowers via the shared inline-body helper so the leading `->` becomes
+        // a real divert, not literal text. An outcome carrying a `{…}` group
+        // (variable-text / inline-conditional gather lead, #3b layer 1) lowers
+        // to a `.content` statement so `lowerBody` threads it — not echoed as
+        // literal text. Plain prose still lowers to `.text`.
+        var body = inlineBodyStatements(outcome, at: header.position)
         while cursor < statements.count {
             let statement = statements[cursor]
             if isSameOrShallowerGather(statement, level: level) || isAnyChoice(statement) {
@@ -541,32 +538,52 @@ private enum WeaveParser {
             body.append(statement)
             cursor += 1
         }
-        // #3b layer 1 — gather-lead variable-text fold: when the gather body LEADS
-        // with a variable-text / inline-conditional line, its trailing choices are
-        // the CONTINUATION of that line, not orphaned siblings. Keep them in the
-        // FLAT body so `lowerBody → lowerVariableTextLine` threads them off the
-        // line's `seq*-end` continuation (with the gather's loose-end fall-through);
-        // routing them through `nested` instead would emit unreachable choicePoints
-        // after the dispatch divert (total dead-end, native play []). Otherwise the
-        // pre-existing nested-block path applies (a gather whose body is plain prose
-        // then choices).
-        var nested: WeaveBlock?
-        if cursor < statements.count, isAnyChoice(statements[cursor]) {
-            if leadsWithVariableTextOrConditional(body) {
-                // Fold the gather's own sub-scope (its choices and their bodies) into
-                // the flat body, up to the next same-or-shallower gather (which is the
-                // gather's loose-end target, resolved at lowering as `fallThrough`).
-                while cursor < statements.count,
-                      isSameOrShallowerGather(statements[cursor], level: level) == false {
-                    body.append(statements[cursor])
-                    cursor += 1
-                }
-            } else {
-                let block = parseBlock(statements, cursor: &cursor, atLevel: level, stopAtSameLevelGather: true)
-                if block.items.isEmpty == false { nested = block }
-            }
-        }
+        let nested = parseGatherSubWeave(statements, cursor: &cursor, atLevel: level, body: &body)
         return WeaveGather(label: label, body: body, nested: nested)
+    }
+
+    /// The sub-weave a gather opens when choices follow its prose, or `nil`.
+    ///
+    /// #3b layer 1 — gather-lead variable-text fold: when the gather body LEADS
+    /// with a variable-text / inline-conditional line, its trailing choices are
+    /// the CONTINUATION of that line, not orphaned siblings. Keep them in the
+    /// FLAT body so `lowerBody → lowerVariableTextLine` threads them off the
+    /// line's `seq*-end` continuation (with the gather's loose-end fall-through);
+    /// routing them through `nested` instead would emit unreachable choicePoints
+    /// after the dispatch divert (total dead-end, native play []). Otherwise the
+    /// pre-existing nested-block path applies (a gather whose body is plain prose
+    /// then choices).
+    private static func parseGatherSubWeave(
+        _ statements: [InkStatement],
+        cursor: inout Int,
+        atLevel level: Int,
+        body: inout [InkStatement]
+    ) -> WeaveBlock? {
+        guard cursor < statements.count, isAnyChoice(statements[cursor]) else {
+            return nil
+        }
+        if leadsWithVariableTextOrConditional(body) {
+            foldGatherScope(statements, cursor: &cursor, atLevel: level, into: &body)
+            return nil
+        }
+        let block = parseBlock(statements, cursor: &cursor, atLevel: level, stopAtSameLevelGather: true)
+        return block.items.isEmpty ? nil : block
+    }
+
+    /// Fold the gather's own sub-scope (its choices and their bodies) into the
+    /// flat body, up to the next same-or-shallower gather (which is the gather's
+    /// loose-end target, resolved at lowering as `fallThrough`).
+    private static func foldGatherScope(
+        _ statements: [InkStatement],
+        cursor: inout Int,
+        atLevel level: Int,
+        into body: inout [InkStatement]
+    ) {
+        while cursor < statements.count,
+              isSameOrShallowerGather(statements[cursor], level: level) == false {
+            body.append(statements[cursor])
+            cursor += 1
+        }
     }
 
     private static func isSameOrShallowerGather(_ statement: InkStatement, level: Int) -> Bool {
@@ -621,66 +638,69 @@ private enum WeaveParser {
         // executes; plain prose stays `.text`. The arrow path below still handles
         // `- -> target` (including a leading prose prefix).
         guard let arrowRange = body.range(of: "->") else {
-            // A gather/choice outcome carrying a glue marker `<>` on either edge
-            // emits a glue statement in its place (see `GlueMarker`, the shared edge
-            // splitter) so the outcome joins the adjacent output line instead of
-            // echoing `<>` as literal text.
-            //
-            // LEADING `<>` (the `tell_me_now` gather at TheIntercept.ink ~481,
-            // `(tell_me_now) <> So why don't you tell me…`): emit glue FIRST, then
-            // lower the remainder so the outcome joins the previous output line (the
-            // choice body falling through into the gather). Drop ONLY the marker —
-            // the source whitespace after it is literal content inklecate preserves
-            // (the oracle text node is `^ So why…`, a leading space); trimming would
-            // yield `last.So` instead of `last. So`. A brace-bearing remainder still
-            // routes through `outcomeStatement` (which trims), but the common prose
-            // case keeps the verbatim remainder so the glued join matches inklecate.
-            //
-            // TRAILING `<>` (`… He pushes one mug: <>`): lower the prose, then append
-            // glue so the outcome glues to its loose-end divert target (the next
-            // gather's first content joins on the same output line).
-            switch GlueMarker.edge(of: body) {
-            case .leading(let remainder):
-                var statements: [InkStatement] = [InkStatement(kind: .glue, position: position)]
-                if remainder.contains("{") || remainder.contains("->") {
-                    if let proseStatement = try? InkParser.outcomeStatement(remainder, at: position) {
-                        statements.append(proseStatement)
-                    }
-                } else if remainder.trimmingCharacters(in: .whitespaces).isEmpty == false {
-                    statements.append(InkStatement(kind: .text(remainder), position: position))
-                }
-                return statements
-            case .trailing(let prose):
-                let trimmedProse = prose.trimmingCharacters(in: .whitespaces)
-                var statements: [InkStatement] = []
-                if let proseStatement = try? InkParser.outcomeStatement(trimmedProse, at: position) {
-                    statements.append(proseStatement)
-                } else if trimmedProse.isEmpty == false {
-                    statements.append(InkStatement(kind: .text(trimmedProse), position: position))
-                }
-                statements.append(InkStatement(kind: .glue, position: position))
-                return statements
-            case .none:
-                break
-            }
-            if let statement = try? InkParser.outcomeStatement(body, at: position) {
-                return [statement]
-            }
-            return [InkStatement(kind: .text(body), position: position)]
+            return nonDivertOutcomeStatements(body, at: position)
         }
-        var statements: [InkStatement] = []
+        return divertOutcomeStatements(body, arrowRange: arrowRange, at: position)
+    }
+
+    /// An outcome with no divert arrow.
+    ///
+    /// A gather/choice outcome carrying a glue marker `<>` on either edge
+    /// emits a glue statement in its place (see `GlueMarker`, the shared edge
+    /// splitter) so the outcome joins the adjacent output line instead of
+    /// echoing `<>` as literal text.
+    ///
+    /// LEADING `<>` (the `tell_me_now` gather at TheIntercept.ink ~481,
+    /// `(tell_me_now) <> So why don't you tell me…`): emit glue FIRST, then
+    /// lower the remainder so the outcome joins the previous output line (the
+    /// choice body falling through into the gather). Drop ONLY the marker —
+    /// the source whitespace after it is literal content inklecate preserves
+    /// (the oracle text node is `^ So why…`, a leading space); trimming would
+    /// yield `last.So` instead of `last. So`. A brace-bearing remainder still
+    /// routes through `outcomeStatement` (which trims), but the common prose
+    /// case keeps the verbatim remainder so the glued join matches inklecate.
+    ///
+    /// TRAILING `<>` (`… He pushes one mug: <>`): lower the prose, then append
+    /// glue so the outcome glues to its loose-end divert target (the next
+    /// gather's first content joins on the same output line).
+    private static func nonDivertOutcomeStatements(_ body: String, at position: SourcePosition) -> [InkStatement] {
+        let glue = InkStatement(kind: .glue, position: position)
+        switch GlueMarker.edge(of: body) {
+        case .leading(let remainder):
+            return [glue] + gluedRemainderStatements(remainder, at: position)
+        case .trailing(let prose):
+            let trimmedProse = prose.trimmingCharacters(in: .whitespaces)
+            return [outcomeOrText(trimmedProse, at: position)].compactMap { $0 } + [glue]
+        case .none:
+            return [outcomeOrText(body, at: position)].compactMap { $0 }
+        }
+    }
+
+    /// The remainder after a leading `<>`: a brace- or divert-bearing remainder
+    /// goes through the outcome recogniser (and is dropped if it fails); plain
+    /// prose stays verbatim, leading whitespace included.
+    private static func gluedRemainderStatements(_ remainder: String, at position: SourcePosition) -> [InkStatement] {
+        if remainder.contains("{") || remainder.contains("->") {
+            return [try? InkParser.outcomeStatement(remainder, at: position)].compactMap { $0 }
+        }
+        guard remainder.trimmingCharacters(in: .whitespaces).isEmpty == false else {
+            return []
+        }
+        return [InkStatement(kind: .text(remainder), position: position)]
+    }
+
+    /// An outcome holding a divert arrow: optional prose, then the divert.
+    private static func divertOutcomeStatements(
+        _ body: String,
+        arrowRange: Range<String.Index>,
+        at position: SourcePosition
+    ) -> [InkStatement] {
+        // Route the prose preceding the divert through the same outcome
+        // recogniser as the no-arrow path so a brace-bearing prefix
+        // (inline-conditional `{c: …}` / variable-text `{|…|}`) lowers to
+        // `.content` and is threaded by `lowerBody` — not echoed as literal text.
         let prose = String(body[..<arrowRange.lowerBound]).trimmingCharacters(in: .whitespaces)
-        if prose.isEmpty == false {
-            // Route the prose preceding the divert through the same outcome
-            // recogniser as the no-arrow path so a brace-bearing prefix
-            // (inline-conditional `{c: …}` / variable-text `{|…|}`) lowers to
-            // `.content` and is threaded by `lowerBody` — not echoed as literal text.
-            if let statement = try? InkParser.outcomeStatement(prose, at: position) {
-                statements.append(statement)
-            } else {
-                statements.append(InkStatement(kind: .text(prose), position: position))
-            }
-        }
+        var statements = [outcomeOrText(prose, at: position)].compactMap { $0 }
         let target = String(body[arrowRange.upperBound...]).trimmingCharacters(in: .whitespaces)
         // A bare-divert outcome that is a TUNNEL CHAIN (`-> A -> B`) — e.g. the
         // `missing_reel -> harris_demands_component` gather loose-end — lowers via the
@@ -688,8 +708,7 @@ private enum WeaveParser {
         // inklecate's adjacent `{"->t->":A},{"->":B}`. A single-hop divert keeps the
         // existing one-statement path (and its inline auto-glue) below.
         if prose.isEmpty, target.contains("->") {
-            statements.append(contentsOf: InkParser.divertStatements(of: body, at: position))
-            return statements
+            return InkParser.divertStatements(of: body, at: position)
         }
         // An inline divert (`prose -> target` on ONE source line) auto-glues the
         // prose to the divert target (ink default divert glue): emit explicit glue
@@ -703,6 +722,15 @@ private enum WeaveParser {
         let divertKind: InkStatementKind = target == "END" ? .end : .divert(target)
         statements.append(InkStatement(kind: divertKind, position: position))
         return statements
+    }
+
+    /// `text` lowered by the shared outcome recogniser, falling back to plain
+    /// text when it cannot be parsed; `nil` for empty text.
+    private static func outcomeOrText(_ text: String, at position: SourcePosition) -> InkStatement? {
+        if let statement = try? InkParser.outcomeStatement(text, at: position) {
+            return statement
+        }
+        return text.isEmpty ? nil : InkStatement(kind: .text(text), position: position)
     }
 
     private static func appendTrailing(_ statement: InkStatement, to items: [WeaveItem]) -> [WeaveItem] {
@@ -765,7 +793,7 @@ private final class WeaveResolver {
     /// the container's own key prefix (see `lowerStatement`).
     let lowerStatementWithFallThrough: (([InkStatement], FallThrough, [String]) -> WeaveEmitter.BodyLowering)?
     /// Lowers a choice's `{guard}` expression to POSTFIX eval-stack nodes, reusing
-    /// the `RuntimeObjectEmitter.lowerExpression` idiom (composes with 02-03's dotted
+    /// the `ExpressionLowering.lowerExpression` idiom (composes with 02-03's dotted
     /// read-count operands). The resolver wraps the result in an `ev … /ev` block.
     let lowerCondition: (InkExpression) -> [NodeKind]
 

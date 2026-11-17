@@ -23,6 +23,102 @@ public enum InkParser {
     private static let returnMarker = "return"
     private static let tunnelReturnMarker = "->->"
 
+    /// One trimmed line of a block conditional's body, with its 1-based source
+    /// line and its shape, classified once from the text.
+    private struct BodyLine {
+        let text: String
+        let number: Int
+        let shape: LineShape
+
+        init(text: String, number: Int) {
+            self.text = text
+            self.number = number
+            self.shape = InkParser.lineShape(of: text)
+        }
+    }
+
+    /// What a block body line is. Each case stands in for the reference grammar
+    /// rule noted on it (`InkParser_Conditional.cs`); everything downstream
+    /// switches over the shape instead of re-scanning the text.
+    private enum LineShape {
+        /// `{ subject:` or a bare `{`, with no `}` on the line: opens a nested
+        /// multi-line block (`InnerConditionalContent`). `inline` is any content
+        /// after the colon on the same line.
+        case opener(BlockHeader, inline: String)
+        /// A lone `}` closing the innermost open block.
+        case close
+        /// `- <guard>: <inline>`: one branch of the block (`SingleMultilineCondition`).
+        case arm(ArmGuard, inline: String)
+        /// Anything else: branch content (`StatementsAtLevel(InnerBlock)`).
+        case content
+
+        /// How the line moves brace nesting.
+        var depthChange: Int {
+            switch self {
+            case .opener:
+                return 1
+            case .close:
+                return -1
+            case .arm, .content:
+                return 0
+            }
+        }
+
+        var isArm: Bool {
+            if case .arm = self {
+                return true
+            }
+            return false
+        }
+    }
+
+    /// The header of a multi-line block — the reference's `initialQueryExpression`.
+    private enum BlockHeader {
+        /// A bare `{`: no subject, so every arm carries its own guard.
+        case none
+        /// `{ <subject>:`, as the subject's source text.
+        case subject(String)
+
+        /// The parsed subject, or `nil` for a bare `{`.
+        func expression() throws -> InkExpression? {
+            guard case .subject(let text) = self else {
+                return nil
+            }
+            return try InkExpressionParser.parse(text)
+        }
+    }
+
+    /// An arm's guard, shaped like the reference's `ConditionalSingleBranch`:
+    /// `isElse`, an `ownExpression`, or neither.
+    private enum ArmGuard {
+        /// `- else:` (`ElseExpression`, `isElse`).
+        case otherwise
+        /// `- <expr>:` (`ConditionExpression`, `ownExpression`), as source text.
+        case condition(String)
+        /// A branch with neither: in the reference, a `-` line whose content is
+        /// not preceded by `<expr>:`. We only produce it for `- :` today, and
+        /// treat it as a default arm — the reference instead keeps the `:` as
+        /// content (`- : B` prints `: B`) and reads colon-less lines (`- B`) as
+        /// such branches too (issue #23).
+        case unconditioned
+
+        /// True when the arm is a switch label: it carries its own expression.
+        var isLabel: Bool {
+            if case .condition = self {
+                return true
+            }
+            return false
+        }
+
+        /// The arm's match expression; `nil` for a default arm.
+        func match() throws -> InkExpression? {
+            guard case .condition(let text) = self else {
+                return nil
+            }
+            return try InkExpressionParser.parse(text)
+        }
+    }
+
     /// Parse `.ink` source into a flat, ordered stream of positioned statements.
     public static func parse(_ source: String) throws -> [InkStatement] {
         var statements: [InkStatement] = []
@@ -65,11 +161,10 @@ public enum InkParser {
         // glue+text, the bare `}`) leaked as separate statements — the `}` echoed as
         // literal text.
         let (afterMarkers, pendingGather) = gatherBlockOpener(rawTrimmed, at: start)
-        let trimmed = afterMarkers
-        guard trimmed.hasPrefix("{"), trimmed.contains("}") == false else {
+        guard isBlockOpener(afterMarkers) else {
             return nil
         }
-        let afterBrace = String(trimmed.dropFirst())
+        let afterBrace = String(afterMarkers.dropFirst())
         let colonIndex = topLevelColonIndex(in: afterBrace)
         // A bare `{` opener must have nothing meaningful before the (absent) colon;
         // otherwise this is a single-line `{expr}` that merely lacks a close brace.
@@ -82,41 +177,107 @@ public enum InkParser {
             statements.append(pendingGather)
         }
         let position = SourcePosition(line: start + 1, column: leadingColumn(of: lines[start]))
-        let subjectText: String
-        var bodyLines: [(text: String, number: Int)] = []
-        if let colonIndex {
-            subjectText = String(afterBrace[..<colonIndex]).trimmingCharacters(in: .whitespaces)
-            let firstInline = String(afterBrace[afterBrace.index(after: colonIndex)...])
-                .trimmingCharacters(in: .whitespaces)
-            if firstInline.isEmpty == false {
-                bodyLines.append((firstInline, start + 1))
-            }
-        } else {
-            // Bare `{` — subject-less guarded block; arms carry their own guards.
-            subjectText = ""
+        let (header, inline) = blockHeader(afterBrace, colonIndex: colonIndex)
+        let (body, next) = collectBlockBody(from: start + 1, count: lines.count) {
+            BodyLine(text: lines[$0].trimmingCharacters(in: .whitespaces), number: $0 + 1)
         }
-        var index = start + 1
-        var depth = 0
-        while index < lines.count {
-            let candidate = lines[index].trimmingCharacters(in: .whitespaces)
-            if candidate == "}" {
-                if depth == 0 {
-                    index += 1
-                    break
-                }
-                bodyLines.append((candidate, index + 1))
-                depth -= 1
-            } else {
-                if candidate.hasPrefix("{") && !candidate.contains("}") {
-                    depth += 1
-                }
-                bodyLines.append((candidate, index + 1))
-            }
-            index += 1
-        }
-        let statement = try buildConditionalBlock(subjectText: subjectText, bodyLines: bodyLines, position: position)
+        let statement = try buildConditionalBlock(
+            header: header, bodyLines: inlineBodyLines(inline, number: start + 1) + body, position: position)
         statements.append(statement)
-        return index
+        return next
+    }
+
+    /// True when a trimmed line opens a multi-line block: a `{` with no `}` on
+    /// the same line.
+    private static func isBlockOpener(_ text: String) -> Bool {
+        text.hasPrefix("{") && !text.contains("}")
+    }
+
+    /// Classify one trimmed block body line (see `LineShape`).
+    private static func lineShape(of text: String) -> LineShape {
+        if text == "}" {
+            return .close
+        }
+        if isBlockOpener(text) {
+            let afterBrace = String(text.dropFirst())
+            let (header, inline) = blockHeader(afterBrace, colonIndex: topLevelColonIndex(in: afterBrace))
+            return .opener(header, inline: inline)
+        }
+        if let (armGuard, inline) = armParts(of: text) {
+            return .arm(armGuard, inline: inline)
+        }
+        return .content
+    }
+
+    /// Split the text after a block opener's `{` at its top-level colon: the
+    /// header (the subject before the colon), and any content following the
+    /// colon inline. With no colon the block is a bare `{`. An empty subject
+    /// (`{ :`) is read as a bare `{` too — inklecate rejects that opener
+    /// ("Expected some kind of logic…"), so this is an over-acceptance.
+    private static func blockHeader(
+        _ afterBrace: String,
+        colonIndex: String.Index?
+    ) -> (header: BlockHeader, inline: String) {
+        guard let colonIndex else {
+            return (.none, "")
+        }
+        let subject = String(afterBrace[..<colonIndex]).trimmingCharacters(in: .whitespaces)
+        let inline = String(afterBrace[afterBrace.index(after: colonIndex)...])
+            .trimmingCharacters(in: .whitespaces)
+        return (subject.isEmpty ? .none : .subject(subject), inline)
+    }
+
+    /// The guard and inline content of an arm line `- <guard>: <inline>`, or
+    /// `nil` when the line has no top-level colon after its `-` and so is not an
+    /// arm here (see `ArmGuard.unconditioned` for how the reference differs).
+    private static func armParts(of text: String) -> (ArmGuard, inline: String)? {
+        guard text.hasPrefix("-") else {
+            return nil
+        }
+        let afterMarker = String(text.dropFirst()).trimmingCharacters(in: .whitespaces)
+        guard let colonIndex = topLevelColonIndex(in: afterMarker) else {
+            return nil
+        }
+        let guardText = String(afterMarker[..<colonIndex]).trimmingCharacters(in: .whitespaces)
+        let inline = String(afterMarker[afterMarker.index(after: colonIndex)...])
+            .trimmingCharacters(in: .whitespaces)
+        switch guardText {
+        case "else":
+            return (.otherwise, inline)
+        case "":
+            return (.unconditioned, inline)
+        default:
+            return (.condition(guardText), inline)
+        }
+    }
+
+    /// Content written inline after an opener's colon, as the block's first body line.
+    private static func inlineBodyLines(_ inline: String, number: Int) -> [BodyLine] {
+        inline.isEmpty ? [] : [BodyLine(text: inline, number: number)]
+    }
+
+    /// Collect a block's body lines, starting at `start` (the line after the
+    /// opener), up to the `}` that closes it. Nested blocks' lines — their own
+    /// `}` included — stay in the body for recursive assembly. Returns the body
+    /// and the index just past the closing `}` (or `count` when it is missing).
+    private static func collectBlockBody(
+        from start: Int,
+        count: Int,
+        line: (Int) -> BodyLine
+    ) -> (body: [BodyLine], next: Int) {
+        var body: [BodyLine] = []
+        var depth = 0
+        var index = start
+        while index < count {
+            let candidate = line(index)
+            index += 1
+            if case .close = candidate.shape, depth == 0 {
+                return (body, index)
+            }
+            depth += candidate.shape.depthChange
+            body.append(candidate)
+        }
+        return (body, index)
     }
 
     /// Strip a leading gather-marker run off a line that opens a multi-line block
@@ -151,22 +312,19 @@ public enum InkParser {
         return (outcome, gather)
     }
 
-    /// Assemble a `.conditionalBlock` from the subject expression and the block's
-    /// body lines. Lines beginning `- <guard>:` open arms; lines without that
-    /// shape are arm content. A block with no `- guard:` arms is a single-guard
-    /// block (`{ cond: ...true... - else: ...false... }` collapsed), so its first
-    /// implicit arm is guarded by the subject and a switch compares each arm's
-    /// label to the subject.
+    /// Assemble a `.conditionalBlock` from the block's header and body lines.
+    /// Lines beginning `- <guard>:` open arms; lines without that shape are arm
+    /// content. A block with no `- guard:` arms is a single-guard block
+    /// (`{ cond: ...true... }`), so its only arm is guarded by the subject.
     private static func buildConditionalBlock(
-        subjectText: String,
-        bodyLines: [(text: String, number: Int)],
+        header: BlockHeader,
+        bodyLines: [BodyLine],
         position: SourcePosition
     ) throws -> InkStatement {
-        let opensArm = hasArmOpenerAtDepth0(bodyLines)
-        if opensArm {
-            return try switchOrGuardedBlock(subjectText: subjectText, bodyLines: bodyLines, position: position)
+        if hasArmOpenerAtDepth0(bodyLines) {
+            return try switchOrGuardedBlock(header: header, bodyLines: bodyLines, position: position)
         }
-        return try plainGuardedBlock(subjectText: subjectText, bodyLines: bodyLines, position: position)
+        return try plainGuardedBlock(header: header, bodyLines: bodyLines, position: position)
     }
 
     /// A block whose body has explicit `- guard:` arms. It is a switch (the
@@ -175,13 +333,13 @@ public enum InkParser {
     /// expression. Otherwise it is a guarded block: each arm's guard is its own
     /// condition, and a subject guards the first (implicit) arm.
     private static func switchOrGuardedBlock(
-        subjectText: String,
-        bodyLines: [(text: String, number: Int)],
+        header: BlockHeader,
+        bodyLines: [BodyLine],
         position: SourcePosition
     ) throws -> InkStatement {
         // A bare `{`-opener block has no subject: every arm carries its own guard,
         // so it is always a guarded (non-switch) block with no pre-arm content.
-        let hasSubject = subjectText.isEmpty == false
+        let subjectExpression = try header.expression()
         // A real switch opens DIRECTLY with `- guard:` arms (`{ x: - 1: … - 2: … }`):
         // its first body line is an arm opener, no content precedes it. A guarded
         // if/else carries content right after `{ subject:` as the implicit first arm
@@ -189,38 +347,35 @@ public enum InkParser {
         // NOT a switch value. Without this structural guard a guarded if/else whose
         // subject lacked a comparison operator (e.g. `not knot.label`) was misread as
         // a switch, dropping the implicit-first-arm content and its condition entirely.
-        let opensWithArm = bodyLines.first.map { isArmOpener($0.text) } ?? false
-        let isSwitch = hasSubject && opensWithArm && hasLabelledArm(bodyLines)
+        let opensWithArm = bodyLines.first?.shape.isArm ?? false
+        let isSwitch = subjectExpression != nil && opensWithArm && hasLabelledArm(bodyLines)
         // A switch compares the subject value against each arm's label; a guarded
         // block treats the subject as the first arm's guard and any content before
         // the first explicit `- guard:` arm as that arm's body.
-        let subject: InkExpression = isSwitch
-            ? try InkExpressionParser.parse(subjectText)
-            : .boolLiteral(true)
         var arms = ArmAccumulator()
-        if hasSubject && isSwitch == false {
-            arms.open(match: try InkExpressionParser.parse(subjectText))
+        if isSwitch == false, let subjectExpression {
+            arms.open(match: subjectExpression)
         }
         // `{ cond:` followed by content: the subject guards that content, and
         // only a single `- else:` may follow (see `checkArmAfterHeaderGuardedContent`).
-        let subjectGuardsContent = hasSubject && opensWithArm == false
+        let subjectGuardsContent = subjectExpression != nil && opensWithArm == false
         var explicitArmCount = 0
 
         var lineIndex = 0
         while lineIndex < bodyLines.count {
             let line = bodyLines[lineIndex]
-            guard let guardText = armGuard(of: line.text) else {
+            guard case .arm(let armGuard, let inline) = line.shape else {
                 lineIndex = try appendBodyUnit(bodyLines: bodyLines, from: lineIndex, into: &arms.pendingBody)
                 continue
             }
             if subjectGuardsContent {
-                try checkArmAfterHeaderGuardedContent(
-                    guardText: guardText, priorArmCount: explicitArmCount, line: line)
+                try checkArmAfterHeaderGuardedContent(armGuard, priorArmCount: explicitArmCount, line: line)
             }
             explicitArmCount += 1
-            try openExplicitArm(guardText: guardText, line: line, into: &arms)
+            try openExplicitArm(armGuard, inline: inline, number: line.number, into: &arms)
             lineIndex += 1
         }
+        let subject = (isSwitch ? subjectExpression : nil) ?? .boolLiteral(true)
         return InkStatement(
             kind: .conditionalBlock(subject: subject, isSwitch: isSwitch, branches: arms.finish()),
             position: position
@@ -236,21 +391,21 @@ public enum InkParser {
     /// guarded by the subject plus the else. The subject's operators never
     /// decide it; doing so made `- true:` always win under a comparison subject,
     /// and made `{ flag: - else: … }` take the else even when `flag` held.
-    private static func hasLabelledArm(_ bodyLines: [(text: String, number: Int)]) -> Bool {
-        armGuardsAtDepth0(bodyLines).contains { armMatchesByEquality($0) }
+    private static func hasLabelledArm(_ bodyLines: [BodyLine]) -> Bool {
+        armGuardsAtDepth0(bodyLines).contains { $0.isLabel }
     }
 
     /// Open the arm introduced by `- <guard>: …`, seeding its body with any
     /// content written inline after the guard.
     private static func openExplicitArm(
-        guardText: String,
-        line: (text: String, number: Int),
+        _ armGuard: ArmGuard,
+        inline: String,
+        number: Int,
         into arms: inout ArmAccumulator
     ) throws {
-        arms.open(match: try armMatch(guardText))
-        let inline = armInlineBody(of: line.text)
+        arms.open(match: try armGuard.match())
         if inline.isEmpty == false {
-            try appendStatements(from: inline, lineNumber: line.number, into: &arms.pendingBody)
+            try appendStatements(from: inline, lineNumber: number, into: &arms.pendingBody)
         }
     }
 
@@ -294,9 +449,9 @@ public enum InkParser {
     /// arm. We match the reference rather than keep the over-acceptance: a story
     /// that compiles here but not under inklecate is silently non-portable.
     private static func checkArmAfterHeaderGuardedContent(
-        guardText: String,
+        _ armGuard: ArmGuard,
         priorArmCount: Int,
-        line: (text: String, number: Int)
+        line: BodyLine
     ) throws {
         if priorArmCount > 0 {
             throw CompileError(
@@ -306,7 +461,7 @@ public enum InkParser {
                 column: 1
             )
         }
-        guard guardText == "else" else {
+        guard case .otherwise = armGuard else {
             throw CompileError(
                 kind: .syntaxError,
                 message: "Expected an '- else:' clause here rather than an extra condition. "
@@ -318,13 +473,22 @@ public enum InkParser {
     }
 
     /// A `{ cond: ...true... }` block with no explicit arms: a single guarded
-    /// true-arm and an empty implicit else. Modeled as a guarded block.
+    /// true-arm and an empty implicit else. Modeled as a guarded block. A bare
+    /// `{` with no arms has no condition at all — inklecate rejects it too
+    /// ("Branch doesn't have condition" / "Condition block with no conditions").
     private static func plainGuardedBlock(
-        subjectText: String,
-        bodyLines: [(text: String, number: Int)],
+        header: BlockHeader,
+        bodyLines: [BodyLine],
         position: SourcePosition
     ) throws -> InkStatement {
-        let condition = try InkExpressionParser.parse(subjectText)
+        guard let condition = try header.expression() else {
+            throw CompileError(
+                kind: .syntaxError,
+                message: "Condition block with no conditions: a `{` block needs `- condition:` arms.",
+                line: position.line,
+                column: position.column
+            )
+        }
         var trueBody: [InkStatement] = []
         var lineIndex = 0
         while lineIndex < bodyLines.count {
@@ -337,127 +501,46 @@ public enum InkParser {
         )
     }
 
-    /// True when an arm guard is its own expression (a switch label), not the
-    /// `else` / empty default.
-    private static func armMatchesByEquality(_ guardText: String) -> Bool {
-        guardText != "else" && guardText.isEmpty == false
-    }
-
-    /// True when a body line opens an arm: `- <guard>:`.
-    private static func isArmOpener(_ text: String) -> Bool {
-        armGuard(of: text) != nil
-    }
-
     /// True when any body line at brace-nesting depth 0 is an arm opener.
-    private static func hasArmOpenerAtDepth0(_ bodyLines: [(text: String, number: Int)]) -> Bool {
+    private static func hasArmOpenerAtDepth0(_ bodyLines: [BodyLine]) -> Bool {
         armGuardsAtDepth0(bodyLines).isEmpty == false
     }
 
     /// The guards of the arm openers at brace-nesting depth 0. Lines inside
     /// nested `{…}` blocks are at depth > 0 and are excluded so inner block arms
     /// are not mistaken for arms of the enclosing block.
-    private static func armGuardsAtDepth0(_ bodyLines: [(text: String, number: Int)]) -> [String] {
+    private static func armGuardsAtDepth0(_ bodyLines: [BodyLine]) -> [ArmGuard] {
         var depth = 0
-        var guards: [String] = []
+        var guards: [ArmGuard] = []
         for line in bodyLines {
-            if depth == 0, let guardText = armGuard(of: line.text) {
-                guards.append(guardText)
+            if depth == 0, case .arm(let armGuard, _) = line.shape {
+                guards.append(armGuard)
             }
-            depth = max(0, depth + braceDepthChange(of: line.text))
+            depth = max(0, depth + line.shape.depthChange)
         }
         return guards
     }
 
-    /// How a body line moves brace nesting: `+1` for a bare `{` opener (no `}`
-    /// on the same line), `-1` for a lone `}`, `0` otherwise.
-    private static func braceDepthChange(of text: String) -> Int {
-        if text.hasPrefix("{") && !text.contains("}") {
-            return 1
-        }
-        return text == "}" ? -1 : 0
-    }
-
     /// Process one logical unit from `bodyLines` at `index` into `statements`
-    /// and return the next index. A bare `{` opener (starts with `{`, no `}` on
-    /// the same line) is a nested multi-line block — it is recursively assembled
-    /// via `buildConditionalBlock`. Any other line is dispatched to
+    /// and return the next index. A nested block opener is recursively
+    /// assembled via `buildConditionalBlock`. Any other line is dispatched to
     /// `appendStatements` as usual.
     private static func appendBodyUnit(
-        bodyLines: [(text: String, number: Int)],
+        bodyLines: [BodyLine],
         from index: Int,
         into statements: inout [InkStatement]
     ) throws -> Int {
         let line = bodyLines[index]
-        let trimmed = line.text
-        guard trimmed.hasPrefix("{"), !trimmed.contains("}") else {
+        guard case .opener(let header, let inline) = line.shape else {
             try appendStatements(from: line.text, lineNumber: line.number, into: &statements)
             return index + 1
         }
         let position = SourcePosition(line: line.number, column: 1)
-        let afterBrace = String(trimmed.dropFirst())
-        var nestedBodyLines: [(text: String, number: Int)] = []
-        let subjectText: String
-        if let colonIndex = topLevelColonIndex(in: afterBrace) {
-            subjectText = String(afterBrace[..<colonIndex]).trimmingCharacters(in: .whitespaces)
-            let firstInline = String(afterBrace[afterBrace.index(after: colonIndex)...])
-                .trimmingCharacters(in: .whitespaces)
-            if !firstInline.isEmpty {
-                nestedBodyLines.append((firstInline, line.number))
-            }
-        } else {
-            subjectText = ""
-        }
-        var depth = 1
-        var nextIndex = index + 1
-        while nextIndex < bodyLines.count {
-            let nested = bodyLines[nextIndex]
-            let nestedTrimmed = nested.text
-            if nestedTrimmed == "}" {
-                depth -= 1
-                if depth == 0 {
-                    nextIndex += 1
-                    break
-                }
-                nestedBodyLines.append((nestedTrimmed, nested.number))
-            } else {
-                if nestedTrimmed.hasPrefix("{") && !nestedTrimmed.contains("}") {
-                    depth += 1
-                }
-                nestedBodyLines.append((nestedTrimmed, nested.number))
-            }
-            nextIndex += 1
-        }
+        let (body, next) = collectBlockBody(from: index + 1, count: bodyLines.count) { bodyLines[$0] }
         let statement = try buildConditionalBlock(
-            subjectText: subjectText, bodyLines: nestedBodyLines, position: position)
+            header: header, bodyLines: inlineBodyLines(inline, number: line.number) + body, position: position)
         statements.append(statement)
-        return nextIndex
-    }
-
-    /// The guard text of an arm-opening line `- <guard>: …`, or `nil` when the
-    /// line does not open an arm. The guard is the text between the leading `-`
-    /// and the top-level `:`.
-    private static func armGuard(of text: String) -> String? {
-        guard text.hasPrefix("-") else { return nil }
-        let afterMarker = String(text.dropFirst()).trimmingCharacters(in: .whitespaces)
-        guard let colonIndex = topLevelColonIndex(in: afterMarker) else { return nil }
-        return String(afterMarker[..<colonIndex]).trimmingCharacters(in: .whitespaces)
-    }
-
-    /// The inline body following an arm guard on the same line: `- 1: Arrested.`
-    /// yields `Arrested.`. Empty when the arm body is on subsequent lines.
-    private static func armInlineBody(of text: String) -> String {
-        let afterMarker = String(text.dropFirst()).trimmingCharacters(in: .whitespaces)
-        guard let colonIndex = topLevelColonIndex(in: afterMarker) else { return "" }
-        return String(afterMarker[afterMarker.index(after: colonIndex)...]).trimmingCharacters(in: .whitespaces)
-    }
-
-    /// Parse an arm guard into its match expression. The `else` guard (or an empty
-    /// guard) is the default arm (`nil`).
-    private static func armMatch(_ guardText: String) throws -> InkExpression? {
-        if guardText == "else" || guardText.isEmpty {
-            return nil
-        }
-        return try InkExpressionParser.parse(guardText)
+        return next
     }
 
     private static func appendStatements(
@@ -643,18 +726,27 @@ public enum InkParser {
             let character = body[index]
             if character == "\"" {
                 insideStringLiteral.toggle()
-            } else if character == "=", insideStringLiteral == false {
-                let nextIndex = body.index(after: index)
-                let followedByEquals = nextIndex < body.endIndex && body[nextIndex] == "="
-                let precededByComparison = comparisonEqualsPrefixes.contains(previous ?? " ")
-                if followedByEquals == false && precededByComparison == false {
-                    return index
-                }
+            } else if character == "=", insideStringLiteral == false,
+                      isAssignmentEquals(at: index, in: body, after: previous) {
+                return index
             }
             previous = character
             index = body.index(after: index)
         }
         return nil
+    }
+
+    /// True when the `=` at `index` is not part of a comparison operator: not
+    /// followed by `=` (`==`) and not preceded by one of `comparisonEqualsPrefixes`.
+    private static func isAssignmentEquals(
+        at index: String.Index,
+        in body: String,
+        after previous: Character?
+    ) -> Bool {
+        let nextIndex = body.index(after: index)
+        let followedByEquals = nextIndex < body.endIndex && body[nextIndex] == "="
+        let precededByComparison = comparisonEqualsPrefixes.contains(previous ?? " ")
+        return followedByEquals == false && precededByComparison == false
     }
 
     /// Validate and return an assignment target. Ink variable names are plain
@@ -965,7 +1057,7 @@ public enum InkParser {
         // `* [Choice A] # sidequest` has the outcome `# sidequest`, which never
         // reached the tag-aware parser and was echoed verbatim into the output
         // (Issue #8). An unrelated `{…}` on the same line masked the defect.
-        guard trimmed.contains("{") || trimmed.contains("#") else {
+        guard carriesInterpolationOrTag(trimmed) else {
             return InkStatement(kind: .text(trimmed), position: position)
         }
         try UnsupportedConstructDetector.check(line: trimmed, lineNumber: position.line)
@@ -980,41 +1072,71 @@ public enum InkParser {
     ) throws {
         // A line carrying a glue marker `<>` on either edge: emit a glue statement
         // in the marker's place (see `GlueMarker`, the shared edge splitter).
-        //
-        // LEADING `<>` glues to the preceding output (the block conditional body
-        // `<>, sipping…` and the post-block `<>.` in TheIntercept ~161/163): emit
-        // glue first, then lower the remainder so its prose joins the previous
-        // output line instead of echoing `<>` as literal text. The source
-        // whitespace AFTER `<>` is literal content inklecate preserves (the
-        // post-block `<> You scientists."` at TheIntercept.ink ~1685 lowers to the
-        // oracle text node `^ You scientists.`, a LEADING space). Trimming it would
-        // yield `affairs.You` instead of the oracle's `affairs. You`. So for a
-        // plain-prose remainder, keep the rest VERBATIM; a brace-/divert-/glue-
-        // bearing remainder still re-dispatches through `appendContent` (which
-        // trims) so those constructs are still recognised — symmetric with
-        // `WeaveEmitter.inlineBodyStatements`' leading-`<>` branch.
         switch GlueMarker.edge(of: trimmed) {
         case .leading(let remainder):
             statements.append(InkStatement(kind: .glue, position: position))
-            if remainder.contains("{") || remainder.contains("#")
-                || remainder.contains(divertMarker) || remainder.hasSuffix(GlueMarker.marker) {
-                let dispatchable = remainder.trimmingCharacters(in: .whitespaces)
-                if dispatchable.isEmpty == false {
-                    try appendContent(from: dispatchable, position: position, into: &statements)
-                }
-            } else if remainder.trimmingCharacters(in: .whitespaces).isEmpty == false {
-                statements.append(InkStatement(kind: .text(remainder), position: position))
-            }
-            return
+            try appendGluedRemainder(remainder, position: position, into: &statements)
         case .trailing(let prose):
             let text = prose.trimmingCharacters(in: .whitespaces)
             statements.append(InkStatement(kind: .text(text), position: position))
             statements.append(InkStatement(kind: .glue, position: position))
-            return
         case .none:
-            break
+            try appendUngluedContent(trimmed, position: position, into: &statements)
         }
-        if trimmed.contains("{") || trimmed.contains("#") {
+    }
+
+    /// The content after a LEADING `<>`, which glues to the preceding output (the
+    /// block conditional body `<>, sipping…` and the post-block `<>.` in
+    /// TheIntercept ~161/163): lower the remainder so its prose joins the previous
+    /// output line instead of echoing `<>` as literal text. The source
+    /// whitespace AFTER `<>` is literal content inklecate preserves (the
+    /// post-block `<> You scientists."` at TheIntercept.ink ~1685 lowers to the
+    /// oracle text node `^ You scientists.`, a LEADING space). Trimming it would
+    /// yield `affairs.You` instead of the oracle's `affairs. You`. So for a
+    /// plain-prose remainder, keep the rest VERBATIM; a brace-/divert-/glue-
+    /// bearing remainder still re-dispatches through `appendContent` (which
+    /// trims) so those constructs are still recognised — symmetric with
+    /// `WeaveEmitter.inlineBodyStatements`' leading-`<>` branch.
+    private static func appendGluedRemainder(
+        _ remainder: String,
+        position: SourcePosition,
+        into statements: inout [InkStatement]
+    ) throws {
+        let dispatchable = remainder.trimmingCharacters(in: .whitespaces)
+        guard dispatchable.isEmpty == false else {
+            return
+        }
+        if needsContentDispatch(remainder) {
+            try appendContent(from: dispatchable, position: position, into: &statements)
+        } else {
+            statements.append(InkStatement(kind: .text(remainder), position: position))
+        }
+    }
+
+    /// True when a glued remainder carries a construct `appendContent` must
+    /// recognise rather than plain prose: an interpolation, a tag, a divert, or
+    /// a trailing glue marker.
+    private static func needsContentDispatch(_ remainder: String) -> Bool {
+        carriesInterpolationOrTag(remainder)
+            || remainder.contains(divertMarker)
+            || remainder.hasSuffix(GlueMarker.marker)
+    }
+
+    /// True when a content line needs the segment parser: without `{` it can
+    /// only ever produce literals and tags, so an interpolation `{…}` or a tag
+    /// `#` are exactly the cases that need it.
+    private static func carriesInterpolationOrTag(_ text: String) -> Bool {
+        text.contains("{") || text.contains("#")
+    }
+
+    /// A content line with no glue on either edge: segmented content, prose
+    /// followed by a mid-line divert, or plain text.
+    private static func appendUngluedContent(
+        _ trimmed: String,
+        position: SourcePosition,
+        into statements: inout [InkStatement]
+    ) throws {
+        if carriesInterpolationOrTag(trimmed) {
             if trimmed.contains("{") {
                 try UnsupportedConstructDetector.check(line: trimmed, lineNumber: position.line)
             }
@@ -1022,28 +1144,41 @@ public enum InkParser {
             statements.append(InkStatement(kind: .content(segments), position: position))
             return
         }
-        // A plain prose line carrying a MID-line divert (`Harris looks disapproving.
-        // -> pushes_cup`) splits into the prose text, default divert glue (ink glues
-        // prose to its divert target), and the divert — so the arrow is a real
-        // control-flow divert, not echoed as literal text. A leading-`->` divert is
-        // already handled by the caller before reaching `appendContent`; here the
-        // prefix is non-empty (`range(of:)` finds the arrow past the start).
-        if let arrowRange = trimmed.range(of: divertMarker),
-           arrowRange.lowerBound != trimmed.startIndex {
-            let prose = String(trimmed[..<arrowRange.lowerBound]).trimmingCharacters(in: .whitespaces)
-            let target = String(trimmed[arrowRange.upperBound...]).trimmingCharacters(in: .whitespaces)
-            if prose.isEmpty == false, target.isEmpty == false, target.contains("->") == false {
-                statements.append(InkStatement(kind: .text(prose), position: position))
-                if target != "END" {
-                    statements.append(InkStatement(kind: .glue, position: position))
-                    statements.append(InkStatement(kind: .divert(target), position: position))
-                } else {
-                    statements.append(InkStatement(kind: .end, position: position))
-                }
-                return
-            }
+        if appendProseThenDivert(trimmed, position: position, into: &statements) {
+            return
         }
         statements.append(InkStatement(kind: .text(trimmed), position: position))
+    }
+
+    /// A plain prose line carrying a MID-line divert (`Harris looks disapproving.
+    /// -> pushes_cup`) splits into the prose text, default divert glue (ink glues
+    /// prose to its divert target), and the divert — so the arrow is a real
+    /// control-flow divert, not echoed as literal text. A leading-`->` divert is
+    /// already handled by the caller before reaching `appendContent`; here the
+    /// prefix is non-empty (`range(of:)` finds the arrow past the start).
+    /// Returns whether the line had that shape.
+    private static func appendProseThenDivert(
+        _ trimmed: String,
+        position: SourcePosition,
+        into statements: inout [InkStatement]
+    ) -> Bool {
+        guard let arrowRange = trimmed.range(of: divertMarker),
+              arrowRange.lowerBound != trimmed.startIndex else {
+            return false
+        }
+        let prose = String(trimmed[..<arrowRange.lowerBound]).trimmingCharacters(in: .whitespaces)
+        let target = String(trimmed[arrowRange.upperBound...]).trimmingCharacters(in: .whitespaces)
+        guard prose.isEmpty == false, target.isEmpty == false, target.contains(divertMarker) == false else {
+            return false
+        }
+        statements.append(InkStatement(kind: .text(prose), position: position))
+        if target == endTarget {
+            statements.append(InkStatement(kind: .end, position: position))
+        } else {
+            statements.append(InkStatement(kind: .glue, position: position))
+            statements.append(InkStatement(kind: .divert(target), position: position))
+        }
+        return true
     }
 
     /// Split a content line into literal/expression/conditional/tag segments.

@@ -31,489 +31,26 @@ enum RuntimeObjectEmitter {
 
     /// Build the runnable root container from the parsed statement stream.
     static func emitRoot(statements: [InkStatement]) throws -> ContainerNode {
-        let constants = collectConstants(statements)
-        let functions = collectFunctionSignatures(statements)
-        let (rootBody, rootStitches, knots, functionDefinitions) = partitionTopLevel(statements)
-        // Discovery pre-pass (ADR-011 EXTEND #3): record the labelled weave-point
-        // paths before lowering so read-count references resolve order-independently.
-        // Weave labels live in the root body AND inside knot/stitch bodies (e.g.
-        // TheIntercept's `(delay)` under `start`, `(tellme)` under `start.waited`);
-        // each is keyed by its enclosing knot/stitch prefix so a dotted read-count
-        // (`start.delay`) resolves to the absolute container path.
-        var weaveLabelPaths = WeaveEmitter.discover(rootBody).labelPaths
-        for knot in knots {
-            mergeWeaveLabelPaths(of: knot, into: &weaveLabelPaths)
-        }
-        // A top-level stitch is a root section, so its weave labels are keyed by the
-        // bare stitch name prefix (`[stitch]`) — the same way a knot's own body
-        // labels are keyed by `[knot]` — so a read-count reference into one resolves.
-        for stitch in rootStitches {
-            for (key, path) in WeaveEmitter.discoverLabelPaths(stitch.body, keyPrefix: [stitch.name]) {
-                weaveLabelPaths[key] = path
-            }
-        }
-        // Bare-name local resolution (step 01-04): a read-count subject spelled by
-        // its BARE label (`{lift_up_cup:he|Harris}` referencing the `(lift_up_cup)`
-        // choice in the same stitch) resolves in inklecate's local scope. Register
-        // each bare label that is UNIQUE story-wide so the bare reference resolves;
-        // duplicated bare labels (e.g. `opts`/`yes` reused across knots) stay
-        // dotted-only — registering them would mis-resolve to the last knot's path.
-        mergeUniqueBareLabels(
-            rootBody: rootBody, rootStitches: rootStitches, knots: knots, into: &weaveLabelPaths
-        )
-        // Knot/stitch read-count addressing (ADR-011 EXTEND #2): record every
-        // knot's and stitch's already-built namedContent path so a dotted
-        // read-count subject (`knot.stitch`) resolves to its container path,
-        // reusing the SAME path arithmetic emitKnot/emitStitch address by — never
-        // re-derived. The runtime resolves the dotted key as-is against visitCounts.
-        let knotStitchPaths = collectKnotStitchPaths(knots, rootStitches: rootStitches)
-        let context = LoweringContext(
-            constants: constants, functions: functions,
-            weaveLabelPaths: weaveLabelPaths, knotStitchPaths: knotStitchPaths
-        )
+        let outline = StoryOutline(statements)
+        let context = LoweringContext(statements: statements, outline: outline)
 
         var namedContent: [String: ContainerNode] = [:]
-        let rootChildren = try lowerRootBody(rootBody, context: context, named: &namedContent)
+        let rootChildren = try lowerRootBody(outline.rootBody, context: context, named: &namedContent)
 
-        for stitch in rootStitches {
+        for stitch in outline.rootStitches {
             namedContent[stitch.name] = try emitStitch(stitch, keyPrefix: [stitch.name], context: context)
         }
-        for knot in knots {
+        for knot in outline.knots {
             namedContent[knot.name] = try emitKnot(knot, context: context)
         }
-        for function in functionDefinitions {
+        for function in outline.functions {
             namedContent[function.name] = emitFunction(function, context: context)
         }
         if let globalDecl = emitGlobalDecl(statements, context: context) {
             namedContent[globalDeclKey] = globalDecl
         }
         let builtRoot = ContainerNode(children: rootChildren, namedContent: namedContent, flags: 0, name: nil)
-        // Read-count path reconciliation (step 01-06): the discovery pre-pass predicts
-        // a label's compiled path from the WEAVE structure alone, but a labelled choice
-        // that trails an inline-conditional / variable-text gather lead is physically
-        // nested under that line's `cond{N}-end` continuation container(s) — e.g. the
-        // `(disagree)` choice after `… {lift_up_cup:he|Harris} begins{forceful<=0:,sternly}.`
-        // compiles to `start.waited.cond2-end.cond0-end.disagree`, not the flat
-        // `start.waited.disagree` discovery recorded. A `.readCount("start.waited.disagree")`
-        // guard (`{not disagree}`) then reads a non-existent container → always 0 → the
-        // `[Smile]` choice is never suppressed. Reconcile each `.readCount` key that
-        // names no real container against the actually-emitted container whose path
-        // ends with that label inside the same knot, when exactly one such container
-        // exists (uniqueness avoids cross-scope mis-resolution).
-        // Divert-target path reconciliation (Cass softlock fix): a bare named
-        // weave-point divert (`-> cass_ask_what_he_needs_information_gathering`)
-        // is emitted by `qualifiedDivertTarget` using the discovery pre-pass's
-        // PREDICTED FLAT path. When the enclosing knot opens with block
-        // conditionals, the whole weave is physically nested under that line's
-        // `cond{N}-end` continuation container(s), so the real container path
-        // (`cass.cond0-end.cond0-end.cass_opening.…`) does not match the flat
-        // predicted path — the runtime's absolute-from-root navigation dead-ends
-        // and the choice stack exhausts (softlock). Reconcile each `.divert`
-        // whose absolute target names no real container against the unique
-        // actually-emitted container whose path ends with that label inside the
-        // same knot, exactly as the read-count reconciler does. choicePoint
-        // targets are already correct and are left untouched.
-        let root = reconcilingDivertPaths(reconcilingReadCountPaths(builtRoot))
-        // CountVisits flagging (ADR-011 EXTEND, generalised WL-D4): set the runtime's
-        // 0x1 CountVisits flag on EXACTLY the read-count-referenced targets — labelled
-        // weave containers AND referenced knots/stitches. The set of referenced
-        // absolute paths is the SET of `.readCount` keys already emitted into the tree
-        // (02-03 resolved each referenced target to its container path; the keys are
-        // the single source of path truth, never re-derived). Flagging only those
-        // matches inklecate (VariableReference.cs:101 flags a container only when a
-        // reference resolves to it; countAllVisits is OFF) — no over-flagging.
-        return flaggingCountVisits(root, atPaths: referencedReadCountPaths(in: root))
-    }
-
-    // MARK: - Read-count path reconciliation
-
-    /// Rewrite every `.readCount(key)` whose key names no existing container to the
-    /// actually-emitted container path, when a unique reconciling target exists. The
-    /// reconciliation target is a container whose absolute path ENDS with the same
-    /// final label segment as the dangling key AND shares its leading knot segment;
-    /// uniqueness within that knot prevents cross-scope mis-resolution. A key that
-    /// already resolves (or whose label is ambiguous) is left untouched.
-    private static func reconcilingReadCountPaths(_ root: ContainerNode) -> ContainerNode {
-        var containerPaths: Set<String> = []
-        collectContainerPaths(root, prefix: [], into: &containerPaths)
-        var rewrites: [String: String] = [:]
-        for key in danglingReadCountKeys(in: root, existing: containerPaths) {
-            if let resolved = reconciledPath(for: key, among: containerPaths) {
-                rewrites[key] = resolved
-            }
-        }
-        guard rewrites.isEmpty == false else { return root }
-        return rewritingReadCounts(root, rewrites: rewrites)
-    }
-
-    /// The dot-joined absolute path of every named container in the tree (the set of
-    /// real read-count-addressable targets). Numeric children are never named targets.
-    private static func collectContainerPaths(
-        _ container: ContainerNode, prefix: [String], into paths: inout Set<String>
-    ) {
-        for (key, child) in container.namedContent {
-            let path = prefix + [key]
-            paths.insert(path.joined(separator: "."))
-            collectContainerPaths(child, prefix: path, into: &paths)
-        }
-        for child in container.children {
-            if case .container(let nested) = child {
-                collectContainerPaths(nested, prefix: prefix, into: &paths)
-            }
-        }
-    }
-
-    /// Every `.readCount` key in the tree that does NOT match an existing container.
-    private static func danglingReadCountKeys(
-        in container: ContainerNode, existing: Set<String>
-    ) -> Set<String> {
-        var keys: Set<String> = []
-        collectReadCountPaths(container, into: &keys)
-        return keys.subtracting(existing)
-    }
-
-    /// The unique real container whose path ends with `key`'s final label segment and
-    /// shares `key`'s leading knot segment, else `nil` (no match or ambiguous).
-    private static func reconciledPath(for key: String, among paths: Set<String>) -> String? {
-        let segments = key.split(separator: ".").map(String.init)
-        guard let label = segments.last, let knot = segments.first else { return nil }
-        let suffix = ".\(label)"
-        let candidates = paths.filter { candidate in
-            candidate != key
-                && candidate.hasSuffix(suffix)
-                && candidate.hasPrefix("\(knot).")
-        }
-        return candidates.count == 1 ? candidates.first : nil
-    }
-
-    /// Rebuild the tree replacing each `.readCount(key)` whose key is in `rewrites`
-    /// with the reconciled path; all other nodes are preserved verbatim.
-    private static func rewritingReadCounts(
-        _ container: ContainerNode, rewrites: [String: String]
-    ) -> ContainerNode {
-        let children = container.children.map { child -> NodeKind in
-            switch child {
-            case .readCount(let key):
-                return .readCount(rewrites[key] ?? key)
-            case .container(let nested):
-                return .container(rewritingReadCounts(nested, rewrites: rewrites))
-            default:
-                return child
-            }
-        }
-        var rebuiltNamed: [String: ContainerNode] = [:]
-        for (key, child) in container.namedContent {
-            rebuiltNamed[key] = rewritingReadCounts(child, rewrites: rewrites)
-        }
-        return ContainerNode(
-            children: children, namedContent: rebuiltNamed, flags: container.flags, name: container.name
-        )
-    }
-
-    // MARK: - Divert-target path reconciliation
-
-    /// Rewrite every `.divert` whose ABSOLUTE target names no existing container
-    /// to the actually-emitted container path, when a unique reconciling target
-    /// exists. Mirrors `reconcilingReadCountPaths`: the reconciliation target is a
-    /// container whose absolute path ENDS with the dangling target's final label
-    /// segment AND shares its leading knot segment; uniqueness within that knot
-    /// prevents cross-scope mis-resolution. Only absolute, non-END,
-    /// non-function-call, currently-dangling targets are considered — a relative
-    /// (`.^.`), END, function (`f():`), or already-resolving target is untouched.
-    private static func reconcilingDivertPaths(_ root: ContainerNode) -> ContainerNode {
-        var containerPaths: Set<String> = []
-        collectContainerPaths(root, prefix: [], into: &containerPaths)
-        var rewrites: [String: String] = [:]
-        for target in danglingDivertTargets(in: root, existing: containerPaths) {
-            if let resolved = reconciledPath(for: target, among: containerPaths) {
-                rewrites[target] = resolved
-            }
-        }
-        guard rewrites.isEmpty == false else { return root }
-        return rewritingDivertTargets(root, rewrites: rewrites)
-    }
-
-    /// Every `.divert` target eligible for reconciliation that does NOT match an
-    /// existing container: absolute (no leading `.`), not `END`, not a
-    /// function-call (`f():`) target, and currently dangling.
-    private static func danglingDivertTargets(
-        in container: ContainerNode, existing: Set<String>
-    ) -> Set<String> {
-        var targets: Set<String> = []
-        collectDivertTargets(container, into: &targets)
-        return targets
-            .filter { isReconcilableDivertTarget($0) }
-            .subtracting(existing)
-    }
-
-    /// True when a divert target is a candidate for path reconciliation: it must
-    /// be absolute (no leading `.` relative form), not the `END` sentinel, and not
-    /// a function-call target (which the runtime intercepts by its `f():` prefix).
-    private static func isReconcilableDivertTarget(_ target: String) -> Bool {
-        target.hasPrefix(".") == false
-            && target != "END"
-            && target.hasPrefix(functionCallTargetPrefix) == false
-    }
-
-    /// Collect every `.divert` target anywhere in the tree. `.choicePoint` targets
-    /// are deliberately excluded — they are already emitted correctly.
-    private static func collectDivertTargets(_ container: ContainerNode, into targets: inout Set<String>) {
-        for child in container.children {
-            if case .divert(let target, _, _) = child { targets.insert(target) }
-            if case .container(let nested) = child { collectDivertTargets(nested, into: &targets) }
-        }
-        for nested in container.namedContent.values {
-            collectDivertTargets(nested, into: &targets)
-        }
-    }
-
-    /// Rebuild the tree replacing each `.divert` whose target is in `rewrites` with
-    /// the reconciled target (preserving its `isConditional`/`isVariable` flags);
-    /// all other nodes — including `.choicePoint` — are preserved verbatim.
-    private static func rewritingDivertTargets(
-        _ container: ContainerNode, rewrites: [String: String]
-    ) -> ContainerNode {
-        let children = container.children.map { child -> NodeKind in
-            switch child {
-            case .divert(let target, let isConditional, let isVariable):
-                return .divert(
-                    target: rewrites[target] ?? target,
-                    isConditional: isConditional, isVariable: isVariable
-                )
-            case .container(let nested):
-                return .container(rewritingDivertTargets(nested, rewrites: rewrites))
-            default:
-                return child
-            }
-        }
-        var rebuiltNamed: [String: ContainerNode] = [:]
-        for (key, child) in container.namedContent {
-            rebuiltNamed[key] = rewritingDivertTargets(child, rewrites: rewrites)
-        }
-        return ContainerNode(
-            children: children, namedContent: rebuiltNamed, flags: container.flags, name: container.name
-        )
-    }
-
-    // MARK: - CountVisits flagging
-
-    /// Collect the absolute namedContent path (dot-joined) of every `.readCount`
-    /// node anywhere in the tree — the exact set of read-count-referenced targets.
-    /// Each `.readCount` key is the resolved container path emitted at 02-03.
-    private static func referencedReadCountPaths(in container: ContainerNode) -> Set<String> {
-        var paths: Set<String> = []
-        collectReadCountPaths(container, into: &paths)
-        return paths
-    }
-
-    private static func collectReadCountPaths(_ container: ContainerNode, into paths: inout Set<String>) {
-        for child in container.children {
-            if case .readCount(let key) = child { paths.insert(key) }
-            if case .container(let nested) = child { collectReadCountPaths(nested, into: &paths) }
-        }
-        for nested in container.namedContent.values {
-            collectReadCountPaths(nested, into: &paths)
-        }
-    }
-
-    /// Rebuild the tree setting the 0x1 CountVisits flag on every container whose
-    /// absolute namedContent path is in `flaggedPaths`. Children numeric-indexed
-    /// containers are never named read-count targets, so only namedContent entries
-    /// extend the path; the root carries no path of its own.
-    private static func flaggingCountVisits(
-        _ container: ContainerNode,
-        atPaths flaggedPaths: Set<String>,
-        prefix: [String] = []
-    ) -> ContainerNode {
-        var rebuiltNamed: [String: ContainerNode] = [:]
-        for (key, child) in container.namedContent {
-            rebuiltNamed[key] = flaggingCountVisits(child, atPaths: flaggedPaths, prefix: prefix + [key])
-        }
-        let path = prefix.joined(separator: ".")
-        let flags = flaggedPaths.contains(path) ? container.flags | countVisitsFlag : container.flags
-        return ContainerNode(
-            children: container.children, namedContent: rebuiltNamed, flags: flags, name: container.name
-        )
-    }
-
-    /// The runtime's `#f` bit 0 — tracks a flagged container's visits into
-    /// `state.visitCounts`, which a `.readCount(absolutePath)` node reads back.
-    private static let countVisitsFlag = 0x1
-
-    /// Codegen-wide lowering inputs threaded through the lowerers: the CONST
-    /// inlining table and the function-signature table (so a `ref` argument can
-    /// be lowered to a `variablePointer` at the call site).
-    struct LoweringContext {
-        let constants: [String: InkExpression]
-        let functions: [String: [FunctionParameter]]
-        /// The weave-label addressing table (ADR-011 EXTEND #3): source label ->
-        /// absolute compiled path, populated by the discovery pre-pass before
-        /// expression lowering so a read-count reference (later steps) resolves a
-        /// label to its container path order-independently. Labelled-only. Threaded
-        /// identically to the CONST and function tables; write-only at this slice
-        /// (02-03 consumes it to emit `.readCount`).
-        var weaveLabelPaths: [String: [String]] = [:]
-        /// The knot/stitch read-count addressing table (ADR-011 EXTEND #2): a
-        /// dotted source name (`knot.stitch`, or a bare `knot`) -> its absolute
-        /// compiled namedContent path. Reuses the path emitKnot/emitStitch already
-        /// key their containers by; consumed by the `.variableReference` lowering to
-        /// emit `.readCount` for a dotted read-count subject naming a knot/stitch.
-        var knotStitchPaths: [String: [String]] = [:]
-        /// Names that are function-local in the current scope (parameters plus
-        /// `~ temp` declarations inside a function body). An assignment to a local
-        /// name lowers to `temp=` so the runtime consults the call frame — the
-        /// write-through path that makes a `ref` parameter mutate the caller's
-        /// variable. Empty at knot/root scope (all assignments are global there).
-        var localNames: Set<String> = []
-        /// The enclosing knot name of the body being lowered (empty at root). A bare
-        /// divert target `-> T` inside a knot resolves first to a SIBLING stitch
-        /// `knot.T` (ink scoping: current-knot stitch before root knot), but the
-        /// runtime resolves divert targets ABSOLUTELY from root — so a bare stitch
-        /// target dead-ends (no root-level `T`). The divert lowerer consults this to
-        /// qualify a bare target to `knot.T` when `knot.T` is a known stitch.
-        var knotScope: String = ""
-
-        func bindingLocals(_ names: Set<String>) -> LoweringContext {
-            LoweringContext(
-                constants: constants, functions: functions,
-                weaveLabelPaths: weaveLabelPaths, knotStitchPaths: knotStitchPaths,
-                localNames: names, knotScope: knotScope
-            )
-        }
-
-        /// Bind the enclosing knot scope so bare stitch-local diverts qualify.
-        func inKnotScope(_ knotName: String) -> LoweringContext {
-            LoweringContext(
-                constants: constants, functions: functions,
-                weaveLabelPaths: weaveLabelPaths, knotStitchPaths: knotStitchPaths,
-                localNames: localNames, knotScope: knotName
-            )
-        }
-
-        /// Resolve a bare divert target against the current knot scope. A bare `T`
-        /// that names a sibling stitch (`knot.T` is a known stitch path) qualifies to
-        /// `knot.T` so the runtime's absolute-from-root resolution finds it. A bare `T`
-        /// that names a WEAVE LABEL anywhere in the current knot (`knot.T` is a known
-        /// weave-label name) qualifies to that label's ABSOLUTE physical container
-        /// path — a deeply-nested gather label (`-> pushes_cup` reaching a `- -`
-        /// gather inside a sibling choice body) resolves regardless of nesting depth,
-        /// mirroring inklecate's by-name weave-point resolution. Any other target
-        /// (already-dotted, root knot, relative `.^`) is returned unchanged. Mirrors
-        /// ink scoping (current-knot stitch / weave label before root knot).
-        func qualifiedDivertTarget(_ target: String) -> String {
-            guard knotScope.isEmpty == false,
-                  target.contains(".") == false,
-                  target.hasPrefix(".") == false else { return target }
-            let qualified = "\(knotScope).\(target)"
-            if knotStitchPaths[qualified] != nil { return qualified }
-            if let labelPath = weaveLabelPaths[qualified] { return labelPath.joined(separator: ".") }
-            return target
-        }
-
-        /// Resolve a (possibly dotted) name to the absolute compiled path of a
-        /// known weave label or knot/stitch, reusing the pre-built tables — never
-        /// re-deriving. Returns nil for a true miss (a real qualified variable).
-        ///
-        /// A BARE read-count subject (`{ not nope: … }`) resolves in LOCAL knot scope
-        /// FIRST — symmetric with `qualifiedDivertTarget`'s by-name weave-point
-        /// resolution. inklecate resolves a bare read-count reference against the
-        /// enclosing knot's namespace; the `knot.label` key is registered by
-        /// `discoverLabelPaths`/`mergeWeaveLabelPaths`. Without this, a bare label
-        /// that is NOT unique story-wide (so `mergeUniqueBareLabels` leaves it
-        /// dotted-only — e.g. `nope` appears in two knots) fell through to
-        /// `.variableReference`, evaluating an undefined variable instead of the
-        /// label's read-count. The knot-scoped lookup precedes the bare-global lookup
-        /// so a local label shadows a same-named label in another knot.
-        func readCountPath(for name: String) -> [String]? {
-            if knotScope.isEmpty == false, name.contains(".") == false {
-                if let localPath = weaveLabelPaths["\(knotScope).\(name)"] { return localPath }
-            }
-            if let labelPath = weaveLabelPaths[name] { return labelPath }
-            return knotStitchPaths[name]
-        }
-    }
-
-    /// Register the labelled weave points inside a knot's body and each of its
-    /// stitch bodies, keyed by their dotted source name (`knot.label`,
-    /// `knot.stitch.label`) so a knot-qualified read-count reference resolves to the
-    /// absolute container path. Reuses the same key arithmetic the weave resolver
-    /// addresses the containers by — never re-derived.
-    private static func mergeWeaveLabelPaths(of knot: KnotGroup, into table: inout [String: [String]]) {
-        for (key, path) in WeaveEmitter.discoverLabelPaths(knot.body, keyPrefix: [knot.name]) {
-            table[key] = path
-        }
-        for stitch in knot.stitches {
-            let prefix = [knot.name, stitch.name]
-            for (key, path) in WeaveEmitter.discoverLabelPaths(stitch.body, keyPrefix: prefix) {
-                table[key] = path
-            }
-        }
-    }
-
-    /// Register each BARE weave label that is unique across the whole story into the
-    /// read-count table, so a bare-named read-count subject resolves in local scope.
-    /// A bare name occurring in two or more bodies is left dotted-only (ambiguous).
-    private static func mergeUniqueBareLabels(
-        rootBody: [InkStatement],
-        rootStitches: [StitchGroup],
-        knots: [KnotGroup],
-        into table: inout [String: [String]]
-    ) {
-        var occurrences: [String: [[String]]] = [:]
-        func collect(_ body: [InkStatement], keyPrefix: [String]) {
-            for (label, path) in WeaveEmitter.discoverBareLabelPaths(body, keyPrefix: keyPrefix) {
-                occurrences[label, default: []].append(path)
-            }
-        }
-        collect(rootBody, keyPrefix: [])
-        for stitch in rootStitches {
-            collect(stitch.body, keyPrefix: [stitch.name])
-        }
-        for knot in knots {
-            collect(knot.body, keyPrefix: [knot.name])
-            for stitch in knot.stitches {
-                collect(stitch.body, keyPrefix: [knot.name, stitch.name])
-            }
-        }
-        for (label, paths) in occurrences where paths.count == 1 {
-            if table[label] == nil { table[label] = paths[0] }
-        }
-    }
-
-    /// Build the knot/stitch read-count path table (ADR-011 EXTEND #2). A knot is
-    /// addressed by `[knot.name]`; a stitch nested under it by `[knot.name,
-    /// stitch.name]` — the same namedContent path `emitKnot`/`emitStitch` key their
-    /// containers by. The dotted source name (`knot.stitch`) is the lookup key.
-    private static func collectKnotStitchPaths(
-        _ knots: [KnotGroup], rootStitches: [StitchGroup]
-    ) -> [String: [String]] {
-        var paths: [String: [String]] = [:]
-        for knot in knots {
-            paths[knot.name] = [knot.name]
-            for stitch in knot.stitches {
-                paths["\(knot.name).\(stitch.name)"] = [knot.name, stitch.name]
-            }
-        }
-        // A top-level stitch is addressed by its bare name (`[stitch]`) directly under
-        // root — so a `-> stitch` divert (or `knot.stitch`-style read-count) resolves
-        // to the container `emitRoot` keys it by.
-        for stitch in rootStitches {
-            paths[stitch.name] = [stitch.name]
-        }
-        return paths
-    }
-
-    /// Collect the parameter list of every function definition, keyed by name, so
-    /// call sites can tell which arguments bind to `ref` parameters.
-    private static func collectFunctionSignatures(
-        _ statements: [InkStatement]
-    ) -> [String: [FunctionParameter]] {
-        var functions: [String: [FunctionParameter]] = [:]
-        for statement in statements {
-            guard case .functionDefinition(let name, let parameters, _) = statement.kind else { continue }
-            functions[name] = parameters
-        }
-        return functions
+        return RuntimePathReconciler.reconcile(builtRoot)
     }
 
     /// Lower the pre-knot root body. A body containing a weave routes through the
@@ -595,7 +132,7 @@ enum RuntimeObjectEmitter {
                 bodyNamed.merge(weaveNamed)
                 return WeaveEmitter.BodyLowering(children: children)
             },
-            lowerCondition: { expression in lowerExpression(expression, context: context) }
+            lowerCondition: { expression in ExpressionLowering.lowerExpression(expression, context: context) }
         )
         for (key, container) in weave.named {
             named[key] = container
@@ -641,18 +178,6 @@ enum RuntimeObjectEmitter {
 
     // MARK: - Declarations
 
-    /// Build the CONST inlining table (D6 / DDD-9): CONSTs never become runtime
-    /// variables; references to them are substituted with their literal value at
-    /// codegen.
-    private static func collectConstants(_ statements: [InkStatement]) -> [String: InkExpression] {
-        var constants: [String: InkExpression] = [:]
-        for statement in statements {
-            guard case .constant(let name, let value) = statement.kind else { continue }
-            constants[name] = value
-        }
-        return constants
-    }
-
     /// Emit the `global decl` container running every `VAR` declaration once at
     /// startup: a single `ev`…`/ev` block of `<value> {VAR=:name}` assignments,
     /// terminated by `end`. Returns `nil` when there are no globals.
@@ -668,273 +193,25 @@ enum RuntimeObjectEmitter {
 
         var assignments: [NodeKind] = []
         for global in globals {
-            assignments.append(contentsOf: lowerValue(global.value, context: context))
+            // The value is left on the eval stack for the `{VAR=}` that follows.
+            assignments.append(contentsOf: ExpressionLowering.lowerExpression(global.value, context: context))
             assignments.append(.variableAssignment(name: global.name, isGlobal: true))
         }
-        let children = evalGroup(assignments) + [.controlCommand("end")]
+        let children = ExpressionLowering.evalGroup(assignments) + [.controlCommand("end")]
         return ContainerNode(children: children, namedContent: [:], flags: 0, name: nil)
     }
 
     // MARK: - Expression lowering
 
-    /// Lower an inline-printed expression `{ <expr> }` into the runtime nodes
-    /// that evaluate it and emit the result, matching the committed oracle
-    /// token order for `{2 + 3 * 4}`: `ev, 2, 3, 4, *, +, out, /ev`. The
-    /// expression body is lowered to POSTFIX (RPN) so it drives the runtime's
-    /// evaluation stack directly; `out` pops the result and prints it.
+    /// Lower an inline-printed expression with no surrounding declaration or
+    /// function tables (see `ExpressionLowering.lowerInlineExpression`).
     static func lowerInlineExpression(_ expression: InkExpression) -> [NodeKind] {
-        lowerInlineExpression(expression, context: emptyContext)
-    }
-
-    /// An empty lowering context (no CONSTs, no functions) for callers that lower
-    /// a standalone expression with no surrounding declaration/function tables.
-    private static let emptyContext = LoweringContext(constants: [:], functions: [:])
-
-    private static func lowerInlineExpression(
-        _ expression: InkExpression,
-        context: LoweringContext
-    ) -> [NodeKind] {
-        evalGroup(lowerExpression(expression, context: context) + [.controlCommand("out")])
-    }
-
-    /// Wrap eval-stack nodes in the runtime's `ev` … `/ev` evaluation block. The
-    /// shared shape behind inline-print, return, assignment, and discarded-call
-    /// lowering: each supplies the body that runs between the markers.
-    private static func evalGroup(_ body: [NodeKind]) -> [NodeKind] {
-        [.controlCommand("ev")] + body + [.controlCommand("/ev")]
-    }
-
-    /// Lower an expression to POSTFIX runtime nodes, inlining any CONST
-    /// reference to its literal value (D6 / DDD-9). `a OP b` becomes
-    /// `<lower a> <lower b> .nativeFunction(OP)`; literals push onto the eval
-    /// stack; non-CONST identifiers lower to `.variableReference`; string
-    /// literals lower to a `str`/`^text`/`/str` group that pushes the string; a
-    /// function call lowers its arguments onto the eval stack then emits the
-    /// `f():`-tagged divert that calls the function and leaves its result there.
-    private static func lowerExpression(
-        _ expression: InkExpression,
-        context: LoweringContext
-    ) -> [NodeKind] {
-        switch expression {
-        case .intLiteral(let value):
-            return [.intValue(value)]
-        case .boolLiteral(let value):
-            return [.boolValue(value)]
-        case .floatLiteral(let value):
-            return [.floatValue(value)]
-        case .stringLiteral(let value):
-            return [.controlCommand("str"), .text(value), .controlCommand("/str")]
-        case .variableReference(let name):
-            if let inlined = context.constants[name] {
-                return lowerExpression(inlined, context: context)
-            }
-            // A name resolving to a known weave label or knot/stitch is a
-            // read-count subject (ADR-011 EXTEND #2): emit `.readCount(path)`
-            // addressing the resolved container. A true miss (a real qualified
-            // variable) falls through to `.variableReference`.
-            if let path = context.readCountPath(for: name) {
-                return [.readCount(path.joined(separator: "."))]
-            }
-            return [.variableReference(name: name)]
-        case .binary(let oper, let left, let right):
-            var nodes = lowerExpression(left, context: context)
-            nodes.append(contentsOf: lowerExpression(right, context: context))
-            nodes.append(.nativeFunction(oper))
-            return nodes
-        case .unary(let oper, let operand):
-            var nodes = lowerExpression(operand, context: context)
-            nodes.append(.nativeFunction(oper))
-            return nodes
-        case .functionCall(let name, let arguments):
-            return lowerFunctionCall(name: name, arguments: arguments, context: context)
-        }
-    }
-
-    /// Lower a function call `f(args)`: push each argument onto the eval stack —
-    /// an argument bound to a `ref` parameter becomes a `variablePointer` so the
-    /// callee mutates the caller's variable — then emit the `f():`-tagged divert
-    /// the runtime intercepts to push a return address and jump into the function.
-    private static func lowerFunctionCall(
-        name: String,
-        arguments: [InkExpression],
-        context: LoweringContext
-    ) -> [NodeKind] {
-        let parameters = context.functions[name] ?? []
-        var nodes: [NodeKind] = []
-        for (offset, argument) in arguments.enumerated() {
-            let isReference = offset < parameters.count && parameters[offset].isReference
-            if isReference, case .variableReference(let variableName) = argument {
-                nodes.append(.variablePointer(name: variableName, contextIndex: globalContextIndex))
-                continue
-            }
-            nodes.append(contentsOf: lowerExpression(argument, context: context))
-        }
-        nodes.append(.divert(target: functionCallTargetPrefix + name, isConditional: false, isVariable: false))
-        return nodes
-    }
-
-    /// The runtime intercepts a divert whose target carries this prefix as a
-    /// function call (push a return address before jumping). Matches the decoder's
-    /// lowering of an inklecate `{"f()": path}` divert.
-    private static let functionCallTargetPrefix = "f():"
-
-    /// Reference arguments use `ci == -1` to denote global scope (brief tier3); a
-    /// non-negative index would point into a call frame's temp scope.
-    private static let globalContextIndex = -1
-
-    /// Lower a declaration/assignment RHS value (no `out`): the value is left on
-    /// the eval stack for a following `{VAR=}`/`{temp=}` to consume.
-    private static func lowerValue(
-        _ expression: InkExpression,
-        context: LoweringContext
-    ) -> [NodeKind] {
-        lowerExpression(expression, context: context)
-    }
-
-    // MARK: - Grouping
-
-    /// A knot and its body, plus the stitches declared inside it.
-    private struct KnotGroup {
-        let name: String
-        let body: [InkStatement]
-        let stitches: [StitchGroup]
-    }
-
-    /// A stitch and its body.
-    private struct StitchGroup {
-        let name: String
-        let body: [InkStatement]
-    }
-
-    /// A function definition and the body lines that follow its header.
-    private struct FunctionGroup {
-        let name: String
-        let parameters: [FunctionParameter]
-        let body: [InkStatement]
-    }
-
-    /// Split the flat stream into the pre-stitch root body, the ordered TOP-LEVEL
-    /// stitches, the ordered knots, and the ordered function definitions. Knot and
-    /// function headers terminate the preceding group; a top-level stitch header
-    /// (`= name` before the first knot) opens an addressable root section whose body
-    /// runs until the next stitch/knot/function header — mirroring how `readKnot`
-    /// groups a knot's own stitches, so a `-> name` divert resolves to a real
-    /// container instead of dead-ending in the flattened root body.
-    private static func partitionTopLevel(
-        _ statements: [InkStatement]
-    ) -> (rootBody: [InkStatement], rootStitches: [StitchGroup], knots: [KnotGroup], functions: [FunctionGroup]) {
-        var rootBody: [InkStatement] = []
-        var rootStitches: [StitchGroup] = []
-        var knots: [KnotGroup] = []
-        var functions: [FunctionGroup] = []
-        var pendingStitch: (name: String, body: [InkStatement])?
-        var index = 0
-        while index < statements.count {
-            if case .functionDefinition(let name, let parameters, _) = statements[index].kind {
-                appendStitch(pendingStitch, into: &rootStitches); pendingStitch = nil
-                let (body, nextIndex) = readDefinitionBody(after: index, in: statements)
-                functions.append(FunctionGroup(name: name, parameters: parameters, body: body))
-                index = nextIndex
-                continue
-            }
-            if case .knot(let name) = statements[index].kind {
-                appendStitch(pendingStitch, into: &rootStitches); pendingStitch = nil
-                let (knot, nextIndex) = readKnot(named: name, after: index, in: statements)
-                knots.append(knot)
-                index = nextIndex
-                continue
-            }
-            if case .stitch(let stitchName) = statements[index].kind {
-                appendStitch(pendingStitch, into: &rootStitches)
-                pendingStitch = (stitchName, [])
-                index += 1
-                continue
-            }
-            if pendingStitch != nil {
-                pendingStitch?.body.append(statements[index])
-            } else {
-                rootBody.append(statements[index])
-            }
-            index += 1
-        }
-        appendStitch(pendingStitch, into: &rootStitches)
-        return (rootBody, rootStitches, knots, functions)
-    }
-
-    /// Read one knot starting just after its header at `headerIndex`, consuming
-    /// statements up to (but not including) the next knot/function header.
-    private static func readKnot(
-        named name: String,
-        after headerIndex: Int,
-        in statements: [InkStatement]
-    ) -> (knot: KnotGroup, nextIndex: Int) {
-        var body: [InkStatement] = []
-        var stitches: [StitchGroup] = []
-        var index = headerIndex + 1
-        var pendingStitch: (name: String, body: [InkStatement])?
-
-        while index < statements.count {
-            let kind = statements[index].kind
-            if isDefinitionHeader(kind) {
-                break
-            }
-            if case .stitch(let stitchName) = kind {
-                appendStitch(pendingStitch, into: &stitches)
-                pendingStitch = (stitchName, [])
-                index += 1
-                continue
-            }
-            if pendingStitch != nil {
-                pendingStitch?.body.append(statements[index])
-            } else {
-                body.append(statements[index])
-            }
-            index += 1
-        }
-        appendStitch(pendingStitch, into: &stitches)
-        return (KnotGroup(name: name, body: body, stitches: stitches), index)
-    }
-
-    /// Read a function body just after its header at `headerIndex`, consuming
-    /// statements up to (but not including) the next knot/function header.
-    private static func readDefinitionBody(
-        after headerIndex: Int,
-        in statements: [InkStatement]
-    ) -> (body: [InkStatement], nextIndex: Int) {
-        var body: [InkStatement] = []
-        var index = headerIndex + 1
-        while index < statements.count {
-            if isDefinitionHeader(statements[index].kind) {
-                break
-            }
-            body.append(statements[index])
-            index += 1
-        }
-        return (body, index)
-    }
-
-    /// True when a statement kind opens a top-level definition (knot or function),
-    /// terminating the preceding knot/function body.
-    private static func isDefinitionHeader(_ kind: InkStatementKind) -> Bool {
-        switch kind {
-        case .knot, .functionDefinition:
-            return true
-        default:
-            return false
-        }
-    }
-
-    private static func appendStitch(
-        _ pending: (name: String, body: [InkStatement])?,
-        into stitches: inout [StitchGroup]
-    ) {
-        guard let pending else { return }
-        stitches.append(StitchGroup(name: pending.name, body: pending.body))
+        ExpressionLowering.lowerInlineExpression(expression, context: LoweringContext(constants: [:], functions: [:]))
     }
 
     // MARK: - Lowering
 
-    private static func emitKnot(_ knot: KnotGroup, context: LoweringContext) throws -> ContainerNode {
+    private static func emitKnot(_ knot: StoryOutline.Knot, context: LoweringContext) throws -> ContainerNode {
         // Bind the enclosing knot scope so a bare stitch-local divert (`-> waited`)
         // qualifies to its absolute `knot.stitch` path (the runtime resolves divert
         // targets absolutely from root; an un-qualified sibling-stitch target would
@@ -962,7 +239,7 @@ enum RuntimeObjectEmitter {
     /// become real `namedContent` containers rather than flattening into the root
     /// body (where a `-> stitch` divert would find no container to resolve).
     private static func emitStitch(
-        _ stitch: StitchGroup, keyPrefix: [String], context: LoweringContext
+        _ stitch: StoryOutline.Stitch, keyPrefix: [String], context: LoweringContext
     ) throws -> ContainerNode {
         var stitchNamed: [String: ContainerNode] = [:]
         let children = try lowerBodyRoutingWeave(
@@ -978,7 +255,7 @@ enum RuntimeObjectEmitter {
     /// bindings are emitted in REVERSE parameter order, matching the oracle), then
     /// lower the body. A body whose last statement is not an explicit `~ return`
     /// relies on the runtime's implicit void return at container exhaustion.
-    private static func emitFunction(_ function: FunctionGroup, context: LoweringContext) -> ContainerNode {
+    private static func emitFunction(_ function: StoryOutline.Function, context: LoweringContext) -> ContainerNode {
         var named: [String: ContainerNode] = [:]
         var children: [NodeKind] = []
         for parameter in function.parameters.reversed() {
@@ -994,7 +271,7 @@ enum RuntimeObjectEmitter {
     /// The function-local names: its parameters plus any `~ temp` declarations in
     /// the body. Assignments to these names lower to `temp=` so the runtime writes
     /// through the call frame (the ref-param mutation path).
-    private static func localNames(of function: FunctionGroup) -> Set<String> {
+    private static func localNames(of function: StoryOutline.Function) -> Set<String> {
         var names = Set(function.parameters.map(\.name))
         for statement in function.body {
             if case .temporaryVariable(let name, _) = statement.kind {
@@ -1029,7 +306,7 @@ enum RuntimeObjectEmitter {
                     lowerContinuation: inlineConditionalContinuationLowerer(
                         context: context, enclosingKeyPrefix: keyPrefix
                     ),
-                    lowerExpression: { lowerExpression($0, context: context) }
+                    lowerExpression: { ExpressionLowering.lowerExpression($0, context: context) }
                 ))
                 return children
             }
@@ -1141,28 +418,9 @@ enum RuntimeObjectEmitter {
             // through to the enclosing gather. Routing such a body through the
             // resolver would split the second segment's lead from the choice items,
             // dead-ending the dispatch before the choices are reached (#3b layer 1+2).
-            guard leadsWithWeave(body),
-                  let weave = try? WeaveEmitter.lower(
-                      body, keyPrefix: enclosingKeyPrefix, fallThrough: fallThrough,
-                      lowerStatement: { statements, bodyKeyPrefix in
-                          // Lowered under the body's OWN per-container prefix, so its
-                          // inline-conditional/variable-text sub-containers nest in the
-                          // container being built — return them via BodyLowering.named
-                          // so the resolver attaches them there (step 01-13).
-                          var weaveNamed: [String: ContainerNode] = [:]
-                          let children = lowerBody(statements, context: context, keyPrefix: bodyKeyPrefix, named: &weaveNamed)
-                          return WeaveEmitter.BodyLowering(children: children, named: weaveNamed)
-                      },
-                      lowerStatementWithFallThrough: { statements, looseEnd, bodyKeyPrefix in
-                          var weaveNamed: [String: ContainerNode] = [:]
-                          let children = lowerBody(
-                              statements, context: context, keyPrefix: bodyKeyPrefix,
-                              fallThrough: looseEnd, named: &weaveNamed
-                          )
-                          return WeaveEmitter.BodyLowering(children: children, named: weaveNamed)
-                      },
-                      lowerCondition: { expression in lowerExpression(expression, context: context) }
-                  ) else {
+            guard let weave = lowerLeadingWeave(
+                body, keyPrefix: enclosingKeyPrefix, fallThrough: fallThrough, context: context
+            ) else {
                 // Address the chained segment's containers under `enclosingKeyPrefix`
                 // (not the continuation's own `prefix`): like the weave branch above,
                 // its dispatch/stage/choice containers promote up into the enclosing
@@ -1210,7 +468,7 @@ enum RuntimeObjectEmitter {
             lowerContinuation: inlineConditionalContinuationLowerer(
                 context: context, enclosingKeyPrefix: keyPrefix
             ),
-            lowerExpression: { lowerExpression($0, context: context) },
+            lowerExpression: { ExpressionLowering.lowerExpression($0, context: context) },
             qualifyDivertTarget: { context.qualifiedDivertTarget($0) }
         ))
         return children
@@ -1239,35 +497,9 @@ enum RuntimeObjectEmitter {
             // c-N/g-N containers and any nested inline conditional nest under, so
             // choicePoint targets and rejoin diverts resolve self-consistently and
             // never collide with sibling conditionals in the enclosing scope.
-            guard leadsWithWeave(body),
-                  let weave = try? WeaveEmitter.lower(
-                      body, keyPrefix: prefix, fallThrough: fallThrough,
-                      lowerStatement: { statements, bodyKeyPrefix in
-                          // Each rejoin-weave body lowers under its OWN per-container
-                          // prefix; its inline-conditional `cond{N}-b*`/`-end` arms must
-                          // nest inside that container — return them via BodyLowering so
-                          // the resolver attaches them (step 01-13: the `[Yes]` body's
-                          // `{forceful>2:…|…}` branches were dropped here, leaving the
-                          // dispatch's branch diverts pointing at nothing).
-                          var weaveNamed: [String: ContainerNode] = [:]
-                          let children = lowerBody(statements, context: context, keyPrefix: bodyKeyPrefix, named: &weaveNamed)
-                          return WeaveEmitter.BodyLowering(children: children, named: weaveNamed)
-                      },
-                      lowerStatementWithFallThrough: { statements, looseEnd, bodyKeyPrefix in
-                          var weaveNamed: [String: ContainerNode] = [:]
-                          let children = lowerBody(
-                              statements, context: context, keyPrefix: bodyKeyPrefix,
-                              fallThrough: looseEnd, named: &weaveNamed
-                          )
-                          return WeaveEmitter.BodyLowering(children: children, named: weaveNamed)
-                      },
-                      // Thread the choice-guard lowerer so the rejoin weave's `{cond}`
-                      // guards emit their eval-stack nodes — a knot/gather-opening block
-                      // conditional whose rejoin is a guarded choice menu (e.g.
-                      // `admitted_to_something`'s `{not drugged}[…]` / `{drugged}[…]`
-                      // choices) otherwise lowered every choice unguarded (all shown).
-                      lowerCondition: { expression in lowerExpression(expression, context: context) }
-                  ) else {
+            guard let weave = lowerLeadingWeave(
+                body, keyPrefix: prefix, fallThrough: fallThrough, context: context
+            ) else {
                 return lowerBody(
                     body, context: context, keyPrefix: prefix,
                     fallThrough: fallThrough, named: &collected
@@ -1278,6 +510,52 @@ enum RuntimeObjectEmitter {
             }
             return weave.children
         }
+    }
+
+    /// Lower a continuation body that LEADS with a weave item through the
+    /// WeaveEmitter, so its choices become real choicePoints whose loose ends
+    /// thread `fallThrough`, with the `c-N`/`g-N` containers addressed under
+    /// `keyPrefix`. Returns `nil` when the body does not lead with a weave (or the
+    /// resolver fails) — the caller then lowers it flatly.
+    ///
+    /// Each weave body lowers under its OWN per-container prefix; its
+    /// inline-conditional `cond{N}-b*`/`-end` arms and variable-text
+    /// sub-containers must nest inside that container — return them via
+    /// BodyLowering so the resolver attaches them (step 01-13: the `[Yes]` body's
+    /// `{forceful>2:…|…}` branches were dropped here, leaving the dispatch's
+    /// branch diverts pointing at nothing).
+    ///
+    /// The choice-guard lowerer is threaded so the weave's `{cond}` guards emit
+    /// their eval-stack nodes — a knot/gather-opening block conditional whose
+    /// rejoin is a guarded choice menu (e.g. `admitted_to_something`'s
+    /// `{not drugged}[…]` / `{drugged}[…]` choices) otherwise lowered every choice
+    /// unguarded (all shown).
+    private static func lowerLeadingWeave(
+        _ body: [InkStatement],
+        keyPrefix: [String],
+        fallThrough: WeaveEmitter.FallThrough,
+        context: LoweringContext
+    ) -> (children: [NodeKind], named: [String: ContainerNode])? {
+        guard leadsWithWeave(body) else {
+            return nil
+        }
+        return try? WeaveEmitter.lower(
+            body, keyPrefix: keyPrefix, fallThrough: fallThrough,
+            lowerStatement: { statements, bodyKeyPrefix in
+                var weaveNamed: [String: ContainerNode] = [:]
+                let children = lowerBody(statements, context: context, keyPrefix: bodyKeyPrefix, named: &weaveNamed)
+                return WeaveEmitter.BodyLowering(children: children, named: weaveNamed)
+            },
+            lowerStatementWithFallThrough: { statements, looseEnd, bodyKeyPrefix in
+                var weaveNamed: [String: ContainerNode] = [:]
+                let children = lowerBody(
+                    statements, context: context, keyPrefix: bodyKeyPrefix,
+                    fallThrough: looseEnd, named: &weaveNamed
+                )
+                return WeaveEmitter.BodyLowering(children: children, named: weaveNamed)
+            },
+            lowerCondition: { expression in ExpressionLowering.lowerExpression(expression, context: context) }
+        )
     }
 
     /// Build the continuation statements for an inline conditional: the line's
@@ -1325,7 +603,7 @@ enum RuntimeObjectEmitter {
         case .tunnelReturn:
             // The runtime pops the tunnel return address on `->->`; the leading
             // `ev void /ev` matches the oracle (a void result for the call site).
-            return [.controlCommand("ev"), .voidValue, .controlCommand("/ev"), .controlCommand("->->")]
+            return ExpressionLowering.evalGroup([.voidValue]) + [.controlCommand("->->")]
         case .functionCallStatement(let call):
             return lowerFunctionCallStatement(call, context: context)
         case .returnStatement(let value):
@@ -1334,21 +612,16 @@ enum RuntimeObjectEmitter {
             return [.controlCommand("end")]
         case .glue:
             return [.controlCommand("<>")]
-        case .globalVariable, .constant:
-            // Declarations are hoisted into the `global decl` container (VAR) or
-            // inlined at codegen (CONST); they emit nothing in the body stream.
-            return []
-        case .knot, .stitch, .functionDefinition:
-            // Headers/definitions are consumed during grouping and never reach
-            // the per-statement lowerer.
-            return []
-        case .choice, .gather:
-            // Weave lines are resolved by the WeaveEmitter before reaching the
-            // flat statement lowerer; they never lower individually here.
-            return []
-        case .conditionalBlock:
-            // Block/switch conditionals are resolved by lowerBody (which threads
-            // the named-content collector + key-prefix); they never lower here.
+        // These emit nothing in the body stream:
+        // - Declarations are hoisted into the `global decl` container (VAR) or
+        //   inlined at codegen (CONST).
+        // - Headers/definitions are consumed during grouping (`StoryOutline`).
+        // - Weave lines are resolved by the WeaveEmitter before reaching the flat
+        //   statement lowerer.
+        // - Block/switch conditionals are resolved by lowerBody (which threads the
+        //   named-content collector + key-prefix).
+        case .globalVariable, .constant, .knot, .stitch, .functionDefinition,
+             .choice, .gather, .conditionalBlock:
             return []
         }
     }
@@ -1360,7 +633,7 @@ enum RuntimeObjectEmitter {
         _ call: InkExpression,
         context: LoweringContext
     ) -> [NodeKind] {
-        evalGroup(lowerExpression(call, context: context) + [.controlCommand("pop")])
+        ExpressionLowering.evalGroup(ExpressionLowering.lowerExpression(call, context: context) + [.controlCommand("pop")])
     }
 
     /// Lower a function return `~ return [expr]`: evaluate the optional value onto
@@ -1370,8 +643,8 @@ enum RuntimeObjectEmitter {
         _ value: InkExpression?,
         context: LoweringContext
     ) -> [NodeKind] {
-        let valueNodes = value.map { lowerExpression($0, context: context) } ?? []
-        return evalGroup(valueNodes) + [.controlCommand("~ret")]
+        let valueNodes = value.map { ExpressionLowering.lowerExpression($0, context: context) } ?? []
+        return ExpressionLowering.evalGroup(valueNodes) + [.controlCommand("~ret")]
     }
 
     /// Lower a content line: literal segments emit text, expression segments emit
@@ -1399,7 +672,7 @@ enum RuntimeObjectEmitter {
             case .literal(let text):
                 nodes.append(.text(text))
             case .expression(let expression):
-                nodes.append(contentsOf: lowerInlineExpression(expression, context: context))
+                nodes.append(contentsOf: ExpressionLowering.lowerInlineExpression(expression, context: context))
             case .tag(let tag):
                 nodes.append(contentsOf: [.tagOpen, .text(tag), .tagClose])
             case .conditional:
@@ -1422,7 +695,7 @@ enum RuntimeObjectEmitter {
         isGlobal: Bool,
         context: LoweringContext
     ) -> [NodeKind] {
-        evalGroup(lowerExpression(value, context: context))
+        ExpressionLowering.evalGroup(ExpressionLowering.lowerExpression(value, context: context))
             + [.variableAssignment(name: name, isGlobal: isGlobal)]
     }
 
