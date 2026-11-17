@@ -1,0 +1,382 @@
+{
+ "TestAllSequenceTypes": {
+  "native": "unsupported RANDOM, shuffle",
+  "runtime": "unsupported RANDOM, shuffle"
+ },
+ "TestArgumentNameCollisions": {
+  "native": "native accepts a story inklecate rejects (name collisions)"
+ },
+ "TestArithmetic": {
+  "native": "native compiler rejects a valid story: unexpectedToken('mod')",
+  "runtime": "float division result truncated"
+ },
+ "TestBasicTunnel": {
+  "native": "glue across a tunnel call",
+  "runtime": "glue across a tunnel call"
+ },
+ "TestBools": {
+  "native": "unsupported lists",
+  "runtime": "unsupported lists"
+ },
+ "TestChoiceCount": {
+  "native": "unsupported threads",
+  "runtime": "unsupported threads"
+ },
+ "TestChoiceDivertsToDone": {
+  "native": "a divert to DONE on a choice line is kept as text",
+  "runtime": "line ending before -> DONE"
+ },
+ "TestCompareDivertTargets": {
+  "native": "native compiler rejects a valid story: unexpectedToken('>')"
+ },
+ "TestComplexTunnels": {
+  "native": "tunnels with arguments"
+ },
+ "TestConditionalChoiceInWeave": {
+  "runtime": "runtime newline de-duplication (#26)"
+ },
+ "TestConditionalChoiceInWeave2": {
+  "native": "conditional choice inside a weave",
+  "runtime": "conditional choice inside a weave"
+ },
+ "TestConditionalChoices": {
+  "native": "choice conditions ({cond} {cond} text)"
+ },
+ "TestConditionals": {
+  "native": "native compiler rejects a valid story: Branch doesn't have condition. Are you missing a ':'?",
+  "runtime": "runtime newline de-duplication (#26)"
+ },
+ "TestConstRedefinition": {
+  "native": "native reports a different error than '\\'x\\' has been redefined'"
+ },
+ "TestContainsEmptyListAlwaysFalse": {
+  "native": "unsupported lists",
+  "runtime": "unsupported lists"
+ },
+ "TestDefaultChoices": {
+  "native": "default (fallback) choices",
+  "runtime": "default (fallback) choices"
+ },
+ "TestDefaultSimpleGather": {
+  "native": "default (fallback) choices",
+  "runtime": "default (fallback) choices"
+ },
+ "TestDisallowEmptyDiverts": {
+  "native": "native accepts a story inklecate rejects ('Empty diverts (->) are only valid on choices')"
+ },
+ "TestDivertNotFoundError": {
+  "native": "native accepts a story inklecate rejects ('not found')"
+ },
+ "TestDivertTargetsWithParameters": {
+  "native": "native compiler rejects a valid story: unexpectedToken('>')"
+ },
+ "TestDivertToWeavePoints": {
+  "native": "diverts to labelled weave points"
+ },
+ "TestDoneStopsThread": {
+  "native": "DONE stops the flow"
+ },
+ "TestElseBranches": {
+  "native": "else branches",
+  "runtime": "else branches"
+ },
+ "TestEmptyListOrigin": {
+  "native": "unsupported lists",
+  "runtime": "unsupported lists"
+ },
+ "TestEmptyListOriginAfterAssignment": {
+  "native": "unsupported lists",
+  "runtime": "unsupported lists"
+ },
+ "TestEmptyMultilineConditionalBranch": {
+  "runtime": "runtime newline de-duplication (#26)"
+ },
+ "TestEmptySequenceContent": {
+  "native": "native compiler rejects a valid story: expected content for the conditional branch following '-'",
+  "runtime": "runtime newline de-duplication (#26)"
+ },
+ "TestEmptyThreadError": {
+  "native": "unsupported threads"
+ },
+ "TestEndOfContent": {
+  "native": "native compiler reports no warnings"
+ },
+ "TestEscapeCharacter": {
+  "native": "escaped characters in alternatives"
+ },
+ "TestFactorialByReference": {
+  "native": "pass-by-reference (ref) parameters",
+  "runtime": "pass-by-reference (ref) parameters"
+ },
+ "TestFactorialRecursive": {
+  "runtime": "runtime newline de-duplication (#26)"
+ },
+ "TestFallbackChoiceOnThread": {
+  "native": "unsupported threads",
+  "runtime": "unsupported threads"
+ },
+ "TestFloorCeilingAndCasts": {
+  "native": "FLOOR, INT, CEILING and casts",
+  "runtime": "FLOOR, INT, CEILING and casts"
+ },
+ "TestFunctionCallRestrictions": {
+  "native": "native accepts a story inklecate rejects (function call restrictions)"
+ },
+ "TestFunctionPurityChecks": {
+  "native": "native accepts a story inklecate rejects (function purity)"
+ },
+ "TestGatherChoiceSameLine": {
+  "native": "a gather and a choice on the same line"
+ },
+ "TestGatherReadCountWithInitialSequence": {
+  "native": "read count of a gather after a sequence",
+  "runtime": "read count of a gather after a sequence"
+ },
+ "TestIdentifersCanStartWithNumbers": {
+  "native": "native compiler rejects a valid story: `512x2` is not a valid assignment target."
+ },
+ "TestImplicitInlineGlue": {
+  "native": "implicit inline glue around function calls",
+  "runtime": "implicit inline glue around function calls"
+ },
+ "TestImplicitInlineGlueC": {
+  "native": "implicit inline glue around function calls",
+  "runtime": "runtime newline de-duplication (#26)"
+ },
+ "TestInclude": {
+  "native": "unsupported INCLUDE (printed as text)",
+  "runtime": "runtime newline de-duplication (#26)"
+ },
+ "TestIncrement": {
+  "native": "native compiler rejects a valid story: unexpectedToken('+')"
+ },
+ "TestKnotThreadInteraction": {
+  "native": "unsupported threads",
+  "runtime": "unsupported threads"
+ },
+ "TestKnotThreadInteraction2": {
+  "native": "unsupported threads",
+  "runtime": "unsupported threads"
+ },
+ "TestLeadingNewlineMultilineSequence": {
+  "native": "native compiler rejects a valid story: Expected an '- else:' clause here rather than an extra condition. Use a `{` bloc"
+ },
+ "TestLeftRightGlueMatching": {
+  "native": "glue at both ends of a line",
+  "runtime": "runtime newline de-duplication (#26)"
+ },
+ "TestListBasicOperations": {
+  "native": "unsupported lists",
+  "runtime": "unsupported lists"
+ },
+ "TestListMixedItems": {
+  "native": "unsupported lists",
+  "runtime": "unsupported lists"
+ },
+ "TestLogicInChoices": {
+  "native": "logic in choice text",
+  "runtime": "logic in choice text"
+ },
+ "TestLogicLinesWithNewlines": {
+  "runtime": "runtime newline de-duplication (#26)"
+ },
+ "TestLooseEnds": {
+  "native": "native compiler reports no warnings"
+ },
+ "TestMoreListOperations": {
+  "native": "unsupported lists",
+  "runtime": "unsupported lists"
+ },
+ "TestMultiThread": {
+  "native": "unsupported threads",
+  "runtime": "unsupported threads"
+ },
+ "TestMultilineLogicWithGlue": {
+  "native": "glue inside multi-line logic",
+  "runtime": "glue inside multi-line logic"
+ },
+ "TestNestedChoiceError": {
+  "native": "native accepts a story inklecate rejects ('need to explicitly divert')"
+ },
+ "TestNestedInclude": {
+  "native": "unsupported INCLUDE (printed as text)"
+ },
+ "TestNestedPassByReference": {
+  "native": "pass-by-reference (ref) parameters",
+  "runtime": "pass-by-reference (ref) parameters"
+ },
+ "TestNewlineConsistency": {
+  "native": "a divert after choice text is kept as text"
+ },
+ "TestNewlinesWithStringEval": {
+  "native": "newlines around string evaluation",
+  "runtime": "newlines around string evaluation"
+ },
+ "TestNonTextInChoiceInnerContent": {
+  "native": "whitespace around a conditional in choice content"
+ },
+ "TestOnceOnlyChoicesCanLinkBackToSelf": {
+  "native": "once-only choices that link back to themselves",
+  "runtime": "once-only choices that link back to themselves"
+ },
+ "TestPathToSelf": {
+  "native": "a choice that diverts to its own knot",
+  "runtime": "a choice that diverts to its own knot"
+ },
+ "TestQuoteCharacterSignificance": {
+  "native": "native compiler rejects a valid story: unexpectedToken('o')",
+  "runtime": "quote characters inside strings"
+ },
+ "TestReadCountAcrossThreads": {
+  "native": "unsupported threads",
+  "runtime": "unsupported threads"
+ },
+ "TestReadCountDotSeparatedPath": {
+  "native": "read counts of dot-separated paths"
+ },
+ "TestReadCountVariableTarget": {
+  "native": "read counts through a variable divert target",
+  "runtime": "read counts through a variable divert target"
+ },
+ "TestRequireVariableTargetsTyped": {
+  "native": "native accepts a story inklecate rejects ('it should be marked as: ->')"
+ },
+ "TestShuffleStackMuddying": {
+  "native": "unsupported shuffle",
+  "runtime": "unsupported shuffle"
+ },
+ "TestSimpleGlue": {
+  "native": "glue in the middle of a line"
+ },
+ "TestStateRollbackOverDefaultChoice": {
+  "native": "unsupported threads",
+  "runtime": "unsupported threads"
+ },
+ "TestStitchNamingCollision": {
+  "native": "native accepts a story inklecate rejects ('already been used for a var')"
+ },
+ "TestStringContains": {
+  "native": "string contains operator (?)",
+  "runtime": "string contains operator (?)"
+ },
+ "TestStringTypeCoersion": {
+  "native": "string and number comparison coercion",
+  "runtime": "string and number comparison coercion"
+ },
+ "TestStringsInChoices": {
+  "native": "string literals in choice text",
+  "runtime": "string literals in choice text"
+ },
+ "TestTagsDynamicContent": {
+  "native": "tags with dynamic content",
+  "runtime": "tags with dynamic content"
+ },
+ "TestTagsInChoice": {
+  "native": "tags in choices",
+  "runtime": "tags in choices"
+ },
+ "TestTagsInSeq": {
+  "native": "tags in sequences",
+  "runtime": "tags in sequences"
+ },
+ "TestTempNotAllowedCrossStitch": {
+  "native": "native accepts a story inklecate rejects ('Unresolved variable: x')"
+ },
+ "TestTempNotFound": {
+  "native": "an undeclared temp prints 0 with a warning",
+  "runtime": "an undeclared temp prints 0 with a warning"
+ },
+ "TestTempUsageInOptions": {
+  "native": "temp variables in choice text",
+  "runtime": "temp variables in choice text"
+ },
+ "TestThreadDone": {
+  "native": "unsupported threads",
+  "runtime": "unsupported threads"
+ },
+ "TestThreadInLogic": {
+  "native": "unsupported threads"
+ },
+ "TestTopFlowTerminatorShouldntKillThreadChoices": {
+  "native": "unsupported threads",
+  "runtime": "unsupported threads"
+ },
+ "TestTunnelOnwardsAfterTunnel": {
+  "native": "tunnel onwards (->->) after a tunnel"
+ },
+ "TestTunnelOnwardsDivertAfterWithArg": {
+  "native": "tunnel onwards with a divert (->-> target)",
+  "runtime": "tunnel onwards with a divert (->-> target)"
+ },
+ "TestTunnelOnwardsDivertOverride": {
+  "native": "tunnel onwards with a divert (->-> target)",
+  "runtime": "tunnel onwards with a divert (->-> target)"
+ },
+ "TestTunnelOnwardsToVariableDivertTarget": {
+  "native": "tunnel onwards with a divert (->-> target)",
+  "runtime": "tunnel onwards with a divert (->-> target)"
+ },
+ "TestTunnelOnwardsWithParamDefaultChoice": {
+  "native": "tunnel onwards with a divert (->-> target)",
+  "runtime": "tunnel onwards with a divert (->-> target)"
+ },
+ "TestTunnelVsThreadBehaviour": {
+  "native": "unsupported threads",
+  "runtime": "unsupported threads"
+ },
+ "TestTurnsSince": {
+  "native": "TURNS_SINCE",
+  "runtime": "TURNS_SINCE"
+ },
+ "TestTurnsSinceNested": {
+  "native": "TURNS_SINCE",
+  "runtime": "TURNS_SINCE"
+ },
+ "TestTurnsSinceWithVariableTarget": {
+  "native": "TURNS_SINCE",
+  "runtime": "TURNS_SINCE"
+ },
+ "TestUnbalancedWeaveIndentation": {
+  "native": "unbalanced weave indentation"
+ },
+ "TestVariableDivertTarget": {
+  "native": "native compiler rejects a valid story: unexpectedToken('>')"
+ },
+ "TestVariableNamingCollisionWithArg": {
+  "native": "native accepts a story inklecate rejects ('has already been used')"
+ },
+ "TestVariableNamingCollisionWithFlow": {
+  "native": "unsupported lists"
+ },
+ "TestVariableSwapRecurse": {
+  "runtime": "runtime newline de-duplication (#26)"
+ },
+ "TestVariableTunnel": {
+  "native": "tunnel to a variable divert target",
+  "runtime": "tunnel to a variable divert target"
+ },
+ "TestVariousBlankChoiceWarning": {
+  "native": "native compiler reports no warnings"
+ },
+ "TestVariousDefaultChoices": {
+  "native": "default (fallback) choices",
+  "runtime": "default (fallback) choices"
+ },
+ "TestVisitCountBugDueToNestedContainers": {
+  "native": "visit counts in nested containers",
+  "runtime": "visit counts in nested containers"
+ },
+ "TestWeaveOptions": {
+  "runtime": "choice text with [bracketed] options"
+ },
+ "TestWeavePointNamingCollision": {
+  "native": "native accepts a story inklecate rejects ('with the same label')"
+ },
+ "TestWeaveWithinSequence": {
+  "native": "unsupported shuffle",
+  "runtime": "unsupported shuffle"
+ },
+ "TestWrongVariableDivertTargetReference": {
+  "native": "native accepts a story inklecate rejects ('it shouldn\\'t be preceded by \\'->\\'')"
+ }
+}

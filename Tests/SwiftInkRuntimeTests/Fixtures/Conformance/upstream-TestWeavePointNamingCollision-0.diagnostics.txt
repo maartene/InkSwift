@@ -1,0 +1,1 @@
+ERROR: 'upstream-TestWeavePointNamingCollision-0.ink' line 4: A gather with the same label name 'opts' already exists in this context on line 2

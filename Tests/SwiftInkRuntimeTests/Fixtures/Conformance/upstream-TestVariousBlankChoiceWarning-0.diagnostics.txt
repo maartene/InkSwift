@@ -1,0 +1,1 @@
+WARNING: 'upstream-TestVariousBlankChoiceWarning-0.ink' line 2: Blank choice - if you intended a default fallback choice, use the `* ->` syntax

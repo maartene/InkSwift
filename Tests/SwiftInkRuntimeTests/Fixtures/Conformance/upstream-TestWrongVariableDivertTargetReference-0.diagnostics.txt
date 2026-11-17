@@ -1,0 +1,1 @@
+ERROR: 'upstream-TestWrongVariableDivertTargetReference-0.ink' line 5: Since 'b' is a variable, it shouldn't be preceded by '->' here.

@@ -1,0 +1,1 @@
+ERROR: 'upstream-TestEndOfContent-4.ink' line 2: Return statements can only be used in knots that are declared as functions: == function test ==

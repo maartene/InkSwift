@@ -64,6 +64,17 @@ Resolve this with the Swift Testing `.disabled` trait:
 
 Alternative — `withKnownIssue { … }`: wrap an AT body instead of disabling it when you want the test to keep *executing* while red and to auto-fail the moment the feature starts passing (forcing removal of the wrapper, an automatic tripwire). Prefer `.disabled` when the AT cannot meaningfully run yet; prefer `withKnownIssue` when the API exists but behaviour is only partially done.
 
+## Upstream conformance suite
+
+`Tests/SwiftInkRuntimeTests/Conformance/` holds upstream ink's own test suite (`tests/Tests.cs` from inkle/ink, MIT, see `Fixtures/Conformance/UPSTREAM-LICENSE.txt`), translated by `scripts/conformance/import_upstream_tests.py`. Each upstream test runs in two modes: **native** (InkSwift compiler + runtime) and **runtime** (inklecate's committed JSON on the InkSwift runtime), so compiler and runtime gaps show up separately. Fixtures live in `Fixtures/Conformance/` (`upstream-<Test>-<n>.ink`, `.ink.json`, `.diagnostics.txt`).
+
+Unlike `Acceptance/`, a `.disabled` test here is a **backlog item, not unfinished delivery**, so the zero-`.disabled` finalize invariant above does not apply to this folder. Each one is `.disabled(if: Conformance.skipsBacklog, "conformance: <gap>")`, naming the gap (an unsupported feature, a behaviour area, or "not ported — <API>").
+
+- **List the backlog:** `grep -rho 'conformance: [^"]*' Tests/SwiftInkRuntimeTests/Conformance | sort | uniq -c | sort -rn`
+- **See what a change fixed:** `INKSWIFT_CONFORMANCE_BACKLOG=1 swift test --filter UpstreamConformance` runs the disabled tests too.
+- **When a gap closes**, remove the test's `.disabled` trait in the same commit, and its entry in `scripts/conformance/known-failures.json` so a re-import keeps it enabled. Never delete a conformance test because its feature is unsupported; it stays as a disabled backlog item.
+- **Before reporting a new divergence**, check whether a conformance test already covers it. A failing upstream test is the reference's own statement of intended behaviour, which settles most "is this a bug or a quirk?" questions (see "The oracle is necessary, not sufficient" below).
+
 ## Mutation Testing Strategy
 
 Mutation testing is **disabled** for this project. This is a durable constraint, not a deferral: no reliable, proven Swift mutation-testing solution exists, and Muter was flaky at best after significant effort.

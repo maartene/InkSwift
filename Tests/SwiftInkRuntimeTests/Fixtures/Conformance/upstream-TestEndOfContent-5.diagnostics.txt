@@ -1,0 +1,1 @@
+ERROR: 'upstream-TestEndOfContent-5.ink' line 2: Functions may not contain diverts, but saw '-> END'

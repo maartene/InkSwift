@@ -1,0 +1,1 @@
+ERROR: 'upstream-TestVariableNamingCollisionWithArg-0.ink' line 2: temp '': Name has already been used for a argument to knot on line 1 of upstream-TestVariableNamingCollisionWithArg-0.ink

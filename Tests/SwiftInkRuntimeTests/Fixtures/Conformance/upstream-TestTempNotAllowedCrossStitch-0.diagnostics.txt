@@ -1,0 +1,2 @@
+ERROR: 'upstream-TestTempNotAllowedCrossStitch-0.ink' line 9: Unresolved variable: x
+ERROR: 'upstream-TestTempNotAllowedCrossStitch-0.ink' line 9: Unresolved variable: y

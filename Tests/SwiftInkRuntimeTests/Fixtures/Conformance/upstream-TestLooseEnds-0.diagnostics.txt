@@ -1,0 +1,4 @@
+TODO: 'upstream-TestLooseEnds-0.ink' line 11: Fix loose ends but don't warn
+WARNING: 'upstream-TestLooseEnds-0.ink' line 4: Apparent loose end exists where the flow runs out. Do you need a '-> DONE' statement, choice or divert?
+WARNING: 'upstream-TestLooseEnds-0.ink' line 6: Apparent loose end exists where the flow runs out. Do you need a '-> DONE' statement, choice or divert?
+WARNING: 'upstream-TestLooseEnds-0.ink' line 14: Apparent loose end exists where the flow runs out. Do you need a '-> DONE' statement, choice or divert?

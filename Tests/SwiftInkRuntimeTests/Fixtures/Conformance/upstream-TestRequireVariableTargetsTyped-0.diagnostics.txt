@@ -1,0 +1,1 @@
+ERROR: 'upstream-TestRequireVariableTargetsTyped-0.ink' line 4: Since 'varTarget' is used as a variable divert target (on line 5 of upstream-TestRequireVariableTargetsTyped-0.ink), it should be marked as: -> varTarget

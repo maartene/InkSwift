@@ -1,0 +1,6 @@
+
+{ shuffle:
+-   * choice
+    nextline
+    -> END
+}
