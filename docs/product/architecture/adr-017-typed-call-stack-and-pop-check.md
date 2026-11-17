@@ -98,7 +98,12 @@ immediately visible to the conformance harness; no public API change.
 with an error. Mitigation: full oracle + conformance suite per slice; any fixture that trips
 it is investigated before deciding to keep it.
 
-**Open (DISTILL)**: error lifetime (cleared on `restoreState`/`moveToKnot`? persisted?) —
-recommended in-memory only, not part of `StoryState`. Per-call temp scopes (`callFrameVariables`) and
+**Error lifetime** (decided 2026-11-17, maintainer): runtime errors live in memory only,
+outside `StoryState`, and are never saved. A story has no way to recover from a runtime
+error, so saving one would only persist an unrecoverable state, and errors are not meant
+as a diagnostics record. `restoreState` and `moveToKnot` clear them, since both start from
+a different position.
+
+Per-call temp scopes (`callFrameVariables`) and
 `functionRootDepths` parallel C# `Element.temporaryVariables`; folding them into
 `CallStackElement` is a possible follow-up, not part of this decision.

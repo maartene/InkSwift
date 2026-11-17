@@ -1790,8 +1790,9 @@ C4Component
 
 #### Open questions and follow-ups (see feature-delta)
 
-Open for DISTILL: runtime-error lifetime (cleared on `restoreState`/`moveToKnot`?
-persisted?). Follow-ups, **out of scope for #25**: suspected, unconfirmed tunnel-return bug (a
+Runtime-error lifetime is decided (ADR-017): in memory only, never saved, cleared by
+`restoreState` and `moveToKnot`. No DISTILL wave: the tests for S0, S1 and S7 are written
+inside their DELIVER steps. Follow-ups, **out of scope for #25**: suspected, unconfirmed tunnel-return bug (a
 return to `path.N` where child `N` is a container re-enters it with a single-frame stack —
 preserved by this refactor, to be confirmed and filed separately); the TreeWalker dead-code
 check during S2; the symbol-level boundary rule; moving `ChoiceFlags` to `Decoder/`;

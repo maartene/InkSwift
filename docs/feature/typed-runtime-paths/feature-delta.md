@@ -164,6 +164,8 @@ is a follow-up (below).
 | D4 | Typed in memory, byte-identical saved strings, no version field; existing saves keep restoring | ADR-018 | Accepted 2026-11-17 |
 | D5 | Stateless `ContainerPathResolver` in `Engine/`; stack mutation stays in `InkEngine` | — (feature-local) | Accepted 2026-11-17 |
 | D6 | Slices S0–S7; S7 the only behaviour change | — | Accepted 2026-11-17 |
+| D7 | Runtime errors live in memory only (not in `StoryState`, never saved); `restoreState` and `moveToKnot` clear them | ADR-017 | Accepted 2026-11-17 |
+| D8 | No DISTILL wave: S0 characterization tests (green from the start), S1 `TestPaths` port, and S7 ATs are written inside their DELIVER steps | — | Accepted 2026-11-17 |
 
 ## Wave: DESIGN / [REF] Reuse Analysis
 
@@ -188,9 +190,17 @@ Outcome Collision Check: skipped — `docs/product/outcomes/registry.yaml` does 
 
 ## Wave: DESIGN / [REF] Open Questions
 
-1. **Runtime-error lifetime** (DISTILL, in scope for S7): are `currentErrors` cleared on
-   `restoreState` / `moveToKnot`, and are they persisted? Recommended: in-memory only (not in
-   `StoryState`), cleared on `restoreState` and `moveToKnot`.
+None. The last one, runtime-error lifetime, is decided as D7: errors in memory only,
+cleared by `restoreState` and `moveToKnot`. A story has no way to recover from a runtime
+error, so a saved error would only persist an unrecoverable state; errors are not meant as
+a diagnostics record. Both calls start from a different position, so the old error no
+longer describes the story.
+
+The DISTILL wave is skipped (D8): #25 adds no behaviour beyond S7. The existing suite
+(inklecate oracle fixtures plus the upstream conformance suite) guards S1–S6; as an extra
+check, each behaviour-preserving slice compares the failure messages of
+`INKSWIFT_CONFORMANCE_BACKLOG=1 swift test --filter UpstreamConformance` before and after,
+which must not change.
 
 ### Follow-ups — out of scope for #25
 
