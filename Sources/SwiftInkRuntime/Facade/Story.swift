@@ -57,33 +57,20 @@ public final class Story {
         return cleanOutputWhitespace(engine.currentText)
     }
 
-    /// Collapse runs of inline whitespace (spaces and tabs) to a single space.
-    /// Mirrors the `CleanOutputWhitespace` function in the inkjs reference runtime
-    /// which is applied to every `currentText` value before it is returned.
+    /// Collapse runs of inline whitespace (spaces and tabs) to a single space,
+    /// dropping any run at the start or end of a line. Mirrors
+    /// `StoryState.CleanOutputWhitespace` in the C# reference runtime (and inkjs),
+    /// which is applied to every `currentText` value before it is returned. That
+    /// character loop emits a run as one space only when it is neither at the
+    /// start of a line nor followed by a newline / the end of the text — i.e. it
+    /// trims each line and collapses inner runs, which is what this does.
     /// Newlines are preserved so multi-line output is unaffected.
     private func cleanOutputWhitespace(_ text: String) -> String {
-        var result = ""
-        result.reserveCapacity(text.count)
-        var whitespaceStart = -1
-        var lastNewlinePos = 0
-        for (i, c) in text.enumerated() {
-            let isWS = c == " " || c == "\t"
-            if isWS {
-                if whitespaceStart == -1 { whitespaceStart = i }
-            } else {
-                if whitespaceStart >= 0 {
-                    // We have a run of whitespace. Collapse to single space
-                    // unless it's at the start of a new line (whitespaceStart == lastNewlinePos).
-                    if c != "\n" && whitespaceStart != lastNewlinePos {
-                        result.append(" ")
-                    }
-                    whitespaceStart = -1
-                }
-                if c == "\n" { lastNewlinePos = i + 1 }
-                result.append(c)
+        text.split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line in
+                line.split(whereSeparator: { $0 == " " || $0 == "\t" }).joined(separator: " ")
             }
-        }
-        return result
+            .joined(separator: "\n")
     }
 
     public func chooseChoice(at index: Int) throws {
