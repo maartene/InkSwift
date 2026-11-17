@@ -190,29 +190,17 @@ public enum InkParser {
         // subject lacked a comparison operator (e.g. `not knot.label`) was misread as
         // a switch, dropping the implicit-first-arm content and its condition entirely.
         let opensWithArm = bodyLines.first.map { isArmOpener($0.text) } ?? false
-        // Whether a block that opens with arms is a switch is STRUCTURAL, as in the
-        // reference (`InkParser_Conditional.cs`, the `initialQueryExpression` loop):
-        // an arm with its own expression matches by equality with the subject,
-        // whatever the subject's type — `{ x == 1: - true: … - false: … }` compares
-        // the boolean `x == 1` to each label (issue #22). A block whose only arm is
-        // `- else:` has no labels to compare: it is binary, an empty true branch
-        // guarded by the subject plus the else. The subject's operators never
-        // decide it; doing so made `- true:` always win under a comparison subject,
-        // and made `{ flag: - else: … }` take the else even when `flag` held.
-        let isSwitch = hasSubject && opensWithArm
-            && armGuardsAtDepth0(bodyLines).contains { armMatchesByEquality($0) }
+        let isSwitch = hasSubject && opensWithArm && hasLabelledArm(bodyLines)
         // A switch compares the subject value against each arm's label; a guarded
         // block treats the subject as the first arm's guard and any content before
         // the first explicit `- guard:` arm as that arm's body.
         let subject: InkExpression = isSwitch
             ? try InkExpressionParser.parse(subjectText)
             : .boolLiteral(true)
-        var branches: [ConditionalBranch] = []
-        var pendingMatch: InkExpression? = (isSwitch || hasSubject == false)
-            ? nil
-            : try InkExpressionParser.parse(subjectText)
-        var pendingBody: [InkStatement] = []
-        var armStarted = isSwitch == false && hasSubject
+        var arms = ArmAccumulator()
+        if hasSubject && isSwitch == false {
+            arms.open(match: try InkExpressionParser.parse(subjectText))
+        }
         // `{ cond:` followed by content: the subject guards that content, and
         // only a single `- else:` may follow (see `checkArmAfterHeaderGuardedContent`).
         let subjectGuardsContent = hasSubject && opensWithArm == false
@@ -221,34 +209,78 @@ public enum InkParser {
         var lineIndex = 0
         while lineIndex < bodyLines.count {
             let line = bodyLines[lineIndex]
-            if let guardText = armGuard(of: line.text) {
-                if subjectGuardsContent {
-                    try checkArmAfterHeaderGuardedContent(
-                        guardText: guardText, priorArmCount: explicitArmCount, line: line)
-                }
-                explicitArmCount += 1
-                if armStarted {
-                    branches.append(ConditionalBranch(match: pendingMatch, body: pendingBody))
-                }
-                armStarted = true
-                pendingMatch = try armMatch(guardText)
-                pendingBody = []
-                let inline = armInlineBody(of: line.text)
-                if inline.isEmpty == false {
-                    try appendStatements(from: inline, lineNumber: line.number, into: &pendingBody)
-                }
-                lineIndex += 1
+            guard let guardText = armGuard(of: line.text) else {
+                lineIndex = try appendBodyUnit(bodyLines: bodyLines, from: lineIndex, into: &arms.pendingBody)
                 continue
             }
-            lineIndex = try appendBodyUnit(bodyLines: bodyLines, from: lineIndex, into: &pendingBody)
-        }
-        if armStarted {
-            branches.append(ConditionalBranch(match: pendingMatch, body: pendingBody))
+            if subjectGuardsContent {
+                try checkArmAfterHeaderGuardedContent(
+                    guardText: guardText, priorArmCount: explicitArmCount, line: line)
+            }
+            explicitArmCount += 1
+            try openExplicitArm(guardText: guardText, line: line, into: &arms)
+            lineIndex += 1
         }
         return InkStatement(
-            kind: .conditionalBlock(subject: subject, isSwitch: isSwitch, branches: branches),
+            kind: .conditionalBlock(subject: subject, isSwitch: isSwitch, branches: arms.finish()),
             position: position
         )
+    }
+
+    /// Whether a block that opens with arms is a switch is STRUCTURAL, as in the
+    /// reference (`InkParser_Conditional.cs`, the `initialQueryExpression` loop):
+    /// an arm with its own expression matches by equality with the subject,
+    /// whatever the subject's type — `{ x == 1: - true: … - false: … }` compares
+    /// the boolean `x == 1` to each label (issue #22). A block whose only arm is
+    /// `- else:` has no labels to compare: it is binary, an empty true branch
+    /// guarded by the subject plus the else. The subject's operators never
+    /// decide it; doing so made `- true:` always win under a comparison subject,
+    /// and made `{ flag: - else: … }` take the else even when `flag` held.
+    private static func hasLabelledArm(_ bodyLines: [(text: String, number: Int)]) -> Bool {
+        armGuardsAtDepth0(bodyLines).contains { armMatchesByEquality($0) }
+    }
+
+    /// Open the arm introduced by `- <guard>: …`, seeding its body with any
+    /// content written inline after the guard.
+    private static func openExplicitArm(
+        guardText: String,
+        line: (text: String, number: Int),
+        into arms: inout ArmAccumulator
+    ) throws {
+        arms.open(match: try armMatch(guardText))
+        let inline = armInlineBody(of: line.text)
+        if inline.isEmpty == false {
+            try appendStatements(from: inline, lineNumber: line.number, into: &arms.pendingBody)
+        }
+    }
+
+    /// Collects a block's arms while its body lines are walked: each opened arm
+    /// gathers statements until the next one opens. Content before the first
+    /// opened arm belongs to no arm and is dropped.
+    private struct ArmAccumulator {
+        private var branches: [ConditionalBranch] = []
+        private var pendingMatch: InkExpression?
+        var pendingBody: [InkStatement] = []
+        private var armStarted = false
+
+        mutating func open(match: InkExpression?) {
+            closePending()
+            armStarted = true
+            pendingMatch = match
+            pendingBody = []
+        }
+
+        mutating func finish() -> [ConditionalBranch] {
+            closePending()
+            armStarted = false
+            return branches
+        }
+
+        private mutating func closePending() {
+            if armStarted {
+                branches.append(ConditionalBranch(match: pendingMatch, body: pendingBody))
+            }
+        }
     }
 
     /// Reject an else-if chain hung off a header condition (issue #19). When the
@@ -328,16 +360,21 @@ public enum InkParser {
         var depth = 0
         var guards: [String] = []
         for line in bodyLines {
-            let trimmed = line.text
-            if trimmed.hasPrefix("{") && !trimmed.contains("}") {
-                depth += 1
-            } else if trimmed == "}" {
-                if depth > 0 { depth -= 1 }
-            } else if depth == 0, let guardText = armGuard(of: trimmed) {
+            if depth == 0, let guardText = armGuard(of: line.text) {
                 guards.append(guardText)
             }
+            depth = max(0, depth + braceDepthChange(of: line.text))
         }
         return guards
+    }
+
+    /// How a body line moves brace nesting: `+1` for a bare `{` opener (no `}`
+    /// on the same line), `-1` for a lone `}`, `0` otherwise.
+    private static func braceDepthChange(of text: String) -> Int {
+        if text.hasPrefix("{") && !text.contains("}") {
+            return 1
+        }
+        return text == "}" ? -1 : 0
     }
 
     /// Process one logical unit from `bodyLines` at `index` into `statements`
