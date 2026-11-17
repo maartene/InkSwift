@@ -227,7 +227,8 @@ struct UpstreamConformance04Tests {
         c.equal("a string", story.getVariable("x"))
         c.isNil(story.getVariable("z"))
         // Upstream also expects setting an unsupported value type to throw. InkSwift's
-        // `setVariable(_:to:)` is non-throwing, so that check has no counterpart here.
+        // `setVariable(_:to:)` is non-throwing, so that check has no counterpart here
+        // (undecided, see #27).
     }
 
     @Test
@@ -722,7 +723,7 @@ struct UpstreamConformance04Tests {
         c.equal("Hello world.\n", story.continue())
         // Upstream expects setting an undeclared variable to throw. InkSwift's
         // `setVariable(_:to:)` is non-throwing; the observable counterpart is that the
-        // variable is not created.
+        // variable is not created (undecided, see #27).
         story.setVariable("y", to: "earth")
         c.isNil(story.getVariable("y"))
     }

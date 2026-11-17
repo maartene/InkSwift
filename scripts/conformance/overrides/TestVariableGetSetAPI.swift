@@ -15,4 +15,5 @@ c.equal("a string\n", story.continueMaximally())
 c.equal("a string", story.getVariable("x"))
 c.isNil(story.getVariable("z"))
 // Upstream also expects setting an unsupported value type to throw. InkSwift's
-// `setVariable(_:to:)` is non-throwing, so that check has no counterpart here.
+// `setVariable(_:to:)` is non-throwing, so that check has no counterpart here
+// (undecided, see #27).
