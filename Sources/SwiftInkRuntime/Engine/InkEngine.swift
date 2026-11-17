@@ -84,12 +84,16 @@ final class InkEngine {
         let entryIndex = (containerStack.last?.index ?? 0) - 1
         let path = parentPath + ["\(entryIndex)"]
         containerStack.append(ContainerFrame(container: container, index: 0, pathFromRoot: path))
-        // Track visit counts for containers that have the Visits flag (#f bit 0).
         // This mirrors C# VisitContainer(container, atStart:true) for sequential entry.
-        if container.flags & Self.containerFlagCountVisits != 0 {
-            let pathKey = path.joined(separator: ".")
-            state.visitCounts[pathKey, default: 0] += 1
-        }
+        recordVisit(to: container, at: path)
+    }
+
+    /// Count a visit to `container` when it has the CountVisits flag (#f bit 0).
+    /// Called wherever execution enters a container: sequential descent, an
+    /// absolute divert, and a chosen choice's continuation.
+    private func recordVisit(to container: ContainerNode, at path: [String]) {
+        guard container.flags & Self.containerFlagCountVisits != 0 else { return }
+        state.visitCounts[path.joined(separator: "."), default: 0] += 1
     }
 
     private func popContainer() {
@@ -447,36 +451,15 @@ final class InkEngine {
         // alone is insufficient. Resolve the path NOW while the current container
         // is still on the stack, then store for auto-divert after exhaustion.
         if flags.intersection(.visibleChoiceMask).isEmpty {
-            if pendingInvisibleDefaultPath == nil {
-                pendingInvisibleDefaultPath = resolveInvisibleDefaultPath(target)
-            }
+            pendingInvisibleDefaultPath = pendingInvisibleDefaultPath ?? resolveInvisibleDefaultPath(target)
             discardPendingChoiceTextFromEvalStack()
             return
         }
 
-        // hasCondition: a preceding ev.../ev block has left a boolean on the
-        // evalStack. Pop it unconditionally to keep the stack balanced;
-        // skip this choice if the result is false.
-        if flags.contains(.hasCondition) {
-            let conditionResult = state.evalStack.popLast() ?? .bool(false)
-            guard conditionResult.asBool else {
-                // Also pop any pending choice text string to keep the stack balanced.
-                discardPendingChoiceTextFromEvalStack()
-                return
-            }
-        }
-
-        // isOnceOnly: suppress if already chosen.
-        // Use the resolved absolute path as the suppression key so that
-        // identically-named relative paths in different containers do not
-        // incorrectly collide.
-        if flags.contains(.isOnceOnly) {
-            if let absolutePath = resolveAbsoluteTargetPath(for: target),
-               state.chosenChoiceTargets.contains(absolutePath) {
-                // Pop any pending choice text string to keep the stack balanced.
-                discardPendingChoiceTextFromEvalStack()
-                return
-            }
+        guard isChoiceOffered(target: target, flags: flags) else {
+            // Pop any pending choice text string to keep the stack balanced.
+            discardPendingChoiceTextFromEvalStack()
+            return
         }
 
         let (choiceText, choiceTags) = resolveChoiceTextAndTags()
@@ -495,6 +478,25 @@ final class InkEngine {
                 tags: choiceTags
             )
         )
+    }
+
+    /// Whether a visible choice point passes its filters.
+    ///
+    /// hasCondition: a preceding ev.../ev block has left a boolean on the
+    /// evalStack. Pop it unconditionally to keep the stack balanced; the
+    /// choice is skipped if the result is false.
+    ///
+    /// isOnceOnly: suppressed if already chosen. The resolved absolute path is
+    /// the suppression key so that identically-named relative paths in
+    /// different containers do not incorrectly collide.
+    private func isChoiceOffered(target: String, flags: ChoiceFlags) -> Bool {
+        if flags.contains(.hasCondition), (state.evalStack.popLast() ?? .bool(false)).asBool == false {
+            return false
+        }
+        guard flags.contains(.isOnceOnly), let absolutePath = resolveAbsoluteTargetPath(for: target) else {
+            return true
+        }
+        return state.chosenChoiceTargets.contains(absolutePath) == false
     }
 
     /// Discard a pending choice-text string from the evalStack without consuming it.
@@ -951,21 +953,13 @@ final class InkEngine {
 
     private func applyAbsoluteDivert(_ components: [String]) {
         if components.last?.hasPrefix("$") == true {
-            // Anchor divert: jump to the position just after the named anchor marker,
-            // rebuilding the full ancestor stack so relative diverts remain resolvable.
-            let prefixComponents = Array(components.dropLast())
-            if let (parentContainer, startIndex) = resolveAnchor(inPath: components) {
-                rebuildStackForParentPath(prefixComponents, container: parentContainer, startIndex: startIndex)
-                state.pointer.containerPath = prefixComponents
-            }
+            applyAnchorDivert(components)
             return
         }
         if let container = navigateAbsolute(components) {
             containerStack = [ContainerFrame(container: container, index: 0, pathFromRoot: components)]
             state.pointer.containerPath = components
-            if container.flags & Self.containerFlagCountVisits != 0 {
-                state.visitCounts[components.joined(separator: "."), default: 0] += 1
-            }
+            recordVisit(to: container, at: components)
             return
         }
         // Path whose last component is a numeric index into the parent container
@@ -975,6 +969,15 @@ final class InkEngine {
         if let startIndex = Int(components.last ?? ""), let parentContainer = navigateAbsolute(parentPath) {
             rebuildStackForParentPath(parentPath, container: parentContainer, startIndex: startIndex)
         }
+    }
+
+    /// Anchor divert: jump to the position just after the named anchor marker,
+    /// rebuilding the full ancestor stack so relative diverts remain resolvable.
+    private func applyAnchorDivert(_ components: [String]) {
+        guard let (parentContainer, startIndex) = resolveAnchor(inPath: components) else { return }
+        let prefixComponents = Array(components.dropLast())
+        rebuildStackForParentPath(prefixComponents, container: parentContainer, startIndex: startIndex)
+        state.pointer.containerPath = prefixComponents
     }
 
     /// Rebuild the full container stack for a return to a known container, preserving
@@ -995,22 +998,15 @@ final class InkEngine {
     /// reconstructing all ancestor frames from the absolute `parentPath`.
     private func rebuildStackForParentPath(_ parentPath: [String], container: ContainerNode, startIndex: Int) {
         var frames: [ContainerFrame] = []
-        // Walk from root to parent, building frames for each ancestor container.
+        // Walk from root to parent, building frames for each ancestor container:
+        // each resumes just past the child it entered (see `descend`).
         var current = root
         var currentPath: [String] = []
         for component in parentPath {
+            guard let (child, resumeIndex) = descend(from: current, through: component) else { break }
+            frames.append(ContainerFrame(container: current, index: resumeIndex, pathFromRoot: currentPath))
             currentPath.append(component)
-            if let index = Int(component) {
-                guard index < current.children.count,
-                      case .container(let child) = current.children[index] else { break }
-                // Parent frame: index is advanced past this child (it was entered)
-                frames.append(ContainerFrame(container: current, index: index + 1, pathFromRoot: Array(currentPath.dropLast())))
-                current = child
-            } else {
-                guard let named = current.namedContent[component] else { break }
-                frames.append(ContainerFrame(container: current, index: current.children.count, pathFromRoot: Array(currentPath.dropLast())))
-                current = named
-            }
+            current = child
         }
         // Final frame: the target container at the specified startIndex
         frames.append(ContainerFrame(container: container, index: startIndex, pathFromRoot: parentPath))
@@ -1026,51 +1022,53 @@ final class InkEngine {
         }
         let choice = state.currentChoices[index]
         if choice.flags.contains(.isOnceOnly) {
-            // Record the absolute path of the chosen target so the suppression
-            // check in stepToNextLine can match it reliably across contexts. A
-            // once-only `*` choice is ALWAYS suppressed once chosen — including
-            // when its body diverts back to its own enclosing gather (the Cass /
-            // The-Intercept `(think) -> opts` pattern). Sticky `+` choices, which
-            // are meant to remain available on every visit, never carry the
-            // `.isOnceOnly` flag and so never reach this branch.
-            if let absolutePath = choice.continuationFrames.last?.pathFromRoot.joined(separator: ".") {
-                state.chosenChoiceTargets.insert(absolutePath)
-            }
+            recordChosen(choice)
         }
         state.currentChoices = []
         state.currentTags = []
         state.isEnded = false
+        installContinuation(of: choice)
+    }
 
-        // Install the continuation stack snapshot captured at choice-collection time.
-        // Falls back to absolute-path lookup of targetPath for hand-crafted/legacy JSON
-        // fixtures that may not have populated continuationFrames.
-        let frames: [ContainerStackFrame]
-        if !choice.continuationFrames.isEmpty {
-            frames = choice.continuationFrames
-        } else if navigateAbsolute(pathComponents(from: choice.targetPath)) != nil {
-            frames = [ContainerStackFrame(pathFromRoot: pathComponents(from: choice.targetPath), executionIndex: 0)]
-        } else {
-            frames = []
+    /// Record the absolute path of a chosen once-only target so the suppression
+    /// check in `isChoiceOffered` can match it reliably across contexts. A
+    /// once-only `*` choice is ALWAYS suppressed once chosen — including
+    /// when its body diverts back to its own enclosing gather (the Cass /
+    /// The-Intercept `(think) -> opts` pattern). Sticky `+` choices, which
+    /// are meant to remain available on every visit, never carry the
+    /// `.isOnceOnly` flag and so never reach this.
+    private func recordChosen(_ choice: ChoiceData) {
+        if let absolutePath = choice.continuationFrames.last?.pathFromRoot.joined(separator: ".") {
+            state.chosenChoiceTargets.insert(absolutePath)
         }
-        var rebuilt = framesFromSnapshots(frames)
-        if !rebuilt.isEmpty {
-            // Mark the top frame as the callstack root for this choice. When the
-            // continuation exhausts, the engine stops instead of popping into the
-            // parent and re-generating the outer choices.
-            rebuilt[rebuilt.count - 1].isChoiceContinuationRoot = true
-            containerStack = rebuilt
-            state.pointer.containerPath = rebuilt.last?.pathFromRoot ?? []
-            state.pointer.index = 0
-            // Track visit counts for the choice body container if it has the countVisits flag.
-            // This mirrors what applyDivert does for absolute-path targets and enterContainer
-            // does for sequentially-entered containers. Choice bodies entered via chooseChoice
-            // do not go through either path, so we track them explicitly here.
-            let topFrame = rebuilt[rebuilt.count - 1]
-            if topFrame.container.flags & Self.containerFlagCountVisits != 0 {
-                let pathKey = topFrame.pathFromRoot.joined(separator: ".")
-                state.visitCounts[pathKey, default: 0] += 1
-            }
+    }
+
+    /// Install the continuation stack snapshot captured at choice-collection time.
+    private func installContinuation(of choice: ChoiceData) {
+        var rebuilt = framesFromSnapshots(continuationSnapshot(of: choice))
+        guard let topFrame = rebuilt.last else { return }
+        // Mark the top frame as the callstack root for this choice. When the
+        // continuation exhausts, the engine stops instead of popping into the
+        // parent and re-generating the outer choices.
+        rebuilt[rebuilt.count - 1].isChoiceContinuationRoot = true
+        containerStack = rebuilt
+        state.pointer.containerPath = topFrame.pathFromRoot
+        state.pointer.index = 0
+        // Choice bodies entered via chooseChoice go through neither sequential
+        // descent nor applyDivert, so their visit is counted explicitly here.
+        recordVisit(to: topFrame.container, at: topFrame.pathFromRoot)
+    }
+
+    /// The choice's continuation frames. Falls back to absolute-path lookup of
+    /// targetPath for hand-crafted/legacy JSON fixtures that may not have
+    /// populated continuationFrames.
+    private func continuationSnapshot(of choice: ChoiceData) -> [ContainerStackFrame] {
+        if choice.continuationFrames.isEmpty == false {
+            return choice.continuationFrames
         }
+        let components = pathComponents(from: choice.targetPath)
+        guard navigateAbsolute(components) != nil else { return [] }
+        return [ContainerStackFrame(pathFromRoot: components, executionIndex: 0)]
     }
 
     // MARK: - Save / restore
