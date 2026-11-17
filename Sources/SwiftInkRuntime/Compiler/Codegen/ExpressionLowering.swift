@@ -83,7 +83,7 @@ enum ExpressionLowering {
             return lowerExpression(inlined, context: context)
         }
         if let path = context.readCountPath(for: name) {
-            return [.readCount(path.joined(separator: "."))]
+            return [.readCount(.absolute(ContainerPath(components: path.map(PathComponent.init(parsing:)))))]
         }
         return [.variableReference(name: name)]
     }

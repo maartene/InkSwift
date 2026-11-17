@@ -165,8 +165,8 @@ struct Compiler_S4_CeilingTests {
     }
 
     // 02-03 enabler B2 — RESOLUTION (knot.stitch): a dotted reference naming a
-    // compiled knot.stitch lowers to `.readCount("knot.stitch")`, never a
-    // surviving `.variableReference`.
+    // compiled knot.stitch lowers to a `.readCount` of the absolute typed path
+    // `knot.stitch`, never a surviving `.variableReference`.
     @Test func `a dotted reference to a knot stitch lowers to a read-count node`() throws {
         let source = """
         -> waiting
@@ -178,8 +178,40 @@ struct Compiler_S4_CeilingTests {
         """
         let blueprint = try InkCompiler.compile(source: source)
         #expect(containsReadCount(blueprint.root))
+        #expect(readCountKeys(in: blueprint.root)
+            == [.absolute(ContainerPath(components: [.name("waiting"), .name("guard_post")]))])
         #expect(variableReferenceNames(in: blueprint.root).filter { $0.contains(".") }.isEmpty)
     }
+
+    // typed-runtime-paths 02-03 — RECONCILIATION by path components: a dangling
+    // read-count key `knot.label` is rewritten to the unique real container in the
+    // SAME knot whose path ends with `label` (here nested under `cond0-end`). A
+    // same-named container in another knot, or the knot container itself when the
+    // label repeats the knot's name, is not a candidate.
+    @Test(arguments: [
+        ("guard", "door", ["other"]),
+        ("x", "x", []),
+    ])
+    func `a dangling read-count key reconciles to the unique same-knot container ending with its label`(
+        knot: String, label: String, otherKnots: [String]
+    ) {
+        let nested = ContainerNode(children: [], namedContent: [label: Self.emptyContainer], flags: 0, name: nil)
+        let dangling = NodeKind.readCount(.absolute(ContainerPath(components: [.name(knot), .name(label)])))
+        var knots = [knot: ContainerNode(
+            children: [dangling], namedContent: ["cond0-end": nested], flags: 0, name: nil
+        )]
+        for other in otherKnots {
+            knots[other] = ContainerNode(children: [], namedContent: [label: Self.emptyContainer], flags: 0, name: nil)
+        }
+        let root = ContainerNode(children: [], namedContent: knots, flags: 0, name: nil)
+
+        let reconciled = RuntimePathReconciler.reconcile(root)
+
+        #expect(readCountKeys(in: reconciled)
+            == [.absolute(ContainerPath(components: [.name(knot), .name("cond0-end"), .name(label)]))])
+    }
+
+    private static let emptyContainer = ContainerNode(children: [], namedContent: [:], flags: 0, name: nil)
 
     // 02-03 enabler B3 — RESOLUTION (weave label): a reference naming a weave
     // label (the `(door)` label on a root-level choice, registered by the 02-02
@@ -401,6 +433,19 @@ private func containsReadCount(_ container: ContainerNode) -> Bool {
         if case .container(let nested) = child, containsReadCount(nested) { return true }
     }
     return container.namedContent.values.contains(where: containsReadCount)
+}
+
+/// Every `.readCount` payload anywhere in the container tree.
+private func readCountKeys(in container: ContainerNode) -> [PathReference] {
+    var keys: [PathReference] = []
+    for child in container.children {
+        if case .readCount(let key) = child { keys.append(key) }
+        if case .container(let nested) = child { keys += readCountKeys(in: nested) }
+    }
+    for nested in container.namedContent.values {
+        keys += readCountKeys(in: nested)
+    }
+    return keys
 }
 
 /// Render a lowered expression's nodes into intention-revealing tokens so the

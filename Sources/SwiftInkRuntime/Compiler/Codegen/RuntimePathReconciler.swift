@@ -70,8 +70,8 @@ enum RuntimePathReconciler {
         let rewrites = reconciliations(of: referencedReadCountPaths(in: root), in: root)
         guard rewrites.isEmpty == false else { return root }
         return mappingNodes(in: root) { node in
-            guard case .readCount(let key) = node else { return node }
-            return .readCount(rewrites[key] ?? key)
+            guard case .readCount(.absolute(let key)) = node, let rewrite = rewrites[key] else { return node }
+            return .readCount(.absolute(rewrite))
         }
     }
 
@@ -92,11 +92,14 @@ enum RuntimePathReconciler {
             guard case .divert(let target, _, _) = node else { return nil }
             return target
         }
-        let rewrites = reconciliations(of: targets.filter(isReconcilableDivertTarget), in: root)
+        let candidates = Set(targets.filter(isReconcilableDivertTarget).map(absolutePath(of:)))
+        let rewrites = reconciliations(of: candidates, in: root)
         guard rewrites.isEmpty == false else { return root }
         return mappingNodes(in: root) { node in
-            guard case .divert(let target, let isConditional, let isVariable) = node else { return node }
-            return .divert(target: rewrites[target] ?? target, isConditional: isConditional, isVariable: isVariable)
+            guard case .divert(let target, let isConditional, let isVariable) = node,
+                  isReconcilableDivertTarget(target),
+                  let rewrite = rewrites[absolutePath(of: target)] else { return node }
+            return .divert(target: rewrite.description, isConditional: isConditional, isVariable: isVariable)
         }
     }
 
@@ -109,29 +112,38 @@ enum RuntimePathReconciler {
             && target.hasPrefix(ExpressionLowering.functionCallTargetPrefix) == false
     }
 
+    /// A reconcilable (absolute) divert target as a path. `.divert` payloads are
+    /// still strings until step 02-04 types them.
+    private static func absolutePath(of target: String) -> ContainerPath {
+        ContainerPath(components: target.split(separator: ".", omittingEmptySubsequences: false)
+            .map { PathComponent(parsing: String($0)) })
+    }
+
     // MARK: - Shared reconciliation
 
     /// For each referenced path that names no existing container, the unique real
     /// container it reconciles to (see `reconciledPath`). References that already
     /// resolve, or that reconcile to nothing or to several containers, are omitted.
-    private static func reconciliations(of references: Set<String>, in root: ContainerNode) -> [String: String] {
-        var containerPaths: Set<String> = []
+    private static func reconciliations(
+        of references: Set<ContainerPath>, in root: ContainerNode
+    ) -> [ContainerPath: ContainerPath] {
+        var containerPaths: Set<ContainerPath> = []
         collectContainerPaths(root, prefix: [], into: &containerPaths)
-        var rewrites: [String: String] = [:]
+        var rewrites: [ContainerPath: ContainerPath] = [:]
         for reference in references.subtracting(containerPaths) {
             rewrites[reference] = reconciledPath(for: reference, among: containerPaths)
         }
         return rewrites
     }
 
-    /// The dot-joined absolute path of every named container in the tree (the set of
-    /// real read-count-addressable targets). Numeric children are never named targets.
+    /// The absolute path of every named container in the tree (the set of real
+    /// read-count-addressable targets). Numeric children are never named targets.
     private static func collectContainerPaths(
-        _ container: ContainerNode, prefix: [String], into paths: inout Set<String>
+        _ container: ContainerNode, prefix: [PathComponent], into paths: inout Set<ContainerPath>
     ) {
         for (key, child) in container.namedContent {
-            let path = prefix + [key]
-            paths.insert(path.joined(separator: "."))
+            let path = prefix + [PathComponent(parsing: key)]
+            paths.insert(ContainerPath(components: path))
             collectContainerPaths(child, prefix: path, into: &paths)
         }
         for child in container.children {
@@ -141,16 +153,16 @@ enum RuntimePathReconciler {
         }
     }
 
-    /// The unique real container whose path ends with `key`'s final label segment and
-    /// shares `key`'s leading knot segment, else `nil` (no match or ambiguous).
-    private static func reconciledPath(for key: String, among paths: Set<String>) -> String? {
-        let segments = key.split(separator: ".").map(String.init)
-        guard let label = segments.last, let knot = segments.first else { return nil }
-        let suffix = ".\(label)"
+    /// The unique real container whose path ends with `key`'s final label component
+    /// and shares `key`'s leading knot component, else `nil` (no match or ambiguous).
+    /// A candidate needs at least two components: the knot and, below it, the label.
+    private static func reconciledPath(for key: ContainerPath, among paths: Set<ContainerPath>) -> ContainerPath? {
+        guard let label = key.components.last, let knot = key.components.first else { return nil }
         let candidates = paths.filter { candidate in
             candidate != key
-                && candidate.hasSuffix(suffix)
-                && candidate.hasPrefix("\(knot).")
+                && candidate.components.count >= 2
+                && candidate.components.last == label
+                && candidate.components.first == knot
         }
         return candidates.count == 1 ? candidates.first : nil
     }
@@ -159,11 +171,11 @@ enum RuntimePathReconciler {
 
     /// Every value `extract` yields for a node anywhere in the tree, in children
     /// and named content alike.
-    private static func collecting(
+    private static func collecting<Value: Hashable>(
         in container: ContainerNode,
-        _ extract: (NodeKind) -> String?
-    ) -> Set<String> {
-        var values: Set<String> = []
+        _ extract: (NodeKind) -> Value?
+    ) -> Set<Value> {
+        var values: Set<Value> = []
         for child in container.children {
             if let value = extract(child) { values.insert(value) }
             if case .container(let nested) = child { values.formUnion(collecting(in: nested, extract)) }
@@ -197,12 +209,13 @@ enum RuntimePathReconciler {
 
     // MARK: - CountVisits flagging
 
-    /// Collect the absolute namedContent path (dot-joined) of every `.readCount`
-    /// node anywhere in the tree — the exact set of read-count-referenced targets.
-    /// Each `.readCount` key is the resolved container path emitted at 02-03.
-    private static func referencedReadCountPaths(in container: ContainerNode) -> Set<String> {
-        collecting(in: container) { node -> String? in
-            guard case .readCount(let key) = node else { return nil }
+    /// Collect the absolute namedContent path of every `.readCount` node anywhere in
+    /// the tree — the exact set of read-count-referenced targets. The compiler emits
+    /// every key absolute (the resolved container path); a relative key could only
+    /// come from elsewhere and names no namedContent path, so it is not collected.
+    private static func referencedReadCountPaths(in container: ContainerNode) -> Set<ContainerPath> {
+        collecting(in: container) { node -> ContainerPath? in
+            guard case .readCount(.absolute(let key)) = node else { return nil }
             return key
         }
     }
@@ -213,14 +226,16 @@ enum RuntimePathReconciler {
     /// extend the path; the root carries no path of its own.
     private static func flaggingCountVisits(
         _ container: ContainerNode,
-        atPaths flaggedPaths: Set<String>,
-        prefix: [String] = []
+        atPaths flaggedPaths: Set<ContainerPath>,
+        prefix: [PathComponent] = []
     ) -> ContainerNode {
         var rebuiltNamed: [String: ContainerNode] = [:]
         for (key, child) in container.namedContent {
-            rebuiltNamed[key] = flaggingCountVisits(child, atPaths: flaggedPaths, prefix: prefix + [key])
+            rebuiltNamed[key] = flaggingCountVisits(
+                child, atPaths: flaggedPaths, prefix: prefix + [PathComponent(parsing: key)]
+            )
         }
-        let path = prefix.joined(separator: ".")
+        let path = ContainerPath(components: prefix)
         let flags = flaggedPaths.contains(path) ? container.flags | countVisitsFlag : container.flags
         return ContainerNode(
             children: container.children, namedContent: rebuiltNamed, flags: flags, name: container.name

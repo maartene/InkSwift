@@ -349,7 +349,7 @@ final class InkEngine {
         // execution index (already incremented past the ->t-> node).
         case .tunnelDivert(let target):
             state.returnStack.append(buildTunnelReturnAddress())
-            applyDivert(target: target)
+            applyDivert(to: target)
             context.noteDivert(outputEndsInNewline: state.outputStream.last == "\n")
         // ->->: tunnel return — pop return address and resume at that position.
         case .controlCommand("->->"):
@@ -436,7 +436,7 @@ final class InkEngine {
     /// Updates `state.currentChoices` if the choice passes all filters,
     /// or captures the invisible-default path for later auto-divert.
     private func collectChoicePoint(
-        target: String,
+        target: PathReference,
         flags: ChoiceFlags,
         pendingInvisibleDefaultPath: inout ContainerPath?
     ) {
@@ -473,7 +473,7 @@ final class InkEngine {
         state.currentChoices.append(
             ChoiceData(
                 text: choiceText,
-                targetPath: target,
+                targetPath: target.description,
                 continuationFrames: continuationFrames,
                 index: index,
                 flags: flags,
@@ -491,7 +491,7 @@ final class InkEngine {
     /// isOnceOnly: suppressed if already chosen. The resolved absolute path is
     /// the suppression key so that identically-named relative paths in
     /// different containers do not incorrectly collide.
-    private func isChoiceOffered(target: String, flags: ChoiceFlags) -> Bool {
+    private func isChoiceOffered(target: PathReference, flags: ChoiceFlags) -> Bool {
         if flags.contains(.hasCondition), (state.evalStack.popLast() ?? .bool(false)).asBool == false {
             return false
         }
@@ -738,22 +738,21 @@ final class InkEngine {
     /// resolved against the current containerStack. The result is also the
     /// suppression key in `state.chosenChoiceTargets`. Returns nil when the path
     /// cannot be resolved or the target does not exist.
-    private func resolveAbsoluteTargetPath(for target: String) -> ContainerPath? {
-        resolver.absolutePath(of: PathReference(parsing: target), from: currentPath)
+    private func resolveAbsoluteTargetPath(for target: PathReference) -> ContainerPath? {
+        resolver.absolutePath(of: target, from: currentPath)
     }
 
     /// Build a serialisable continuation-stack snapshot for a choice target.
     /// Captures the parent frames at choice-collection time plus a frame for the
     /// continuation container itself. The snapshot is stored inside `ChoiceData`
     /// so chooseChoice can resume even after a save/restore round-trip.
-    private func buildContinuationFrames(forTarget target: String) -> [ContainerStackFrame] {
+    private func buildContinuationFrames(forTarget target: PathReference) -> [ContainerStackFrame] {
         guard let continuationPath = resolveAbsoluteTargetPath(for: target) else { return [] }
         let continuation = ContainerStackFrame(pathFromRoot: continuationPath, executionIndex: 0)
         // Absolute path: continuation is a top-level lookup; no parent frames.
-        guard target.hasPrefix(".") else { return [continuation] }
+        guard case .relative = target else { return [continuation] }
         // Relative path: derive parent frames from the current containerStack
-        // and append the continuation. The continuation's pathFromRoot uses the
-        // ACTUAL resolved path (which may include a "0" segment for knot stitches).
+        // and append the continuation, at its resolved absolute path.
         // Parent snapshots are the current frames whose pathFromRoot is a STRICT
         // prefix of the continuation path — same rule as installDestinationFrame.
         let parentSnapshots = containerStack.compactMap { frame -> ContainerStackFrame? in
@@ -766,8 +765,8 @@ final class InkEngine {
     /// Resolve a CNT? path key to the absolute path its visit count is stored under.
     /// Nil for a relative key whose carets climb above the root: it matches no
     /// visit count.
-    private func resolveReadCountKey(_ key: String) -> ContainerPath? {
-        resolver.readCountKey(for: PathReference(parsing: key), from: currentPath)
+    private func resolveReadCountKey(_ key: PathReference) -> ContainerPath? {
+        resolver.readCountKey(for: key, from: currentPath)
     }
 
     // MARK: - Divert handling
@@ -776,7 +775,12 @@ final class InkEngine {
     /// (`{"->":"...","c":true}`) resolve exactly the same way once their condition
     /// holds.
     private func applyDivert(target: String) {
-        switch PathReference(parsing: target) {
+        applyDivert(to: PathReference(parsing: target))
+    }
+
+    /// Divert to an already-parsed path reference (a tunnel target from the tree).
+    private func applyDivert(to reference: PathReference) {
+        switch reference {
         case .relative(let parentSteps, let tail):
             applyRelativeDivert(parentSteps: parentSteps, tail: tail)
         case .absolute(let path):

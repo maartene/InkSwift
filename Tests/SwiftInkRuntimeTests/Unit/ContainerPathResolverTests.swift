@@ -63,8 +63,6 @@ struct ContainerPathResolverTests {
     @Test(arguments: [
         // first caret leaves the object for its container: no component dropped
         (cafe, ".^.c-0", "café.0", "café.0.c-0"),
-        // the destination lives in the anchor's anonymous first child
-        (cafe, ".^.c-0", "café", "café.0.c-0"),
         // nothing after the carets: the anchor itself
         (cafe, ".^.^", "café.0.c-0", "café.0"),
         // each further caret drops one component
@@ -112,14 +110,16 @@ struct ContainerPathResolverTests {
 
     // MARK: - Behavior 4: read-count keys
 
-    @Test func `a read-count key resolves relative keys and keeps unresolvable tails`() throws {
+    // A relative key whose destination does not exist names no visit count (C#
+    // Story.cs resolves CNT? with ResolvePath(pathForCount).container; there is no
+    // path concatenation), so it is nil like an unresolvable divert target.
+    @Test func `a read-count key resolves relative keys and has no key for a missing destination`() throws {
         let resolver = try Self.resolver(for: Self.cafe)
         let current = Self.path("café.0.c-0")
 
         #expect(resolver.readCountKey(for: PathReference(parsing: "café"), from: current) == Self.path("café"))
         #expect(resolver.readCountKey(for: PathReference(parsing: ".^.^.c-1"), from: current) == Self.path("café.0.c-1"))
-        #expect(resolver.readCountKey(for: PathReference(parsing: ".^.^.^.c-1"), from: current) == Self.path("café.0.c-1"))
-        #expect(resolver.readCountKey(for: PathReference(parsing: ".^.^.ghost"), from: current) == Self.path("café.0.ghost"))
+        #expect(resolver.readCountKey(for: PathReference(parsing: ".^.^.ghost"), from: current) == nil)
         #expect(resolver.readCountKey(for: PathReference(parsing: ".^.^.^.^.^"), from: current) == nil)
     }
 

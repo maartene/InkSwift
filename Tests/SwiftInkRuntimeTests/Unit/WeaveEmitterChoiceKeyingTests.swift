@@ -33,7 +33,7 @@ struct WeaveEmitterChoiceKeyingTests {
     /// The target of the first choicePoint emitted into `children`.
     private func firstChoicePointTarget(_ children: [NodeKind]) -> String? {
         for node in children {
-            if case .choicePoint(let target, _) = node { return target }
+            if case .choicePoint(let target, _) = node { return target.description }
         }
         return nil
     }

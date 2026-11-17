@@ -14,7 +14,9 @@ struct InkDecoderTests {
     // Behavior 2: f() dict node is classified as .divert, not .controlCommand
     // Behavior 3: ->t-> dict node is classified as .tunnelDivert(target:)
     // Behavior 4: {"^var":"name","ci":-1} dict is classified as .variablePointer(name:contextIndex:)
-    // Budget = 4 behaviors × 2 = 8 unit tests max
+    // Behavior 5: every path-bearing payload (CNT?, *, ->t->, ^->) decodes to a typed
+    //             PathReference, relative or absolute (typed-runtime-paths 02-03)
+    // Budget = 5 behaviors × 2 = 10 unit tests max
 
     // MARK: - Behavior 1: CNT? dict classified as readCount
 
@@ -32,7 +34,7 @@ struct InkDecoderTests {
         // The first child of the root container must be .readCount("café")
         let firstChild = try #require(root.children.first)
         if case .readCount(let key) = firstChild {
-            #expect(key == "café")
+            #expect(key == .absolute(ContainerPath(components: [.name("café")])))
         } else {
             Issue.record("Expected .readCount(\"café\") but got \(firstChild)")
         }
@@ -51,9 +53,44 @@ struct InkDecoderTests {
             Issue.record("CNT? must not be classified as .controlCommand — got \(firstChild)")
         }
         if case .readCount(let key) = firstChild {
-            #expect(key == "knot")
+            #expect(key == .absolute(ContainerPath(components: [.name("knot")])))
         } else {
             Issue.record("Expected .readCount(\"knot\") but got \(firstChild)")
+        }
+    }
+
+    // MARK: - Behavior 5: path payloads decode to typed path references
+
+    /// Node shapes as inklecate writes them (compare `rc-choicelabel-guard.ink.json`,
+    /// `compile-weave-nested.ink.json`, `compile-ceiling.ink.json`).
+    @Test(arguments: [
+        (#"{"CNT?":".^"}"#, "readCount", PathReference.relative(parentSteps: 1, tail: [])),
+        (#"{"CNT?":".^.^.g-0"}"#, "readCount", .relative(parentSteps: 2, tail: [.name("g-0")])),
+        (#"{"CNT?":"knot.stitch"}"#, "readCount", .absolute(ContainerPath(components: [.name("knot"), .name("stitch")]))),
+        (#"{"*":".^.^.c-0","flg":20}"#, "choicePoint", .relative(parentSteps: 2, tail: [.name("c-0")])),
+        (#"{"*":"0.c-1","flg":20}"#, "choicePoint", .absolute(ContainerPath(components: [.index(0), .name("c-1")]))),
+        (#"{"->t->":"detour"}"#, "tunnelDivert", .absolute(ContainerPath(components: [.name("detour")]))),
+        (#"{"^->":"0.c-0.$r2"}"#, "pushDivertTarget",
+         .absolute(ContainerPath(components: [.index(0), .name("c-0"), .name("$r2")]))),
+    ])
+    func `a path-bearing node decodes to its typed path reference`(
+        node: String, kind: String, expected: PathReference
+    ) throws {
+        let json = #"{"inkVersion":21,"root":["# + node + #",null]}"#
+        let root = try InkDecoder().decode(try #require(json.data(using: .utf8)))
+
+        let decoded = try #require(root.children.first)
+        #expect(Self.pathPayload(of: decoded)?.kind == kind)
+        #expect(Self.pathPayload(of: decoded)?.reference == expected)
+    }
+
+    private static func pathPayload(of node: NodeKind) -> (kind: String, reference: PathReference)? {
+        switch node {
+        case .readCount(let reference): return ("readCount", reference)
+        case .choicePoint(let reference, _): return ("choicePoint", reference)
+        case .tunnelDivert(let reference): return ("tunnelDivert", reference)
+        case .pushDivertTarget(let reference): return ("pushDivertTarget", reference)
+        default: return nil
         }
     }
 
@@ -103,7 +140,7 @@ struct InkDecoderTests {
 
         let firstChild = try #require(root.children.first)
         if case .tunnelDivert(let target) = firstChild {
-            #expect(target == "sub_room")
+            #expect(target == .absolute(ContainerPath(components: [.name("sub_room")])))
         } else {
             Issue.record("Expected .tunnelDivert(target: \"sub_room\") but got \(firstChild)")
         }

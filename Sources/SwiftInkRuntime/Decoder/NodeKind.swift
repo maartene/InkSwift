@@ -4,9 +4,9 @@ internal enum NodeKind {
     case text(String)
     case newline
     case divert(target: String, isConditional: Bool, isVariable: Bool)
-    case pushDivertTarget(String)
-    case tunnelDivert(target: String)
-    case choicePoint(target: String, flags: ChoiceFlags)
+    case pushDivertTarget(PathReference)
+    case tunnelDivert(target: PathReference)
+    case choicePoint(target: PathReference, flags: ChoiceFlags)
     case controlCommand(String)
     case nativeFunction(String)
     case intValue(Int)
@@ -17,6 +17,6 @@ internal enum NodeKind {
     case tagOpen
     case tagClose
     case voidValue
-    case readCount(String)
+    case readCount(PathReference)
     case variablePointer(name: String, contextIndex: Int)
 }

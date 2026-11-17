@@ -930,7 +930,8 @@ private final class WeaveResolver {
             nodes.append(contentsOf: lowerCondition(condition))
             nodes.append(.controlCommand("/ev"))
         }
-        nodes.append(.choicePoint(target: target.joined(separator: "."), flags: flags(for: choice)))
+        let targetPath = ContainerPath(components: target.map(PathComponent.init(parsing:)))
+        nodes.append(.choicePoint(target: .absolute(targetPath), flags: flags(for: choice)))
         return nodes
     }
 

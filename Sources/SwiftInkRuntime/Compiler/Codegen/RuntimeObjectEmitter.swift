@@ -599,7 +599,7 @@ enum RuntimeObjectEmitter {
                 isConditional: false, isVariable: false
             )]
         case .tunnelDivert(let target):
-            return [.tunnelDivert(target: target)]
+            return [.tunnelDivert(target: PathReference(parsing: target))]
         case .tunnelReturn:
             // The runtime pops the tunnel return address on `->->`; the leading
             // `ev void /ev` matches the oracle (a void result for the call site).

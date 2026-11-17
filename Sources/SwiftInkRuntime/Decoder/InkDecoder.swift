@@ -69,6 +69,24 @@ struct InkDecoder {
               case .intValue = scalarRoot.children[2] else {
             throw InkDecodeError.probeClassificationDrift
         }
+        try probePathPayloads()
+    }
+
+    /// Earned Trust (typed-runtime-paths): path payloads are parsed once, here, so a
+    /// relative `.^` read count and a `->t->` tunnel target must reach the engine as
+    /// the typed references it resolves — never re-parsed later.
+    private func probePathPayloads() throws {
+        let pathProbe = #"{"inkVersion":21,"root":[{"CNT?":".^"},{"->t->":"t"},null],"listDefs":{}}"#
+        guard let pathData = pathProbe.data(using: .utf8) else {
+            throw InkDecodeError.malformedJSON
+        }
+        let pathRoot = try decode(pathData)
+        guard pathRoot.children.count == 2,
+              case .readCount(.relative(parentSteps: 1, tail: [])) = pathRoot.children[0],
+              case .tunnelDivert(.absolute(let tunnelTarget)) = pathRoot.children[1],
+              tunnelTarget.components == [.name("t")] else {
+            throw InkDecodeError.probeClassificationDrift
+        }
     }
 
     // MARK: - Container parsing
@@ -154,10 +172,10 @@ struct InkDecoder {
 
     private func classifyDict(_ dict: [String: InkJSONValue]) -> NodeKind {
         if let path = dict["^->"]?.stringValue {
-            return .pushDivertTarget(path)
+            return .pushDivertTarget(PathReference(parsing: path))
         }
         if let target = dict["->t->"]?.stringValue {
-            return .tunnelDivert(target: target)
+            return .tunnelDivert(target: PathReference(parsing: target))
         }
         if let target = dict["->"]?.stringValue {
             let isConditional = dict["c"]?.boolValue ?? false
@@ -171,7 +189,7 @@ struct InkDecoder {
         }
         if let target = dict["*"]?.stringValue {
             let rawFlags = dict["flg"]?.intValue ?? 0
-            return .choicePoint(target: target, flags: ChoiceFlags(rawValue: rawFlags))
+            return .choicePoint(target: PathReference(parsing: target), flags: ChoiceFlags(rawValue: rawFlags))
         }
         if let name = dict["VAR="]?.stringValue {
             return .variableAssignment(name: name, isGlobal: dict["re"] != nil)
@@ -187,7 +205,7 @@ struct InkDecoder {
             return .controlCommand("#n")
         }
         if let key = dict["CNT?"]?.stringValue {
-            return .readCount(key)
+            return .readCount(PathReference(parsing: key))
         }
         if let name = dict["^var"]?.stringValue, let contextIndex = dict["ci"]?.intValue {
             return .variablePointer(name: name, contextIndex: contextIndex)

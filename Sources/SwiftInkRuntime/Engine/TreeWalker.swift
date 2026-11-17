@@ -42,7 +42,9 @@ struct TreeWalker {
             // Push a divert-target value onto the evaluation stack (not the return stack).
             // The caller (ev…/ev block) stores it in a temp variable via {temp=: "$r"};
             // later, a variable divert {->: "$r", var: true} looks it up and jumps there.
-            state.evalStack.append(.string(path))
+            // The value stays a string (the variablesState wire format); the variable
+            // divert parses it back — the one runtime parse of a path string.
+            state.evalStack.append(.string(path.description))
 
         case .choicePoint:
             break  // handled by InkEngine before dispatchNode is reached
