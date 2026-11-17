@@ -24,6 +24,11 @@ final class InkEngine {
     /// `ev`/`/ev` block whose flush is deferred, so no save can land mid-call.
     private var functionRootDepths: [Int] = []
 
+    /// Runtime errors of the current flow (ADR-017). In memory only, never part
+    /// of `StoryState`, so never saved: a story cannot recover from one, and
+    /// `restoreState` / `moveToKnot` clear them (they start somewhere else).
+    private var errors: [String] = []
+
     init(root: ContainerNode) {
         self.root = root
         self.resolver = ContainerPathResolver(root: root)
@@ -137,7 +142,7 @@ final class InkEngine {
     }
 
     var currentErrors: [String] {
-        return []
+        return errors
     }
 
     // MARK: - Step loop
@@ -343,11 +348,13 @@ final class InkEngine {
         case .choicePoint(let target, let flags):
             collectChoicePoint(
                 target: target, flags: flags, pendingInvisibleDefaultPath: &context.pendingInvisibleDefaultPath)
-        // ~ret: pop the function element and jump back to the caller. With no
-        // function element on top nothing happens (step 03-01 makes it an error).
+        // ~ret: pop the function element and jump back to the caller. Any other
+        // element on top, or none, refuses the pop and ends the flow.
         case .controlCommand("~ret"):
             if let element = state.returnStack.pop(.function) {
                 applyFunctionReturn(to: element)
+            } else {
+                refusePop(.function)
             }
         // ->t->: tunnel entry — push a tunnel element for the current position
         // (index already incremented past the ->t-> node) and jump to the target.
@@ -355,18 +362,29 @@ final class InkEngine {
             state.returnStack.append(returnElement(.tunnel))
             applyDivert(to: target)
             context.noteDivert(outputEndsInNewline: state.outputStream.last == "\n")
-        // ->->: tunnel return — pop the top element and resume at its position.
-        // A function element on top is dropped without resuming, as its legacy
-        // string never resolved as a divert (step 03-01 makes it an error).
+        // ->->: tunnel return — pop the tunnel element and resume at its position.
+        // Any other element on top, or none, refuses the pop and ends the flow.
         case .controlCommand("->->"):
-            if let element = state.returnStack.popLast(), element.kind == .tunnel {
+            if let element = state.returnStack.pop(.tunnel) {
                 applyAbsoluteDivert(element.returnPath.appending(.index(element.returnIndex)))
+            } else {
+                refusePop(.tunnel)
             }
             context.noteDivert(outputEndsInNewline: state.outputStream.last == "\n")
         default:
             return false
         }
         return true
+    }
+
+    /// A `->->` or `~ret` whose element is missing or of the other kind: report
+    /// the reference's error and end the flow, as C# `AddError` → `ForceEnd`
+    /// (Story.cs ~2838-2857) resets the call stack and drops the choices.
+    private func refusePop(_ kind: CallKind) {
+        errors.append(state.returnStack.popRefusal(kind))
+        state.returnStack = []
+        state.currentChoices = []
+        state.isEnded = true
     }
 
     /// Whether a completed line may be returned after `node`.
@@ -921,6 +939,7 @@ final class InkEngine {
             throw StoryError.invalidStateData
         }
         lastCompletedLine = state.lastCompletedLine
+        errors = []
         rebuildContainerStack()
     }
 
@@ -1039,6 +1058,7 @@ final class InkEngine {
         state.inStringMode = false
         state.stringAccumulator = ""
         state.stringModeTags = []
+        errors = []
         // D4: delegate stack installation to applyDivert
         applyDivert(target: targetPath)
     }

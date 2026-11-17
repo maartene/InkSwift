@@ -1,0 +1,1 @@
+{"inkVersion":21,"root":[["^Before the divert.","\n",{"->":"target","var":true},["done",{"#n":"g-0"}],null],"done",{"f":["^Inside f.","\n","ev","void","/ev","~ret","^After the return.","\n",{"#f":3}],"global decl":["ev",{"^->":"f"},{"VAR=":"target"},"/ev","end",null]}],"listDefs":{}}

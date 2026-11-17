@@ -7,6 +7,14 @@
 enum CallKind: Hashable {
     case tunnel
     case function
+
+    /// The statement that pops this kind, as C# Story.cs names it in a refusal.
+    fileprivate var popStatement: String {
+        switch self {
+        case .tunnel: "tunnel onwards statement (->->)"
+        case .function: "function return statement (~ return)"
+        }
+    }
 }
 
 /// A pending return: where execution resumes once the tunnel or function that
@@ -27,6 +35,13 @@ extension Array where Element == CallStackElement {
     /// the stack unchanged and returns nil. C# `CallStack.Pop(type)`.
     mutating func pop(_ kind: CallKind) -> CallStackElement? {
         canPop(kind) ? removeLast() : nil
+    }
+
+    /// The error for a refused `pop(kind)`: C# Story.cs ~1275-1288, where the
+    /// expected statement is the top element's, or the end of flow when empty.
+    func popRefusal(_ kind: CallKind) -> String {
+        let expected = last?.kind.popStatement ?? "end of flow (-> END or choice)"
+        return "Found \(kind.popStatement), when expected \(expected)"
     }
 }
 
