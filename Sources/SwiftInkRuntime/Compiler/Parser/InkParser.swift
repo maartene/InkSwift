@@ -169,14 +169,11 @@ public enum InkParser {
         return try plainGuardedBlock(subjectText: subjectText, bodyLines: bodyLines, position: position)
     }
 
-    /// A block whose body has explicit `- guard:` arms. The subject is a switch
-    /// value when any arm's guard is a bare value compared with `==`; a `- else:`
-    /// arm (or an arm with empty guard) is the default. Whether the block is a
-    /// switch (subject compared to each label) or a guarded block (each arm's
-    /// guard is its own condition) is decided by whether the subject is itself a
-    /// boolean expression — here we treat a subject that is a lone identifier or
-    /// value as a switch, and a subject containing a comparison operator as a
-    /// guarded block whose first arm reuses the subject.
+    /// A block whose body has explicit `- guard:` arms. It is a switch (the
+    /// subject compared `==` to each arm's label, `- else:` the default) when it
+    /// has a subject, opens directly with an arm, and some arm carries its own
+    /// expression. Otherwise it is a guarded block: each arm's guard is its own
+    /// condition, and a subject guards the first (implicit) arm.
     private static func switchOrGuardedBlock(
         subjectText: String,
         bodyLines: [(text: String, number: Int)],
@@ -193,7 +190,17 @@ public enum InkParser {
         // subject lacked a comparison operator (e.g. `not knot.label`) was misread as
         // a switch, dropping the implicit-first-arm content and its condition entirely.
         let opensWithArm = bodyLines.first.map { isArmOpener($0.text) } ?? false
-        let isSwitch = hasSubject && opensWithArm && subjectIsSwitchValue(subjectText)
+        // Whether a block that opens with arms is a switch is STRUCTURAL, as in the
+        // reference (`InkParser_Conditional.cs`, the `initialQueryExpression` loop):
+        // an arm with its own expression matches by equality with the subject,
+        // whatever the subject's type — `{ x == 1: - true: … - false: … }` compares
+        // the boolean `x == 1` to each label (issue #22). A block whose only arm is
+        // `- else:` has no labels to compare: it is binary, an empty true branch
+        // guarded by the subject plus the else. The subject's operators never
+        // decide it; doing so made `- true:` always win under a comparison subject,
+        // and made `{ flag: - else: … }` take the else even when `flag` held.
+        let isSwitch = hasSubject && opensWithArm
+            && armGuardsAtDepth0(bodyLines).contains { armMatchesByEquality($0) }
         // A switch compares the subject value against each arm's label; a guarded
         // block treats the subject as the first arm's guard and any content before
         // the first explicit `- guard:` arm as that arm's body.
@@ -298,11 +305,10 @@ public enum InkParser {
         )
     }
 
-    /// True when the subject reads as a switch value (a bare identifier/number)
-    /// rather than a boolean guard (containing a comparison operator).
-    private static func subjectIsSwitchValue(_ subjectText: String) -> Bool {
-        let comparisonOperators = [">", "<", "==", "!=", ">=", "<="]
-        return comparisonOperators.contains { subjectText.contains($0) } == false
+    /// True when an arm guard is its own expression (a switch label), not the
+    /// `else` / empty default.
+    private static func armMatchesByEquality(_ guardText: String) -> Bool {
+        guardText != "else" && guardText.isEmpty == false
     }
 
     /// True when a body line opens an arm: `- <guard>:`.
@@ -311,21 +317,27 @@ public enum InkParser {
     }
 
     /// True when any body line at brace-nesting depth 0 is an arm opener.
-    /// Lines inside nested `{…}` blocks are at depth > 0 and are excluded so
-    /// inner block arms are not mistaken for arms of the enclosing block.
     private static func hasArmOpenerAtDepth0(_ bodyLines: [(text: String, number: Int)]) -> Bool {
+        armGuardsAtDepth0(bodyLines).isEmpty == false
+    }
+
+    /// The guards of the arm openers at brace-nesting depth 0. Lines inside
+    /// nested `{…}` blocks are at depth > 0 and are excluded so inner block arms
+    /// are not mistaken for arms of the enclosing block.
+    private static func armGuardsAtDepth0(_ bodyLines: [(text: String, number: Int)]) -> [String] {
         var depth = 0
+        var guards: [String] = []
         for line in bodyLines {
             let trimmed = line.text
             if trimmed.hasPrefix("{") && !trimmed.contains("}") {
                 depth += 1
             } else if trimmed == "}" {
                 if depth > 0 { depth -= 1 }
-            } else if depth == 0 && isArmOpener(trimmed) {
-                return true
+            } else if depth == 0, let guardText = armGuard(of: trimmed) {
+                guards.append(guardText)
             }
         }
-        return false
+        return guards
     }
 
     /// Process one logical unit from `bodyLines` at `index` into `statements`
