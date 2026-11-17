@@ -418,28 +418,9 @@ enum RuntimeObjectEmitter {
             // through to the enclosing gather. Routing such a body through the
             // resolver would split the second segment's lead from the choice items,
             // dead-ending the dispatch before the choices are reached (#3b layer 1+2).
-            guard leadsWithWeave(body),
-                  let weave = try? WeaveEmitter.lower(
-                      body, keyPrefix: enclosingKeyPrefix, fallThrough: fallThrough,
-                      lowerStatement: { statements, bodyKeyPrefix in
-                          // Lowered under the body's OWN per-container prefix, so its
-                          // inline-conditional/variable-text sub-containers nest in the
-                          // container being built — return them via BodyLowering.named
-                          // so the resolver attaches them there (step 01-13).
-                          var weaveNamed: [String: ContainerNode] = [:]
-                          let children = lowerBody(statements, context: context, keyPrefix: bodyKeyPrefix, named: &weaveNamed)
-                          return WeaveEmitter.BodyLowering(children: children, named: weaveNamed)
-                      },
-                      lowerStatementWithFallThrough: { statements, looseEnd, bodyKeyPrefix in
-                          var weaveNamed: [String: ContainerNode] = [:]
-                          let children = lowerBody(
-                              statements, context: context, keyPrefix: bodyKeyPrefix,
-                              fallThrough: looseEnd, named: &weaveNamed
-                          )
-                          return WeaveEmitter.BodyLowering(children: children, named: weaveNamed)
-                      },
-                      lowerCondition: { expression in ExpressionLowering.lowerExpression(expression, context: context) }
-                  ) else {
+            guard let weave = lowerLeadingWeave(
+                body, keyPrefix: enclosingKeyPrefix, fallThrough: fallThrough, context: context
+            ) else {
                 // Address the chained segment's containers under `enclosingKeyPrefix`
                 // (not the continuation's own `prefix`): like the weave branch above,
                 // its dispatch/stage/choice containers promote up into the enclosing
@@ -516,35 +497,9 @@ enum RuntimeObjectEmitter {
             // c-N/g-N containers and any nested inline conditional nest under, so
             // choicePoint targets and rejoin diverts resolve self-consistently and
             // never collide with sibling conditionals in the enclosing scope.
-            guard leadsWithWeave(body),
-                  let weave = try? WeaveEmitter.lower(
-                      body, keyPrefix: prefix, fallThrough: fallThrough,
-                      lowerStatement: { statements, bodyKeyPrefix in
-                          // Each rejoin-weave body lowers under its OWN per-container
-                          // prefix; its inline-conditional `cond{N}-b*`/`-end` arms must
-                          // nest inside that container — return them via BodyLowering so
-                          // the resolver attaches them (step 01-13: the `[Yes]` body's
-                          // `{forceful>2:…|…}` branches were dropped here, leaving the
-                          // dispatch's branch diverts pointing at nothing).
-                          var weaveNamed: [String: ContainerNode] = [:]
-                          let children = lowerBody(statements, context: context, keyPrefix: bodyKeyPrefix, named: &weaveNamed)
-                          return WeaveEmitter.BodyLowering(children: children, named: weaveNamed)
-                      },
-                      lowerStatementWithFallThrough: { statements, looseEnd, bodyKeyPrefix in
-                          var weaveNamed: [String: ContainerNode] = [:]
-                          let children = lowerBody(
-                              statements, context: context, keyPrefix: bodyKeyPrefix,
-                              fallThrough: looseEnd, named: &weaveNamed
-                          )
-                          return WeaveEmitter.BodyLowering(children: children, named: weaveNamed)
-                      },
-                      // Thread the choice-guard lowerer so the rejoin weave's `{cond}`
-                      // guards emit their eval-stack nodes — a knot/gather-opening block
-                      // conditional whose rejoin is a guarded choice menu (e.g.
-                      // `admitted_to_something`'s `{not drugged}[…]` / `{drugged}[…]`
-                      // choices) otherwise lowered every choice unguarded (all shown).
-                      lowerCondition: { expression in ExpressionLowering.lowerExpression(expression, context: context) }
-                  ) else {
+            guard let weave = lowerLeadingWeave(
+                body, keyPrefix: prefix, fallThrough: fallThrough, context: context
+            ) else {
                 return lowerBody(
                     body, context: context, keyPrefix: prefix,
                     fallThrough: fallThrough, named: &collected
@@ -555,6 +510,52 @@ enum RuntimeObjectEmitter {
             }
             return weave.children
         }
+    }
+
+    /// Lower a continuation body that LEADS with a weave item through the
+    /// WeaveEmitter, so its choices become real choicePoints whose loose ends
+    /// thread `fallThrough`, with the `c-N`/`g-N` containers addressed under
+    /// `keyPrefix`. Returns `nil` when the body does not lead with a weave (or the
+    /// resolver fails) — the caller then lowers it flatly.
+    ///
+    /// Each weave body lowers under its OWN per-container prefix; its
+    /// inline-conditional `cond{N}-b*`/`-end` arms and variable-text
+    /// sub-containers must nest inside that container — return them via
+    /// BodyLowering so the resolver attaches them (step 01-13: the `[Yes]` body's
+    /// `{forceful>2:…|…}` branches were dropped here, leaving the dispatch's
+    /// branch diverts pointing at nothing).
+    ///
+    /// The choice-guard lowerer is threaded so the weave's `{cond}` guards emit
+    /// their eval-stack nodes — a knot/gather-opening block conditional whose
+    /// rejoin is a guarded choice menu (e.g. `admitted_to_something`'s
+    /// `{not drugged}[…]` / `{drugged}[…]` choices) otherwise lowered every choice
+    /// unguarded (all shown).
+    private static func lowerLeadingWeave(
+        _ body: [InkStatement],
+        keyPrefix: [String],
+        fallThrough: WeaveEmitter.FallThrough,
+        context: LoweringContext
+    ) -> (children: [NodeKind], named: [String: ContainerNode])? {
+        guard leadsWithWeave(body) else {
+            return nil
+        }
+        return try? WeaveEmitter.lower(
+            body, keyPrefix: keyPrefix, fallThrough: fallThrough,
+            lowerStatement: { statements, bodyKeyPrefix in
+                var weaveNamed: [String: ContainerNode] = [:]
+                let children = lowerBody(statements, context: context, keyPrefix: bodyKeyPrefix, named: &weaveNamed)
+                return WeaveEmitter.BodyLowering(children: children, named: weaveNamed)
+            },
+            lowerStatementWithFallThrough: { statements, looseEnd, bodyKeyPrefix in
+                var weaveNamed: [String: ContainerNode] = [:]
+                let children = lowerBody(
+                    statements, context: context, keyPrefix: bodyKeyPrefix,
+                    fallThrough: looseEnd, named: &weaveNamed
+                )
+                return WeaveEmitter.BodyLowering(children: children, named: weaveNamed)
+            },
+            lowerCondition: { expression in ExpressionLowering.lowerExpression(expression, context: context) }
+        )
     }
 
     /// Build the continuation statements for an inline conditional: the line's
@@ -602,7 +603,7 @@ enum RuntimeObjectEmitter {
         case .tunnelReturn:
             // The runtime pops the tunnel return address on `->->`; the leading
             // `ev void /ev` matches the oracle (a void result for the call site).
-            return [.controlCommand("ev"), .voidValue, .controlCommand("/ev"), .controlCommand("->->")]
+            return ExpressionLowering.evalGroup([.voidValue]) + [.controlCommand("->->")]
         case .functionCallStatement(let call):
             return lowerFunctionCallStatement(call, context: context)
         case .returnStatement(let value):
@@ -611,21 +612,16 @@ enum RuntimeObjectEmitter {
             return [.controlCommand("end")]
         case .glue:
             return [.controlCommand("<>")]
-        case .globalVariable, .constant:
-            // Declarations are hoisted into the `global decl` container (VAR) or
-            // inlined at codegen (CONST); they emit nothing in the body stream.
-            return []
-        case .knot, .stitch, .functionDefinition:
-            // Headers/definitions are consumed during grouping and never reach
-            // the per-statement lowerer.
-            return []
-        case .choice, .gather:
-            // Weave lines are resolved by the WeaveEmitter before reaching the
-            // flat statement lowerer; they never lower individually here.
-            return []
-        case .conditionalBlock:
-            // Block/switch conditionals are resolved by lowerBody (which threads
-            // the named-content collector + key-prefix); they never lower here.
+        // These emit nothing in the body stream:
+        // - Declarations are hoisted into the `global decl` container (VAR) or
+        //   inlined at codegen (CONST).
+        // - Headers/definitions are consumed during grouping (`StoryOutline`).
+        // - Weave lines are resolved by the WeaveEmitter before reaching the flat
+        //   statement lowerer.
+        // - Block/switch conditionals are resolved by lowerBody (which threads the
+        //   named-content collector + key-prefix).
+        case .globalVariable, .constant, .knot, .stitch, .functionDefinition,
+             .choice, .gather, .conditionalBlock:
             return []
         }
     }

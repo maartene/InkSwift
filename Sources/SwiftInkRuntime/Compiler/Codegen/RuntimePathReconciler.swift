@@ -67,16 +67,61 @@ enum RuntimePathReconciler {
     /// uniqueness within that knot prevents cross-scope mis-resolution. A key that
     /// already resolves (or whose label is ambiguous) is left untouched.
     private static func reconcilingReadCountPaths(_ root: ContainerNode) -> ContainerNode {
+        let rewrites = reconciliations(of: referencedReadCountPaths(in: root), in: root)
+        guard rewrites.isEmpty == false else { return root }
+        return mappingNodes(in: root) { node in
+            guard case .readCount(let key) = node else { return node }
+            return .readCount(rewrites[key] ?? key)
+        }
+    }
+
+    // MARK: - Divert-target path reconciliation
+
+    /// Rewrite every `.divert` whose ABSOLUTE target names no existing container
+    /// to the actually-emitted container path, when a unique reconciling target
+    /// exists. Mirrors `reconcilingReadCountPaths`: the reconciliation target is a
+    /// container whose absolute path ENDS with the dangling target's final label
+    /// segment AND shares its leading knot segment; uniqueness within that knot
+    /// prevents cross-scope mis-resolution. Only absolute, non-END,
+    /// non-function-call, currently-dangling targets are considered — a relative
+    /// (`.^.`), END, function (`f():`), or already-resolving target is untouched.
+    /// `.choicePoint` targets are deliberately excluded — they are already emitted
+    /// correctly — and preserved verbatim.
+    private static func reconcilingDivertPaths(_ root: ContainerNode) -> ContainerNode {
+        let targets = collecting(in: root) { node -> String? in
+            guard case .divert(let target, _, _) = node else { return nil }
+            return target
+        }
+        let rewrites = reconciliations(of: targets.filter(isReconcilableDivertTarget), in: root)
+        guard rewrites.isEmpty == false else { return root }
+        return mappingNodes(in: root) { node in
+            guard case .divert(let target, let isConditional, let isVariable) = node else { return node }
+            return .divert(target: rewrites[target] ?? target, isConditional: isConditional, isVariable: isVariable)
+        }
+    }
+
+    /// True when a divert target is a candidate for path reconciliation: it must
+    /// be absolute (no leading `.` relative form), not the `END` sentinel, and not
+    /// a function-call target (which the runtime intercepts by its `f():` prefix).
+    private static func isReconcilableDivertTarget(_ target: String) -> Bool {
+        target.hasPrefix(".") == false
+            && target != "END"
+            && target.hasPrefix(ExpressionLowering.functionCallTargetPrefix) == false
+    }
+
+    // MARK: - Shared reconciliation
+
+    /// For each referenced path that names no existing container, the unique real
+    /// container it reconciles to (see `reconciledPath`). References that already
+    /// resolve, or that reconcile to nothing or to several containers, are omitted.
+    private static func reconciliations(of references: Set<String>, in root: ContainerNode) -> [String: String] {
         var containerPaths: Set<String> = []
         collectContainerPaths(root, prefix: [], into: &containerPaths)
         var rewrites: [String: String] = [:]
-        for key in danglingReadCountKeys(in: root, existing: containerPaths) {
-            if let resolved = reconciledPath(for: key, among: containerPaths) {
-                rewrites[key] = resolved
-            }
+        for reference in references.subtracting(containerPaths) {
+            rewrites[reference] = reconciledPath(for: reference, among: containerPaths)
         }
-        guard rewrites.isEmpty == false else { return root }
-        return rewritingReadCounts(root, rewrites: rewrites)
+        return rewrites
     }
 
     /// The dot-joined absolute path of every named container in the tree (the set of
@@ -96,15 +141,6 @@ enum RuntimePathReconciler {
         }
     }
 
-    /// Every `.readCount` key in the tree that does NOT match an existing container.
-    private static func danglingReadCountKeys(
-        in container: ContainerNode, existing: Set<String>
-    ) -> Set<String> {
-        var keys: Set<String> = []
-        collectReadCountPaths(container, into: &keys)
-        return keys.subtracting(existing)
-    }
-
     /// The unique real container whose path ends with `key`'s final label segment and
     /// shares `key`'s leading knot segment, else `nil` (no match or ambiguous).
     private static func reconciledPath(for key: String, among paths: Set<String>) -> String? {
@@ -119,109 +155,40 @@ enum RuntimePathReconciler {
         return candidates.count == 1 ? candidates.first : nil
     }
 
-    /// Rebuild the tree replacing each `.readCount(key)` whose key is in `rewrites`
-    /// with the reconciled path; all other nodes are preserved verbatim.
-    private static func rewritingReadCounts(
-        _ container: ContainerNode, rewrites: [String: String]
-    ) -> ContainerNode {
-        let children = container.children.map { child -> NodeKind in
-            switch child {
-            case .readCount(let key):
-                return .readCount(rewrites[key] ?? key)
-            case .container(let nested):
-                return .container(rewritingReadCounts(nested, rewrites: rewrites))
-            default:
-                return child
-            }
-        }
-        var rebuiltNamed: [String: ContainerNode] = [:]
-        for (key, child) in container.namedContent {
-            rebuiltNamed[key] = rewritingReadCounts(child, rewrites: rewrites)
-        }
-        return ContainerNode(
-            children: children, namedContent: rebuiltNamed, flags: container.flags, name: container.name
-        )
-    }
+    // MARK: - Tree traversal
 
-    // MARK: - Divert-target path reconciliation
-
-    /// Rewrite every `.divert` whose ABSOLUTE target names no existing container
-    /// to the actually-emitted container path, when a unique reconciling target
-    /// exists. Mirrors `reconcilingReadCountPaths`: the reconciliation target is a
-    /// container whose absolute path ENDS with the dangling target's final label
-    /// segment AND shares its leading knot segment; uniqueness within that knot
-    /// prevents cross-scope mis-resolution. Only absolute, non-END,
-    /// non-function-call, currently-dangling targets are considered — a relative
-    /// (`.^.`), END, function (`f():`), or already-resolving target is untouched.
-    private static func reconcilingDivertPaths(_ root: ContainerNode) -> ContainerNode {
-        var containerPaths: Set<String> = []
-        collectContainerPaths(root, prefix: [], into: &containerPaths)
-        var rewrites: [String: String] = [:]
-        for target in danglingDivertTargets(in: root, existing: containerPaths) {
-            if let resolved = reconciledPath(for: target, among: containerPaths) {
-                rewrites[target] = resolved
-            }
-        }
-        guard rewrites.isEmpty == false else { return root }
-        return rewritingDivertTargets(root, rewrites: rewrites)
-    }
-
-    /// Every `.divert` target eligible for reconciliation that does NOT match an
-    /// existing container: absolute (no leading `.`), not `END`, not a
-    /// function-call (`f():`) target, and currently dangling.
-    private static func danglingDivertTargets(
-        in container: ContainerNode, existing: Set<String>
+    /// Every value `extract` yields for a node anywhere in the tree, in children
+    /// and named content alike.
+    private static func collecting(
+        in container: ContainerNode,
+        _ extract: (NodeKind) -> String?
     ) -> Set<String> {
-        var targets: Set<String> = []
-        collectDivertTargets(container, into: &targets)
-        return targets
-            .filter { isReconcilableDivertTarget($0) }
-            .subtracting(existing)
-    }
-
-    /// True when a divert target is a candidate for path reconciliation: it must
-    /// be absolute (no leading `.` relative form), not the `END` sentinel, and not
-    /// a function-call target (which the runtime intercepts by its `f():` prefix).
-    private static func isReconcilableDivertTarget(_ target: String) -> Bool {
-        target.hasPrefix(".") == false
-            && target != "END"
-            && target.hasPrefix(ExpressionLowering.functionCallTargetPrefix) == false
-    }
-
-    /// Collect every `.divert` target anywhere in the tree. `.choicePoint` targets
-    /// are deliberately excluded — they are already emitted correctly.
-    private static func collectDivertTargets(_ container: ContainerNode, into targets: inout Set<String>) {
+        var values: Set<String> = []
         for child in container.children {
-            if case .divert(let target, _, _) = child { targets.insert(target) }
-            if case .container(let nested) = child { collectDivertTargets(nested, into: &targets) }
+            if let value = extract(child) { values.insert(value) }
+            if case .container(let nested) = child { values.formUnion(collecting(in: nested, extract)) }
         }
         for nested in container.namedContent.values {
-            collectDivertTargets(nested, into: &targets)
+            values.formUnion(collecting(in: nested, extract))
         }
+        return values
     }
 
-    /// Rebuild the tree replacing each `.divert` whose target is in `rewrites` with
-    /// the reconciled target (preserving its `isConditional`/`isVariable` flags);
-    /// all other nodes — including `.choicePoint` — are preserved verbatim.
-    private static func rewritingDivertTargets(
-        _ container: ContainerNode, rewrites: [String: String]
+    /// Rebuild the tree with `transform` applied to every non-container node, in
+    /// children and named content alike; containers and flags are preserved.
+    private static func mappingNodes(
+        in container: ContainerNode,
+        _ transform: (NodeKind) -> NodeKind
     ) -> ContainerNode {
         let children = container.children.map { child -> NodeKind in
-            switch child {
-            case .divert(let target, let isConditional, let isVariable):
-                return .divert(
-                    target: rewrites[target] ?? target,
-                    isConditional: isConditional, isVariable: isVariable
-                )
-            case .container(let nested):
-                return .container(rewritingDivertTargets(nested, rewrites: rewrites))
-            default:
-                return child
+            if case .container(let nested) = child {
+                return .container(mappingNodes(in: nested, transform))
             }
+            return transform(child)
         }
         var rebuiltNamed: [String: ContainerNode] = [:]
         for (key, child) in container.namedContent {
-            rebuiltNamed[key] = rewritingDivertTargets(child, rewrites: rewrites)
+            rebuiltNamed[key] = mappingNodes(in: child, transform)
         }
         return ContainerNode(
             children: children, namedContent: rebuiltNamed, flags: container.flags, name: container.name
@@ -234,18 +201,9 @@ enum RuntimePathReconciler {
     /// node anywhere in the tree — the exact set of read-count-referenced targets.
     /// Each `.readCount` key is the resolved container path emitted at 02-03.
     private static func referencedReadCountPaths(in container: ContainerNode) -> Set<String> {
-        var paths: Set<String> = []
-        collectReadCountPaths(container, into: &paths)
-        return paths
-    }
-
-    private static func collectReadCountPaths(_ container: ContainerNode, into paths: inout Set<String>) {
-        for child in container.children {
-            if case .readCount(let key) = child { paths.insert(key) }
-            if case .container(let nested) = child { collectReadCountPaths(nested, into: &paths) }
-        }
-        for nested in container.namedContent.values {
-            collectReadCountPaths(nested, into: &paths)
+        collecting(in: container) { node -> String? in
+            guard case .readCount(let key) = node else { return nil }
+            return key
         }
     }
 
