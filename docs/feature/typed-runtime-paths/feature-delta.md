@@ -226,6 +226,11 @@ which must not change.
 - **Divert-target values in `InkValue`** (`.pushDivertTarget` pushes `.string(path)`; C# has
   `DivertTargetValue`): typing them changes the `variablesState` wire format. The
   variable-divert site stays the one runtime parse of a path string.
+- **Choice-continuation parent frames may be unused** (found in DELIVER step 02-03): a
+  mutation swapping absolute/relative handling in `buildContinuationFrames` survives,
+  because every choice outcome container ends in a divert or `done`, so its parent frames
+  are never resumed. The C# runtime restores the choice's `threadAtGeneration` instead.
+  Investigate against the reference and delete if it has no counterpart.
 - **5B / 5C extractions** (a `ContainerStack` type; `ContainerNode` navigation shared with the
   compiler) and folding `callFrameVariables`/`functionRootDepths` into `CallStackElement`.
 
