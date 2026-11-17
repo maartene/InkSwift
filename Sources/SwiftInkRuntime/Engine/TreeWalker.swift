@@ -35,8 +35,8 @@ struct TreeWalker {
         case .controlCommand(let cmd):
             handleControlCommand(cmd, state: &state)
 
-        case .divert(let target, _, _):
-            handleDivert(target: target, state: &state)
+        case .divert:
+            break  // resolved and followed by InkEngine, which owns the container stack
 
         case .pushDivertTarget(let path):
             // Push a divert-target value onto the evaluation stack (not the return stack).
@@ -114,11 +114,8 @@ struct TreeWalker {
         case .container:
             break  // inline sub-containers handled by InkEngine via path resolution
 
-        case .readCount(let key):
-            // CNT? keys may be relative (starting with "."). Resolve them against the
-            // current container path so they match the absolute keys in visitCounts.
-            let resolvedKey = resolveReadCountPath(key, relativeTo: state.pointer.containerPath)
-            state.evalStack.append(.int(state.visitCounts[resolvedKey] ?? 0))
+        case .readCount:
+            break  // handled by InkEngine before dispatchNode is reached
 
         case .variablePointer(let name, let contextIndex):
             state.evalStack.append(.variablePointer(name: name, contextIndex: contextIndex))
@@ -227,15 +224,6 @@ struct TreeWalker {
         }
     }
 
-    // MARK: - Divert handling
-
-    private func handleDivert(target: String, state: inout StoryState) {
-        // Split dotted path into components
-        let components = target.split(separator: ".").map(String.init)
-        state.pointer.containerPath = components
-        state.pointer.index = 0
-    }
-
     // MARK: - Variable handling
 
     private func handleVariableAssignment(name: String, isGlobal: Bool, state: inout StoryState) {
@@ -340,29 +328,6 @@ struct TreeWalker {
         case "float":   applyUnaryOp(state: &state) { $0.toFloat }
         default:    break  // unsupported native functions are no-ops
         }
-    }
-
-    // MARK: - CNT? path resolution
-
-    /// Resolve a relative CNT? key against the current container path.
-    /// Relative keys start with "." and use "^" to navigate up the path hierarchy.
-    /// Returns the absolute dot-joined path string suitable for visitCounts lookup.
-    ///
-    /// Inklecate emits caret counts relative to the NAMED container hierarchy,
-    /// which does NOT count anonymous numeric-index containers (e.g. "0").
-    /// To match, we strip anonymous (numeric) components from the base path when
-    /// counting upward — they are transparent in inklecate's caret model.
-    private func resolveReadCountPath(_ key: String, relativeTo containerPath: [String]) -> String {
-        guard key.hasPrefix(".") else { return key }
-        var components = key.split(separator: ".").map(String.init)
-        // Build a "named-only" base path by filtering out anonymous numeric segments —
-        // inklecate counts carets against the NAMED container hierarchy only.
-        var namedBasePath = containerPath.filter { Int($0) == nil }
-        while components.first == "^" {
-            components.removeFirst()
-            if !namedBasePath.isEmpty { namedBasePath.removeLast() }
-        }
-        return (namedBasePath + components).joined(separator: ".")
     }
 
     // MARK: - Stack operation helpers

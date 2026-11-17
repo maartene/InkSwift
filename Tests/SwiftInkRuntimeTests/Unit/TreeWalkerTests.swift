@@ -1,10 +1,11 @@
-// Test Budget: 8 distinct behaviors x 2 = 16 max unit tests
+// Test Budget: 7 distinct behaviors x 2 = 14 max unit tests
 // Behaviors:
 //   B1 — Container exhaustion returns nil
 //   B2 — .text node appends to outputStream
 //   B3 — .newline appends "\n" to outputStream (line boundary signal)
 //   B4 — .controlCommand "done"/"end" sets isEnded = true
-//   B5 — .divert updates containerPath and resets index to 0
+//   (B5 — .divert updating containerPath — removed with the dead write it pinned:
+//    InkEngine resolves every divert and owns the container stack.)
 //   B6 — "out" control command suppresses void sentinel (does not emit "void" text)
 //   B7 — .variablePointer node pushes a pointer sentinel onto evalStack
 //   B8 — variable assignment via pointer mutates the pointed-to global variable
@@ -84,31 +85,6 @@ struct TreeWalkerTests {
         var state = StoryState()
         _ = walker.step(in: container, state: &state)
         #expect(state.isEnded == true)
-    }
-
-    // B5: .divert updates containerPath and resets index to 0
-    @Test func `step updates containerPath from divert target`() {
-        let container = ContainerNode(
-            children: [.divert(target: "Knot1", isConditional: false, isVariable: false)],
-            namedContent: [:], flags: 0, name: nil
-        )
-        let walker = TreeWalker()
-        var state = StoryState()
-        _ = walker.step(in: container, state: &state)
-        #expect(state.pointer.containerPath == ["Knot1"])
-        #expect(state.pointer.index == 0)
-    }
-
-    @Test func `step updates containerPath for dotted divert target`() {
-        let container = ContainerNode(
-            children: [.divert(target: "Knot2.stitch1", isConditional: false, isVariable: false)],
-            namedContent: [:], flags: 0, name: nil
-        )
-        let walker = TreeWalker()
-        var state = StoryState()
-        _ = walker.step(in: container, state: &state)
-        #expect(state.pointer.containerPath == ["Knot2", "stitch1"])
-        #expect(state.pointer.index == 0)
     }
 
     // B6: "out" suppresses void sentinel — does not emit "void" text to output stream

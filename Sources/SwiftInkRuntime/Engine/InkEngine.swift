@@ -7,6 +7,7 @@ final class InkEngine {
 
     var state: StoryState
     let root: ContainerNode
+    private let resolver: ContainerPathResolver
     private var lastCompletedLine: String = ""
 
     // Container execution stack. Each frame tracks a container, its execution
@@ -25,6 +26,7 @@ final class InkEngine {
 
     init(root: ContainerNode) {
         self.root = root
+        self.resolver = ContainerPathResolver(root: root)
         self.state = StoryState()
         containerStack = [ContainerFrame(container: root, index: 0, pathFromRoot: [])]
         initializeGlobalVariables()
@@ -689,41 +691,16 @@ final class InkEngine {
 
     // MARK: - Path resolution
 
-    private func pathComponents(from dottedPath: String) -> [String] {
-        dottedPath.split(separator: ".").map(String.init)
+    /// The top frame's path, typed for the resolver: the anchor of every
+    /// relative path the engine resolves.
+    private var currentPath: ContainerPath {
+        ContainerPath(legacy: containerStack.last?.pathFromRoot ?? [])
     }
 
-    /// Parse a relative Ink path into (anchorPath, remainingComponents).
-    /// Returns nil when the caret count would push the anchor above the root.
-    ///
-    /// Ink relative paths use filesystem-style "../"-equivalent semantics:
-    /// `.^{N}.rest` where the first caret moves from the divert Object to its
-    /// containing container (no path-component change), and each subsequent
-    /// caret walks one level up the **static container tree**. This is the
-    /// canonical C# runtime semantic (ink Path.cs: ".^.^.hello.5 is equivalent
-    /// to ../../hello/5"; Object.cs:106-123: each caret returns Container.parent).
-    ///
-    /// Carets count **compiled path-component depth**, NOT execution-stack
-    /// frame depth. Stack frames may compress multiple path components into
-    /// one frame (when a divert lands via multi-component descent), so the
-    /// anchor is computed from the top frame's `pathFromRoot.dropLast(caretCount - 1)`
-    /// — never from `containerStack.count`.
-    private func parseRelativePath(_ path: String) -> (anchorPath: [String], components: [String])? {
-        var components = path.split(separator: ".").map(String.init)
-        var caretCount = 0
-        while components.first == "^" {
-            caretCount += 1
-            components.removeFirst()
-        }
-        let topPath = containerStack.last?.pathFromRoot ?? []
-        // First caret steps Object → container (no path drop); each subsequent
-        // caret drops one path component. Zero carets is also tolerated (treated
-        // as "anchor is the current container") for symmetry with the C# model
-        // when the runtime is already at a container Object.
-        let dropCount = max(0, caretCount - 1)
-        guard dropCount <= topPath.count else { return nil }
-        let anchorPath = Array(topPath.dropLast(dropCount))
-        return (anchorPath: anchorPath, components: components)
+    /// Walk an absolute `pathFromRoot` from root.
+    /// Used by save/restore (rebuilding stack frames) and choice resolution.
+    private func navigateAbsolute(_ path: [String]) -> ContainerNode? {
+        resolver.node(at: ContainerPath(legacy: path))
     }
 
     /// Replace `containerStack` with a frame at `destPath` (starting at
@@ -762,88 +739,11 @@ final class InkEngine {
         state.pointer.containerPath = destPath
     }
 
-    /// Navigate `components` down from `container`, following numeric indices into
-    /// `.children` and named strings into `.namedContent`.
-    private func navigate(_ components: [String], from container: ContainerNode) -> ContainerNode? {
-        var current = container
-        for component in components {
-            guard let (child, _) = descend(from: current, through: component) else { return nil }
-            current = child
-        }
-        return current
-    }
-
-    /// One step down the static container tree: the child `component` names, and
-    /// the index its parent's frame resumes at once that child has been entered —
-    /// just past it for a numeric child, the end of the parent for a named one.
-    private func descend(
-        from container: ContainerNode,
-        through component: String
-    ) -> (child: ContainerNode, resumeIndex: Int)? {
-        if let index = Int(component) {
-            // Numeric component: positional index into the container's ordered children array.
-            guard index < container.children.count,
-                  case .container(let child) = container.children[index]
-            else { return nil }
-            return (child, index + 1)
-        }
-        guard let named = container.namedContent[component] else { return nil }
-        return (named, container.children.count)
-    }
-
-    /// Attempt to navigate `components` from `anchorContainer`, returning both the
-    /// destination container and the ACTUAL resolved path components (which may include
-    /// an extra "0" segment if the anchor's named content is stored in an anonymous
-    /// sequential child — the inklecate "knot namespace flattening" convention).
-    private func navigateWithActualPath(
-        _ components: [String],
-        from anchorContainer: ContainerNode,
-        anchorPath: [String]
-    ) -> (container: ContainerNode, path: [String])? {
-        // First try direct navigation (works when namedContent is in the anchor itself)
-        if let destination = navigate(components, from: anchorContainer) {
-            return (destination, anchorPath + components)
-        }
-        // Fallthrough: in inklecate, knot stitches are stored in an anonymous container
-        // at index 0 of the knot. Try navigating from anchorContainer.children[0].
-        if !anchorContainer.children.isEmpty,
-           case .container(let firstChild) = anchorContainer.children[0],
-           let destination = navigate(components, from: firstChild) {
-            return (destination, anchorPath + ["0"] + components)
-        }
-        return nil
-    }
-
-    /// Walk an absolute `pathFromRoot` from the root container.
-    /// Used by save/restore (rebuilding stack frames) and choice resolution.
-    private func navigateAbsolute(_ path: [String]) -> ContainerNode? {
-        navigate(path, from: root)
-    }
-
     /// Resolve a choice target path (relative or absolute) to its absolute path
     /// components, validating that the target container actually exists.
     /// Returns nil when the path cannot be resolved or the target does not exist.
     private func resolveToAbsoluteComponents(for target: String) -> [String]? {
-        if target.hasPrefix(".") {
-            guard let (anchorPath, rest) = parseRelativePath(target) else { return nil }
-            return absolutePath(anchorPath: anchorPath, rest: rest)
-        }
-        let components = pathComponents(from: target)
-        guard navigateAbsolute(components) != nil else { return nil }
-        return components
-    }
-
-    /// Resolve a parsed relative path to absolute components: the anchor itself
-    /// when nothing follows the carets, else the destination's ACTUAL path (see
-    /// `navigateWithActualPath`). Nil when the destination does not exist.
-    private func absolutePath(anchorPath: [String], rest: [String]) -> [String]? {
-        if rest.isEmpty {
-            return anchorPath
-        }
-        guard let anchor = navigateAbsolute(anchorPath),
-              let (_, resolvedPath) = navigateWithActualPath(rest, from: anchor, anchorPath: anchorPath)
-        else { return nil }
-        return resolvedPath
+        resolver.absolutePath(of: PathReference(parsing: target), from: currentPath)?.legacyComponents
     }
 
     /// Resolve an invisible-default choice target to its absolute path components
@@ -884,79 +784,60 @@ final class InkEngine {
     }
 
     /// Resolve a CNT? path key to an absolute dot-joined string suitable for visitCounts lookup.
-    /// Absolute keys (no leading ".") are returned as-is.
-    /// Relative keys use the same caret semantic as parseRelativePath — carets
-    /// count compiled path-component depth, not stack-frame depth.
+    /// A relative key whose carets climb above the root stays as written, so it
+    /// matches no visit count.
     private func resolveReadCountKey(_ key: String) -> String {
-        guard key.hasPrefix("."), let (anchorPath, components) = parseRelativePath(key) else { return key }
-        // Fallback: plain concatenation when the destination does not resolve.
-        let resolvedPath = absolutePath(anchorPath: anchorPath, rest: components) ?? anchorPath + components
-        return resolvedPath.joined(separator: ".")
+        resolver.readCountKey(for: PathReference(parsing: key), from: currentPath)?.description ?? key
     }
 
     // MARK: - Divert handling
-
-    /// Resolve an anchor path whose last component starts with "$".
-    /// Resolves the prefix from root (an empty prefix resolves to nothing), scans
-    /// that parent container's children for a sub-container whose .name equals the
-    /// anchor component, and returns (parentContainer, anchorChildIndex + 1).
-    private func resolveAnchor(inPath components: [String]) -> (ContainerNode, Int)? {
-        guard let anchorComponent = components.last, anchorComponent.hasPrefix("$") else { return nil }
-        let prefixComponents = Array(components.dropLast())
-        guard prefixComponents.isEmpty == false,
-              let parentContainer = navigateAbsolute(prefixComponents) else { return nil }
-        for (i, child) in parentContainer.children.enumerated() {
-            if case .container(let sub) = child, sub.name == anchorComponent {
-                return (parentContainer, i + 1)
-            }
-        }
-        return nil
-    }
 
     /// Divert to `target`: relative (`.^.…`) or absolute. Conditional branches
     /// (`{"->":"...","c":true}`) resolve exactly the same way once their condition
     /// holds.
     private func applyDivert(target: String) {
-        if target.hasPrefix(".") {
-            applyRelativeDivert(target)
-        } else {
-            applyAbsoluteDivert(pathComponents(from: target))
+        switch PathReference(parsing: target) {
+        case .relative(let parentSteps, let tail):
+            applyRelativeDivert(parentSteps: parentSteps, tail: tail)
+        case .absolute(let path):
+            applyAbsoluteDivert(path)
         }
         // If unresolvable, the stack is left as-is (it will exhaust and stop).
     }
 
     /// Resolution follows the canonical C# runtime semantic: carets count
     /// compiled path-component depth, not execution-stack frame depth. See
-    /// parseRelativePath for the full reference. `installDestinationFrame`
-    /// preserves frames whose pathFromRoot is a strict prefix of the
-    /// destination and propagates any discarded choice-continuation-root
-    /// marker to the new top frame.
-    private func applyRelativeDivert(_ target: String) {
-        guard let (anchorPath, rest) = parseRelativePath(target),
-              let anchor = navigateAbsolute(anchorPath) else { return }
-        if rest.isEmpty {
+    /// `ContainerPathResolver.anchorPath` for the full reference.
+    /// `installDestinationFrame` preserves frames whose pathFromRoot is a strict
+    /// prefix of the destination and propagates any discarded
+    /// choice-continuation-root marker to the new top frame.
+    private func applyRelativeDivert(parentSteps: Int, tail: [PathComponent]) {
+        guard let anchorPath = resolver.anchorPath(parentSteps: parentSteps, from: currentPath),
+              let anchor = resolver.node(at: anchorPath) else { return }
+        if tail.isEmpty {
             // Pure ancestor goto: restart the anchor at index 0.
-            installDestinationFrame(destPath: anchorPath, destContainer: anchor)
+            installDestinationFrame(destPath: anchorPath.legacyComponents, destContainer: anchor)
             return
         }
-        if let (destination, resolvedPath) = navigateWithActualPath(rest, from: anchor, anchorPath: anchorPath) {
-            installDestinationFrame(destPath: resolvedPath, destContainer: destination)
+        if let (destination, resolvedPath) = resolver.destination(of: tail, from: anchorPath) {
+            installDestinationFrame(destPath: resolvedPath.legacyComponents, destContainer: destination)
             return
         }
         // Numeric execution-position divert (e.g. ".^.^.^.7"): the last component
         // is a child index, not a container name. Jump to that execution position
         // in the anchor.
-        if rest.count == 1, let startIndex = Int(rest[0]) {
-            installDestinationFrame(destPath: anchorPath, destContainer: anchor, startIndex: startIndex)
+        if tail.count == 1, case .index(let startIndex) = tail[0] {
+            installDestinationFrame(destPath: anchorPath.legacyComponents, destContainer: anchor, startIndex: startIndex)
         }
     }
 
-    private func applyAbsoluteDivert(_ components: [String]) {
-        if components.last?.hasPrefix("$") == true {
-            applyAnchorDivert(components)
+    private func applyAbsoluteDivert(_ path: ContainerPath) {
+        if path.components.last?.isAnchor == true {
+            applyAnchorDivert(path)
             return
         }
-        if let container = navigateAbsolute(components) {
+        if let container = resolver.node(at: path) {
+            let components = path.legacyComponents
             containerStack = [ContainerFrame(container: container, index: 0, pathFromRoot: components)]
             state.pointer.containerPath = components
             recordVisit(to: container, at: components)
@@ -965,17 +846,17 @@ final class InkEngine {
         // Path whose last component is a numeric index into the parent container
         // (e.g. "café.0.6" = execute A starting from index 6). The parent container
         // is resolved by dropping the index and the full parent stack is rebuilt.
-        let parentPath = Array(components.dropLast())
-        if let startIndex = Int(components.last ?? ""), let parentContainer = navigateAbsolute(parentPath) {
-            rebuildStackForParentPath(parentPath, container: parentContainer, startIndex: startIndex)
+        let parentPath = ContainerPath(components: Array(path.components.dropLast()))
+        if case .index(let startIndex)? = path.components.last, let parentContainer = resolver.node(at: parentPath) {
+            rebuildStackForParentPath(parentPath.legacyComponents, container: parentContainer, startIndex: startIndex)
         }
     }
 
     /// Anchor divert: jump to the position just after the named anchor marker,
     /// rebuilding the full ancestor stack so relative diverts remain resolvable.
-    private func applyAnchorDivert(_ components: [String]) {
-        guard let (parentContainer, startIndex) = resolveAnchor(inPath: components) else { return }
-        let prefixComponents = Array(components.dropLast())
+    private func applyAnchorDivert(_ path: ContainerPath) {
+        guard let (parentContainer, startIndex) = resolver.anchorTarget(of: path) else { return }
+        let prefixComponents = Array(path.legacyComponents.dropLast())
         rebuildStackForParentPath(prefixComponents, container: parentContainer, startIndex: startIndex)
         state.pointer.containerPath = prefixComponents
     }
@@ -995,18 +876,11 @@ final class InkEngine {
     }
 
     /// Rebuild the container stack to reflect a jump to `startIndex` within `container`,
-    /// reconstructing all ancestor frames from the absolute `parentPath`.
+    /// reconstructing all ancestor frames from the absolute `parentPath`: each
+    /// resumes just past the child it entered (see `ContainerPathResolver.descend`).
     private func rebuildStackForParentPath(_ parentPath: [String], container: ContainerNode, startIndex: Int) {
-        var frames: [ContainerFrame] = []
-        // Walk from root to parent, building frames for each ancestor container:
-        // each resumes just past the child it entered (see `descend`).
-        var current = root
-        var currentPath: [String] = []
-        for component in parentPath {
-            guard let (child, resumeIndex) = descend(from: current, through: component) else { break }
-            frames.append(ContainerFrame(container: current, index: resumeIndex, pathFromRoot: currentPath))
-            currentPath.append(component)
-            current = child
+        var frames = resolver.ancestors(along: ContainerPath(legacy: parentPath)).map { ancestor in
+            ContainerFrame(container: ancestor.container, index: ancestor.resumeIndex, pathFromRoot: ancestor.path.legacyComponents)
         }
         // Final frame: the target container at the specified startIndex
         frames.append(ContainerFrame(container: container, index: startIndex, pathFromRoot: parentPath))
@@ -1066,9 +940,9 @@ final class InkEngine {
         if choice.continuationFrames.isEmpty == false {
             return choice.continuationFrames
         }
-        let components = pathComponents(from: choice.targetPath)
-        guard navigateAbsolute(components) != nil else { return [] }
-        return [ContainerStackFrame(pathFromRoot: components, executionIndex: 0)]
+        guard case .absolute(let path) = PathReference(parsing: choice.targetPath),
+              resolver.node(at: path) != nil else { return [] }
+        return [ContainerStackFrame(pathFromRoot: path.legacyComponents, executionIndex: 0)]
     }
 
     // MARK: - Save / restore
@@ -1223,5 +1097,18 @@ final class InkEngine {
         state.stringModeTags = []
         // D4: delegate stack installation to applyDivert
         applyDivert(target: targetPath)
+    }
+}
+
+// Edge conversion between the engine's still-string path state and the typed
+// paths the resolver works in, until step 02-02 types the engine state.
+// `PathComponent(parsing:)` round-trips every string through `description`.
+private extension ContainerPath {
+    init(legacy components: [String]) {
+        self.init(components: components.map(PathComponent.init(parsing:)))
+    }
+
+    var legacyComponents: [String] {
+        components.map(\.description)
     }
 }
