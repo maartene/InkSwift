@@ -59,6 +59,13 @@ goldens, re-save equality is checked against the golden with the synthesised fra
 second round must be identical (`TypedPaths_LegacySaveCompatibilityTests`). No issue is filed;
 the normalisation is harmless and stable.
 
+**Malformed return-stack entries are rejected (step 02-06)**: decoding a `returnStack` entry
+that fits neither legacy form (`"<path>.<index>"`, `"fnret:<path>|<index>"`) now throws, so
+`restoreState` reports the save as invalid instead of silently tolerating it. Every entry the
+engine has written decodes. The only exception is a two-day window on `main` (2026-06-04
+`30fe0ec` to 2026-06-06 `ea11694`), when `pushDivertTarget` also used the return stack. No
+release tag contains that window, so no shipped save is affected.
+
 ## Alternatives Considered
 
 ### Option B — versioned migration (`formatVersion: 2`, structured JSON; reader accepts v1 and v2)
