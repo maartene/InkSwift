@@ -9,6 +9,9 @@ for range in UpstreamCharacterRanges.all {
         VAR b\(identifier) = 3
         """, testingErrors: true)
     if c.errorMessages.count > 0 {
-        c.fail("\(range.name): \(c.errorMessages.all)")
+        // The identifier spans the whole range (thousands of characters for CJK and
+        // Korean); name it instead, so the failure message stays short and readable.
+        let errors = c.errorMessages.all.map { $0.replacingOccurrences(of: identifier, with: "<\(range.name)>") }
+        c.fail("\(range.name): \(errors)")
     }
 }

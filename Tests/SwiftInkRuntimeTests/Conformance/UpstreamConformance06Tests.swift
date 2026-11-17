@@ -643,7 +643,10 @@ struct UpstreamConformance06Tests {
                 CONST b\(identifier) = 3
                 """, testingErrors: true)
             if c.errorMessages.count > 0 {
-                c.fail("\(range.name): \(c.errorMessages.all)")
+                // The identifier spans the whole range (thousands of characters for CJK and
+                // Korean); name it instead, so the failure message stays short and readable.
+                let errors = c.errorMessages.all.map { $0.replacingOccurrences(of: identifier, with: "<\(range.name)>") }
+                c.fail("\(range.name): \(errors)")
             }
         }
     }
@@ -666,7 +669,10 @@ struct UpstreamConformance06Tests {
                 CONST \(identifier)b = 3
                 """, testingErrors: true)
             if c.errorMessages.count > 0 {
-                c.fail("\(range.name): \(c.errorMessages.all)")
+                // The identifier spans the whole range (thousands of characters for CJK and
+                // Korean); name it instead, so the failure message stays short and readable.
+                let errors = c.errorMessages.all.map { $0.replacingOccurrences(of: identifier, with: "<\(range.name)>") }
+                c.fail("\(range.name): \(errors)")
             }
         }
     }
@@ -689,7 +695,10 @@ struct UpstreamConformance06Tests {
                 VAR b\(identifier) = 3
                 """, testingErrors: true)
             if c.errorMessages.count > 0 {
-                c.fail("\(range.name): \(c.errorMessages.all)")
+                // The identifier spans the whole range (thousands of characters for CJK and
+                // Korean); name it instead, so the failure message stays short and readable.
+                let errors = c.errorMessages.all.map { $0.replacingOccurrences(of: identifier, with: "<\(range.name)>") }
+                c.fail("\(range.name): \(errors)")
             }
         }
     }
@@ -712,7 +721,10 @@ struct UpstreamConformance06Tests {
                 VAR \(identifier)b = 3
                 """, testingErrors: true)
             if c.errorMessages.count > 0 {
-                c.fail("\(range.name): \(c.errorMessages.all)")
+                // The identifier spans the whole range (thousands of characters for CJK and
+                // Korean); name it instead, so the failure message stays short and readable.
+                let errors = c.errorMessages.all.map { $0.replacingOccurrences(of: identifier, with: "<\(range.name)>") }
+                c.fail("\(range.name): \(errors)")
             }
         }
     }
@@ -736,7 +748,10 @@ struct UpstreamConformance06Tests {
                 -> END
                 """, testingErrors: true)
             if c.errorMessages.count > 0 {
-                c.fail("\(range.name): \(c.errorMessages.all)")
+                // The identifier spans the whole range (thousands of characters for CJK and
+                // Korean); name it instead, so the failure message stays short and readable.
+                let errors = c.errorMessages.all.map { $0.replacingOccurrences(of: identifier, with: "<\(range.name)>") }
+                c.fail("\(range.name): \(errors)")
             }
         }
     }
@@ -760,7 +775,10 @@ struct UpstreamConformance06Tests {
                 -> END
                 """, testingErrors: true)
             if c.errorMessages.count > 0 {
-                c.fail("\(range.name): \(c.errorMessages.all)")
+                // The identifier spans the whole range (thousands of characters for CJK and
+                // Korean); name it instead, so the failure message stays short and readable.
+                let errors = c.errorMessages.all.map { $0.replacingOccurrences(of: identifier, with: "<\(range.name)>") }
+                c.fail("\(range.name): \(errors)")
             }
         }
     }
