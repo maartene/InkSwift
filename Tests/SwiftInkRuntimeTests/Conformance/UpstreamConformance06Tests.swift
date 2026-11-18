@@ -70,12 +70,12 @@ struct UpstreamConformance06Tests {
         c.equal("A\nB\nA\n3\nB\n", story.continueMaximally())
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: newlines around string evaluation"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: native compiler keeps an inline expression in a string literal, like {3}, as literal text"))
     func `TestNewlinesWithStringEval — native compiler and runtime`() {
         Conformance.run("TestNewlinesWithStringEval", .native, Self.testNewlinesWithStringEval)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: newlines around string evaluation"))
+    @Test
     func `TestNewlinesWithStringEval — inklecate JSON on the runtime`() {
         Conformance.run("TestNewlinesWithStringEval", .runtime, Self.testNewlinesWithStringEval)
     }

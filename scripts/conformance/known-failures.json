@@ -275,8 +275,7 @@
   "runtime": "not ported \u2014 needs an external function binding API"
  },
  "TestNewlinesWithStringEval": {
-  "native": "newlines around string evaluation",
-  "runtime": "newlines around string evaluation"
+  "native": "native compiler keeps an inline expression in a string literal, like {3}, as literal text"
  },
  "TestNonTextInChoiceInnerContent": {
   "native": "whitespace around a conditional in choice content"
@@ -365,8 +364,7 @@
   "runtime": "needs a TagsForContentAtPath API; global tags before the first continue"
  },
  "TestTagsDynamicContent": {
-  "native": "tags with dynamic content",
-  "runtime": "tags with dynamic content"
+  "native": "native compiler keeps inline expressions and sequences in a tag as literal text"
  },
  "TestTagsInChoice": {
   "native": "tags in choices",

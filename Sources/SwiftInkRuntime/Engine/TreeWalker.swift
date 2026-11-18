@@ -176,9 +176,12 @@ struct TreeWalker {
 
         case "out":
             if let top = state.evalStack.popLast() {
-                // Suppress the void sentinel pushed by implicit function returns
+                // Suppress the void sentinel pushed by implicit function returns.
+                // A printed value is text like any other: inside a string or tag
+                // span it belongs to that span (Story.cs EndString/EndTag collect
+                // every StringValue back to the span's start).
                 guard case .string(let s) = top, s == "void" else {
-                    appendToOutput(top.asString, state: &state)
+                    handleText(top.asString, state: &state)
                     break
                 }
             }
