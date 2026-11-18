@@ -65,13 +65,32 @@ struct TreeWalkerTests {
     // B3: .newline appends "\n" to outputStream
     @Test func `step appends newline sentinel to outputStream for newline node`() {
         let container = ContainerNode(
-            children: [.newline],
+            children: [.text("Line"), .newline],
             namedContent: [:], flags: 0, name: nil
         )
         let walker = TreeWalker()
         var state = StoryState()
         _ = walker.step(in: container, state: &state)
-        #expect(state.outputStream == ["\n"])
+        _ = walker.step(in: container, state: &state)
+        #expect(state.outputStream == ["Line", "\n"])
+    }
+
+    // B3a–c: newlines are de-duplicated and never lead (issue #26, reference
+    // StoryState.PushToOutputStreamIndividual)
+    @Test(arguments: [
+        ([NodeKind.newline], [String]()),
+        ([.text("Line"), .newline, .newline], ["Line", "\n"]),
+        ([.text("Line"), .newline, .text("  "), .newline], ["Line", "\n", "  "]),
+        ([.text("  "), .newline], ["  ", "\n"]),
+    ])
+    func `newline is dropped when the output is empty or already ends in a newline`(
+        children: [NodeKind], expected: [String]
+    ) {
+        let container = ContainerNode(children: children, namedContent: [:], flags: 0, name: nil)
+        let walker = TreeWalker()
+        var state = StoryState()
+        while walker.step(in: container, state: &state) != nil {}
+        #expect(state.outputStream == expected)
     }
 
     // B4: controlCommand "done"/"end" sets isEnded = true

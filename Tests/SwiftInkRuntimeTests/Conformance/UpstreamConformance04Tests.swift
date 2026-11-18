@@ -236,7 +236,7 @@ struct UpstreamConformance04Tests {
         Conformance.run("TestVariableGetSetAPI", .native, Self.testVariableGetSetAPI)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: runtime newline de-duplication (#26)"))
+    @Test
     func `TestVariableGetSetAPI — inklecate JSON on the runtime`() {
         Conformance.run("TestVariableGetSetAPI", .runtime, Self.testVariableGetSetAPI)
     }
@@ -328,7 +328,7 @@ struct UpstreamConformance04Tests {
         Conformance.run("TestVariableSwapRecurse", .native, Self.testVariableSwapRecurse)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: runtime newline de-duplication (#26)"))
+    @Test
     func `TestVariableSwapRecurse — inklecate JSON on the runtime`() {
         Conformance.run("TestVariableSwapRecurse", .runtime, Self.testVariableSwapRecurse)
     }
@@ -706,12 +706,12 @@ struct UpstreamConformance04Tests {
         c.equal("A line.\nAnother line.\n", story.continueMaximally())
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: glue at both ends of a line"))
+    @Test
     func `TestLeftRightGlueMatching — native compiler and runtime`() {
         Conformance.run("TestLeftRightGlueMatching", .native, Self.testLeftRightGlueMatching)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: runtime newline de-duplication (#26)"))
+    @Test
     func `TestLeftRightGlueMatching — inklecate JSON on the runtime`() {
         Conformance.run("TestLeftRightGlueMatching", .runtime, Self.testLeftRightGlueMatching)
     }

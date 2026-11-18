@@ -540,7 +540,7 @@ struct UpstreamConformance05Tests {
         Conformance.run("TestEvaluationStackLeaks", .native, Self.testEvaluationStackLeaks)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: runtime newline de-duplication (#26)"))
+    @Test
     func `TestEvaluationStackLeaks — inklecate JSON on the runtime`() {
         Conformance.run("TestEvaluationStackLeaks", .runtime, Self.testEvaluationStackLeaks)
     }

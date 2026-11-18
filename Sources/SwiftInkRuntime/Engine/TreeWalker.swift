@@ -28,7 +28,7 @@ struct TreeWalker {
         case .newline:
             if state.suppressNextNewline {
                 state.suppressNextNewline = false
-            } else {
+            } else if outputAcceptsNewline(state) {
                 state.outputStream.append("\n")
             }
 
@@ -123,6 +123,23 @@ struct TreeWalker {
         case .variablePointer(let name, let contextIndex):
             state.evalStack.append(.variablePointer(name: name, contextIndex: contextIndex))
         }
+    }
+
+    // MARK: - Newline de-duplication
+
+    /// De-duplicate newlines, and never lead with one: a newline is written only
+    /// when the output has content and does not already end in a newline,
+    /// looking back past inline whitespace. Mirrors the reference
+    /// `StoryState.PushToOutputStreamIndividual` (its `outputStreamEndsInNewline`
+    /// and `outputStreamContainsContent`). inklecate relies on it: each block's
+    /// rejoin point and each branch start with a `"\n"` of their own.
+    private func outputAcceptsNewline(_ state: StoryState) -> Bool {
+        guard state.outputStream.isEmpty == false else { return false }
+        for text in state.outputStream.reversed() {
+            if text == "\n" { return false }
+            if text.contains(where: { $0 != " " && $0 != "\t" }) { return true }
+        }
+        return true
     }
 
     // MARK: - Text handling

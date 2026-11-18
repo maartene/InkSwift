@@ -63,9 +63,6 @@
  "TestComplexTunnels": {
   "native": "tunnels with arguments"
  },
- "TestConditionalChoiceInWeave": {
-  "runtime": "runtime newline de-duplication (#26)"
- },
  "TestConditionalChoiceInWeave2": {
   "native": "conditional choice inside a weave",
   "runtime": "conditional choice inside a weave"
@@ -74,8 +71,7 @@
   "native": "choice conditions ({cond} {cond} text)"
  },
  "TestConditionals": {
-  "native": "native compiler rejects a valid story: Branch doesn't have condition. Are you missing a ':'?",
-  "runtime": "runtime newline de-duplication (#26)"
+  "native": "native compiler rejects a valid story: Branch doesn't have condition. Are you missing a ':'?"
  },
  "TestConstRedefinition": {
   "native": "native reports a different error than '\\'x\\' has been redefined'"
@@ -122,12 +118,8 @@
   "native": "unsupported lists",
   "runtime": "unsupported lists"
  },
- "TestEmptyMultilineConditionalBranch": {
-  "runtime": "runtime newline de-duplication (#26)"
- },
  "TestEmptySequenceContent": {
-  "native": "unsupported multi-line sequences",
-  "runtime": "runtime newline de-duplication (#26)"
+  "native": "unsupported multi-line sequences"
  },
  "TestEmptyThreadError": {
   "native": "unsupported threads"
@@ -151,8 +143,7 @@
   "runtime": "not ported \u2014 needs an EvaluateFunction API"
  },
  "TestEvaluationStackLeaks": {
-  "native": "unsupported multi-line sequences",
-  "runtime": "runtime newline de-duplication (#26)"
+  "native": "unsupported multi-line sequences"
  },
  "TestExternalBinding": {
   "native": "not ported \u2014 needs an external function binding API",
@@ -161,9 +152,6 @@
  "TestFactorialByReference": {
   "native": "pass-by-reference (ref) parameters",
   "runtime": "pass-by-reference (ref) parameters"
- },
- "TestFactorialRecursive": {
-  "runtime": "runtime newline de-duplication (#26)"
  },
  "TestFallbackChoiceOnThread": {
   "native": "unsupported threads",
@@ -197,13 +185,8 @@
   "native": "implicit inline glue around function calls",
   "runtime": "implicit inline glue around function calls"
  },
- "TestImplicitInlineGlueC": {
-  "native": "implicit inline glue around function calls",
-  "runtime": "runtime newline de-duplication (#26)"
- },
  "TestInclude": {
-  "native": "unsupported INCLUDE",
-  "runtime": "runtime newline de-duplication (#26)"
+  "native": "unsupported INCLUDE"
  },
  "TestIncrement": {
   "native": "native compiler rejects a valid story: unexpectedToken('+')"
@@ -222,10 +205,6 @@
  },
  "TestLeadingNewlineMultilineSequence": {
   "native": "unsupported multi-line sequences"
- },
- "TestLeftRightGlueMatching": {
-  "native": "glue at both ends of a line",
-  "runtime": "runtime newline de-duplication (#26)"
  },
  "TestListBasicOperations": {
   "native": "unsupported lists",
@@ -250,9 +229,6 @@
  "TestLogicInChoices": {
   "native": "logic in choice text",
   "runtime": "logic in choice text"
- },
- "TestLogicLinesWithNewlines": {
-  "runtime": "runtime newline de-duplication (#26)"
  },
  "TestLookupSafeOrNot": {
   "native": "not ported \u2014 needs an external function binding API",
@@ -467,9 +443,6 @@
  "TestVariableDivertTarget": {
   "native": "native compiler rejects a valid story: unexpectedToken('>')"
  },
- "TestVariableGetSetAPI": {
-  "runtime": "runtime newline de-duplication (#26)"
- },
  "TestVariableNamingCollisionWithArg": {
   "native": "native accepts a story inklecate rejects ('has already been used')"
  },
@@ -479,9 +452,6 @@
  "TestVariableObserver": {
   "native": "not ported \u2014 needs a variable observer API",
   "runtime": "not ported \u2014 needs a variable observer API"
- },
- "TestVariableSwapRecurse": {
-  "runtime": "runtime newline de-duplication (#26)"
  },
  "TestVariableTunnel": {
   "native": "tunnel to a variable divert target",

@@ -583,7 +583,6 @@ final class InkEngine {
         guard let newlineIndex = state.outputStream.firstIndex(of: "\n") else { return nil }
         let lineContent = state.outputStream[..<newlineIndex].joined()
         state.outputStream = Array(state.outputStream[(newlineIndex + 1)...])
-        guard !lineContent.isEmpty else { return nil }
         return lineContent + "\n"
     }
 

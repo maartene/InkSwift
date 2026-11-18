@@ -39,7 +39,7 @@ struct UpstreamConformance02Tests {
         Conformance.run("TestEmptySequenceContent", .native, Self.testEmptySequenceContent)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: runtime newline de-duplication (#26)"))
+    @Test
     func `TestEmptySequenceContent — inklecate JSON on the runtime`() {
         Conformance.run("TestEmptySequenceContent", .runtime, Self.testEmptySequenceContent)
     }
@@ -260,7 +260,7 @@ struct UpstreamConformance02Tests {
         Conformance.run("TestFactorialRecursive", .native, Self.testFactorialRecursive)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: runtime newline de-duplication (#26)"))
+    @Test
     func `TestFactorialRecursive — inklecate JSON on the runtime`() {
         Conformance.run("TestFactorialRecursive", .runtime, Self.testFactorialRecursive)
     }
@@ -442,12 +442,12 @@ struct UpstreamConformance02Tests {
         c.equal("A\nC\n", story.continueMaximally())
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: implicit inline glue around function calls"))
+    @Test
     func `TestImplicitInlineGlueC — native compiler and runtime`() {
         Conformance.run("TestImplicitInlineGlueC", .native, Self.testImplicitInlineGlueC)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: runtime newline de-duplication (#26)"))
+    @Test
     func `TestImplicitInlineGlueC — inklecate JSON on the runtime`() {
         Conformance.run("TestImplicitInlineGlueC", .runtime, Self.testImplicitInlineGlueC)
     }
@@ -464,7 +464,7 @@ struct UpstreamConformance02Tests {
         Conformance.run("TestInclude", .native, Self.testInclude)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: runtime newline de-duplication (#26)"))
+    @Test
     func `TestInclude — inklecate JSON on the runtime`() {
         Conformance.run("TestInclude", .runtime, Self.testInclude)
     }

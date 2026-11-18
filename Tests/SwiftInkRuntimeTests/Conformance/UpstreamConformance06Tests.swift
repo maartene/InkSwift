@@ -277,7 +277,7 @@ struct UpstreamConformance06Tests {
         Conformance.run("TestLogicLinesWithNewlines", .native, Self.testLogicLinesWithNewlines)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: runtime newline de-duplication (#26)"))
+    @Test
     func `TestLogicLinesWithNewlines — inklecate JSON on the runtime`() {
         Conformance.run("TestLogicLinesWithNewlines", .runtime, Self.testLogicLinesWithNewlines)
     }

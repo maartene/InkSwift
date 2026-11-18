@@ -275,7 +275,7 @@ struct UpstreamConformance01Tests {
         Conformance.run("TestConditionalChoiceInWeave", .native, Self.testConditionalChoiceInWeave)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: runtime newline de-duplication (#26)"))
+    @Test
     func `TestConditionalChoiceInWeave — inklecate JSON on the runtime`() {
         Conformance.run("TestConditionalChoiceInWeave", .runtime, Self.testConditionalChoiceInWeave)
     }
@@ -335,7 +335,7 @@ struct UpstreamConformance01Tests {
         Conformance.run("TestConditionals", .native, Self.testConditionals)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: runtime newline de-duplication (#26)"))
+    @Test
     func `TestConditionals — inklecate JSON on the runtime`() {
         Conformance.run("TestConditionals", .runtime, Self.testConditionals)
     }
@@ -504,7 +504,7 @@ struct UpstreamConformance01Tests {
         Conformance.run("TestEmptyMultilineConditionalBranch", .native, Self.testEmptyMultilineConditionalBranch)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: runtime newline de-duplication (#26)"))
+    @Test
     func `TestEmptyMultilineConditionalBranch — inklecate JSON on the runtime`() {
         Conformance.run("TestEmptyMultilineConditionalBranch", .runtime, Self.testEmptyMultilineConditionalBranch)
     }
