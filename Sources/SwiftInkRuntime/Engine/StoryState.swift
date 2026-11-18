@@ -362,9 +362,9 @@ struct StoryState: Codable {
     /// Serialised as a sorted array of dotted strings for deterministic JSON output.
     var chosenChoiceTargets: Set<ContainerPath>
 
-    /// When true, the next `\n` appended to the output stream is suppressed
-    /// (consumed by the glue `<>` that set this flag). Reset after one newline
-    /// is suppressed or when non-newline text is encountered.
+    /// When true, glue `<>` is in force and every `\n` is suppressed. Reset
+    /// when non-whitespace text reaches the output stream, as the reference
+    /// keeps its glue until `isNonWhitespace` text is pushed.
     var suppressNextNewline: Bool
 
     /// Per-function-call temp-variable scope. Each frame is a `[String: InkValue]`

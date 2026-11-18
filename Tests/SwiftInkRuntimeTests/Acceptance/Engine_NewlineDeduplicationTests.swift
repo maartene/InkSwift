@@ -45,4 +45,23 @@ struct Engine_NewlineDeduplicationTests {
 
         #expect(rawLines(story) == ["Onward\n", "Chosen.\n"])
     }
+
+    // Glue stays in force until non-whitespace text reaches the output, and
+    // drops every newline until then (StoryState.cs PushToOutputStreamIndividual,
+    // glueTrimIndex). A block after `<>` brings two newlines, its own and its
+    // branch's, so suppressing only the first broke the line. An evaluated
+    // value ends the glue like literal text; whitespace does not.
+    @Test func `glue holds across every newline until non-whitespace text, matching the reference`() throws {
+        let story = try Story(json: try CompilerOracle.oracleJSON("runtime-glue-across-newlines"))
+
+        #expect(rawLines(story) == [
+            "Hello world.\n",
+            "After the block.\n",
+            "Value 1\n",
+            "After the value.\n",
+            "Spaces kept.\n",
+            "After the spaces.\n",
+        ])
+        #expect(story.currentChoices.map(\.text) == ["Onward"])
+    }
 }

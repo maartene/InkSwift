@@ -26,9 +26,7 @@ struct TreeWalker {
             handleText(string, state: &state)
 
         case .newline:
-            if state.suppressNextNewline {
-                state.suppressNextNewline = false
-            } else if outputAcceptsNewline(state) {
+            if state.suppressNextNewline == false && outputAcceptsNewline(state) {
                 state.outputStream.append("\n")
             }
 
@@ -150,10 +148,18 @@ struct TreeWalker {
         } else if state.inStringMode {
             state.stringAccumulator += string
         } else {
-            state.outputStream.append(string)
-            // Once text has been appended to the output stream, any pending glue
-            // suppression (<>) has already done its job of joining the preceding text.
-            // The next \n will be a real line-ending, not a glue-adjacent separator.
+            appendToOutput(string, state: &state)
+        }
+    }
+
+    /// Append text to the output stream. Once non-whitespace text arrives, any
+    /// glue (<>) has done its job of joining the preceding text, so the next \n
+    /// is a real line ending again. Whitespace alone keeps the glue in force, as
+    /// in the reference (`PushToOutputStreamIndividual` clears glue only on
+    /// `isNonWhitespace` text).
+    private func appendToOutput(_ string: String, state: inout StoryState) {
+        state.outputStream.append(string)
+        if string.contains(where: { $0 != " " && $0 != "\t" }) {
             state.suppressNextNewline = false
         }
     }
@@ -172,7 +178,7 @@ struct TreeWalker {
             if let top = state.evalStack.popLast() {
                 // Suppress the void sentinel pushed by implicit function returns
                 guard case .string(let s) = top, s == "void" else {
-                    state.outputStream.append(top.asString)
+                    appendToOutput(top.asString, state: &state)
                     break
                 }
             }
@@ -206,7 +212,9 @@ struct TreeWalker {
 
         case "<>":
             // Glue: remove any trailing newlines already in the output stream AND
-            // suppress the next newline that gets appended. This joins the preceding
+            // suppress every newline until non-whitespace text is appended (see
+            // `appendToOutput`) — a block after the glue brings its own `\n` and its
+            // branch's, and both must go. This joins the preceding
             // text with whatever follows the glue marker — even when the `\n` comes
             // after the `<>` node in the JSON (e.g. `"text " <> \n -> next_section`).
             while state.outputStream.last == "\n" {
