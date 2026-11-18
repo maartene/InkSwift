@@ -75,6 +75,112 @@ enum UnsupportedConstructDetector {
         trimmed.range(of: "RANDOM(", options: .caseInsensitive) != nil
     }
 
+    /// Run every statement-level check on one trimmed source line: the
+    /// unsupported statements (`checkStatement`) and tags with inline logic
+    /// (`checkTag`).
+    static func checkLine(_ trimmed: String, at position: SourcePosition) throws {
+        try checkStatement(line: trimmed, lineNumber: position.line, column: position.column)
+        try checkTag(line: trimmed, lineNumber: position.line, column: position.column)
+    }
+
+    /// Reject a string literal in logic that carries inline logic
+    /// (`~ return "value {n}"`). inklecate builds such a string at runtime
+    /// (`str … out … /str`); the native compiler would keep the braces as literal
+    /// text (issue #31). The expression sub-parser sees no source lines, so the
+    /// error is unlocated; `InkParser` fills in the statement's position.
+    /// `contents` is the literal's raw text, escape pairs (`\{`) still in place.
+    static func checkStringLiteral(_ contents: String) throws {
+        guard unescapedIndex(of: "{", in: Substring(contents)) != nil else { return }
+        throw CompileError(
+            kind: .unsupportedConstruct,
+            construct: "string with inline logic",
+            message: "A string literal with inline logic (`\"…{…}…\"`) is not supported by the native compiler yet."
+        )
+    }
+
+    /// Reject a tag that carries inline logic (`Line # pic{n}.jpg`, `# {a|b}`)
+    /// on any statement line: content, choice, gather or tag-only, and inside a
+    /// conditional arm (`{x: A # t{n}}`). inklecate evaluates the logic into the
+    /// tag; the native compiler would keep it as literal text (issue #31). The
+    /// error points at the tag's `#`.
+    static func checkTag(line trimmed: String, lineNumber: Int, column: Int) throws {
+        guard let hash = startOfTagWithLogic(in: trimmed) else { return }
+        throw CompileError(
+            kind: .unsupportedConstruct,
+            construct: "tag with inline logic",
+            message: "A tag with inline logic (`# …{…}…`) is not supported by the native compiler yet.",
+            line: lineNumber,
+            column: column + trimmed.distance(from: trimmed.startIndex, to: hash)
+        )
+    }
+
+    /// The `#` of the first tag that holds a `{`, or `nil` when no tag does.
+    /// A tag runs from an unescaped `#` to the end of its scope: the end of the
+    /// line at the top level, or, inside a `{…}` group, the `|` or `}` that ends
+    /// the arm it sits in. So `{x: A # t}{n}` holds a static tag followed by an
+    /// interpolation, as in inklecate; only a `{` inside the tag itself counts.
+    private static func startOfTagWithLogic(in line: String) -> String.Index? {
+        var scope = TagScope()
+        var index = line.startIndex
+        while index < line.endIndex {
+            if line[index] == "\\" {
+                index = line.index(after: index)
+                if index == line.endIndex { return nil }
+            } else if let tagStart = scope.read(line[index], at: index) {
+                return tagStart
+            }
+            index = line.index(after: index)
+        }
+        return nil
+    }
+
+    /// Where a line scan stands: its `{…}` depth, and the tag it is in, if any.
+    private struct TagScope {
+        private var depth = 0
+        private var tag: (start: String.Index, depth: Int)?
+
+        /// Read one unescaped character. Returns the tag's `#` when the
+        /// character is a `{` inside that tag.
+        mutating func read(_ character: Character, at index: String.Index) -> String.Index? {
+            switch character {
+            case "{":
+                if let tag { return tag.start }
+                depth += 1
+            case "}":
+                depth = max(0, depth - 1)
+                endTag { tagDepth, depth in depth < tagDepth }
+            case "|":
+                endTag { tagDepth, depth in tagDepth > 0 && depth == tagDepth }
+            case "#" where tag == nil || tag?.depth == depth:
+                tag = (index, depth)
+            default:
+                break
+            }
+            return nil
+        }
+
+        /// End the current tag when `ends` holds for the depth it started at
+        /// and the current depth.
+        private mutating func endTag(where ends: (_ tagDepth: Int, _ depth: Int) -> Bool) {
+            if let open = tag, ends(open.depth, depth) { tag = nil }
+        }
+    }
+
+    /// The first `character` in `text` not escaped by a preceding `\`.
+    private static func unescapedIndex(of character: Character, in text: Substring) -> String.Index? {
+        var index = text.startIndex
+        while index < text.endIndex {
+            if text[index] == "\\" {
+                index = text.index(after: index)
+                if index == text.endIndex { return nil }
+            } else if text[index] == character {
+                return index
+            }
+            index = text.index(after: index)
+        }
+        return nil
+    }
+
     /// Inspect the inline `{…}` groups of `line`. If one is a variable-text
     /// alternative (sequence / cycle / once / shuffle), throw a located
     /// `.unsupportedConstruct` naming it. Returns normally when none is present.

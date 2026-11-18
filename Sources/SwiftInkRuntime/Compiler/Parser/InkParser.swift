@@ -30,10 +30,10 @@ public enum InkParser {
         let number: Int
         let shape: LineShape
 
-        init(text: String, number: Int) {
+        init(text: String, number: Int) throws {
             self.text = text
             self.number = number
-            self.shape = InkParser.lineShape(of: text)
+            self.shape = try CompileError.locating(line: number, column: 1) { try InkParser.lineShape(of: text) }
         }
     }
 
@@ -155,7 +155,9 @@ public enum InkParser {
         while lineIndex < lines.count {
             let lineNumber = lineIndex + 1
             let rawLine = lines[lineIndex]
-            if let consumed = try appendBlockConditional(lines, from: lineIndex, into: &statements) {
+            if let consumed = try CompileError.locating(line: lineNumber, column: leadingColumn(of: rawLine), {
+                try appendBlockConditional(lines, from: lineIndex, into: &statements)
+            }) {
                 lineIndex = consumed
                 continue
             }
@@ -207,11 +209,11 @@ public enum InkParser {
             statements.append(pendingGather)
         }
         let position = SourcePosition(line: start + 1, column: leadingColumn(of: lines[start]))
-        let (body, next) = collectBlockBody(from: start + 1, count: lines.count) {
-            BodyLine(text: lines[$0].trimmingCharacters(in: .whitespaces), number: $0 + 1)
+        let (body, next) = try collectBlockBody(from: start + 1, count: lines.count) {
+            try BodyLine(text: lines[$0].trimmingCharacters(in: .whitespaces), number: $0 + 1)
         }
         let statement = try buildConditionalBlock(
-            header: header, bodyLines: inlineBodyLines(inline, number: start + 1) + body, position: position)
+            header: header, bodyLines: try inlineBodyLines(inline, number: start + 1) + body, position: position)
         statements.append(statement)
         return next
     }
@@ -223,7 +225,7 @@ public enum InkParser {
     }
 
     /// Classify one trimmed block body line (see `LineShape`).
-    private static func lineShape(of text: String) -> LineShape {
+    private static func lineShape(of text: String) throws -> LineShape {
         if text == "}" {
             return .close
         }
@@ -232,7 +234,7 @@ public enum InkParser {
             let (header, inline) = blockHeader(afterBrace, colonIndex: topLevelColonIndex(in: afterBrace))
             return .opener(header, inline: inline)
         }
-        if let (armGuard, inline) = armParts(of: text) {
+        if let (armGuard, inline) = try armParts(of: text) {
             return .arm(armGuard, inline: inline)
         }
         return .content
@@ -282,7 +284,7 @@ public enum InkParser {
     /// Text before the colon that does not parse as an expression is content,
     /// colon included — the reference's `ConditionExpression` fails and the
     /// branch content starts right after the `-` (issue #23).
-    private static func armParts(of text: String) -> (ArmGuard, inline: String)? {
+    private static func armParts(of text: String) throws -> (ArmGuard, inline: String)? {
         guard text.hasPrefix("-"), text.hasPrefix(divertMarker) == false else {
             return nil
         }
@@ -296,15 +298,15 @@ public enum InkParser {
         if guardText == "else" {
             return (.otherwise, inline)
         }
-        guard guardText.isEmpty == false, (try? InkExpressionParser.parse(guardText)) != nil else {
+        guard guardText.isEmpty == false, try InkExpressionParser.parseIfExpression(guardText) != nil else {
             return (.unconditioned, afterMarker)
         }
         return (.condition(guardText), inline)
     }
 
     /// Content written inline after an opener's colon, as the block's first body line.
-    private static func inlineBodyLines(_ inline: String, number: Int) -> [BodyLine] {
-        inline.isEmpty ? [] : [BodyLine(text: inline, number: number)]
+    private static func inlineBodyLines(_ inline: String, number: Int) throws -> [BodyLine] {
+        inline.isEmpty ? [] : [try BodyLine(text: inline, number: number)]
     }
 
     /// Collect a block's body lines, starting at `start` (the line after the
@@ -314,13 +316,13 @@ public enum InkParser {
     private static func collectBlockBody(
         from start: Int,
         count: Int,
-        line: (Int) -> BodyLine
-    ) -> (body: [BodyLine], next: Int) {
+        line: (Int) throws -> BodyLine
+    ) rethrows -> (body: [BodyLine], next: Int) {
         var body: [BodyLine] = []
         var depth = 0
         var index = start
         while index < count {
-            let candidate = line(index)
+            let candidate = try line(index)
             index += 1
             if case .close = candidate.shape, depth == 0 {
                 return (body, index)
@@ -731,50 +733,52 @@ public enum InkParser {
         let position = SourcePosition(line: line.number, column: 1)
         let (body, next) = collectBlockBody(from: index + 1, count: bodyLines.count) { bodyLines[$0] }
         let statement = try buildConditionalBlock(
-            header: header, bodyLines: inlineBodyLines(inline, number: line.number) + body, position: position)
+            header: header, bodyLines: try inlineBodyLines(inline, number: line.number) + body, position: position)
         statements.append(statement)
         return next
     }
 
+    /// Append the statements of one source line. An unlocated `CompileError`
+    /// thrown while parsing it (the expression sub-parser sees no source lines)
+    /// gets the line's position.
     private static func appendStatements(
         from rawLine: String,
         lineNumber: Int,
         into statements: inout [InkStatement]
     ) throws {
-        let column = leadingColumn(of: rawLine)
-        let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
-        guard trimmed.isEmpty == false else {
-            return
-        }
-        let position = SourcePosition(line: lineNumber, column: column)
+        let position = SourcePosition(line: lineNumber, column: leadingColumn(of: rawLine))
+        do {
+            let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
+            guard trimmed.isEmpty == false else {
+                return
+            }
 
-        try UnsupportedConstructDetector.checkStatement(
-            line: trimmed,
-            lineNumber: position.line,
-            column: position.column
-        )
+            try UnsupportedConstructDetector.checkLine(trimmed, at: position)
 
-        if let kind = try headerKind(of: trimmed) {
-            statements.append(InkStatement(kind: kind, position: position))
-            return
+            if let kind = try headerKind(of: trimmed) {
+                statements.append(InkStatement(kind: kind, position: position))
+                return
+            }
+            if let kind = try declarationKind(of: trimmed, at: position) {
+                statements.append(InkStatement(kind: kind, position: position))
+                return
+            }
+            if trimmed == tunnelReturnMarker {
+                statements.append(InkStatement(kind: .tunnelReturn, position: position))
+                return
+            }
+            if trimmed.hasPrefix(divertMarker) {
+                statements.append(contentsOf: divertStatements(of: trimmed, at: position))
+                return
+            }
+            if let kind = try weaveKind(of: trimmed) {
+                statements.append(InkStatement(kind: kind, position: position))
+                return
+            }
+            try appendContent(from: trimmed, position: position, into: &statements)
+        } catch let error as CompileError {
+            throw error.located(line: position.line, column: position.column)
         }
-        if let kind = try declarationKind(of: trimmed, at: position) {
-            statements.append(InkStatement(kind: kind, position: position))
-            return
-        }
-        if trimmed == tunnelReturnMarker {
-            statements.append(InkStatement(kind: .tunnelReturn, position: position))
-            return
-        }
-        if trimmed.hasPrefix(divertMarker) {
-            statements.append(contentsOf: divertStatements(of: trimmed, at: position))
-            return
-        }
-        if let kind = weaveKind(of: trimmed) {
-            statements.append(InkStatement(kind: kind, position: position))
-            return
-        }
-        try appendContent(from: trimmed, position: position, into: &statements)
     }
 
     /// Recognise a variable/constant/logic statement. `VAR`/`CONST` declare
@@ -968,10 +972,10 @@ public enum InkParser {
     /// (`-`). The leading marker run gives the weave level; the remainder is the
     /// choice/gather text. `->` is NOT a gather — it is consumed as a divert
     /// before this is reached. Returns `nil` for any non-weave line.
-    private static func weaveKind(of trimmed: String) -> InkStatementKind? {
+    private static func weaveKind(of trimmed: String) throws -> InkStatementKind? {
         guard let marker = trimmed.first else { return nil }
         if marker == "*" || marker == "+" {
-            return choiceKind(of: trimmed, marker: marker)
+            return try choiceKind(of: trimmed, marker: marker)
         }
         if marker == "-" {
             return gatherKind(of: trimmed)
@@ -986,10 +990,10 @@ public enum InkParser {
     /// A following `{…}` is the guard condition, captured separately from content.
     /// `[…]` (when present) is the choice-only label shown but not echoed into the
     /// outcome body.
-    private static func choiceKind(of trimmed: String, marker: Character) -> InkStatementKind {
+    private static func choiceKind(of trimmed: String, marker: Character) throws -> InkStatementKind {
         let (level, remainder) = consumeMarkers(trimmed, marker: marker)
         let (weaveLabel, afterLabel) = splitWeaveLabel(remainder)
-        let (condition, afterCondition) = splitChoiceCondition(afterLabel)
+        let (condition, afterCondition) = try splitChoiceCondition(afterLabel)
         let (choiceOnlyLabel, body) = splitChoiceOnlyLabel(afterCondition)
         return .choice(
             level: level,
@@ -1014,7 +1018,7 @@ public enum InkParser {
     /// whole remainder is returned unchanged and the condition is `nil`. A `{` that
     /// is not a leading guard (e.g. inline-printed content) is left for the content
     /// pass — only a `{` at the very start of the remainder is treated as a guard.
-    private static func splitChoiceCondition(_ remainder: String) -> (condition: InkExpression?, rest: String) {
+    private static func splitChoiceCondition(_ remainder: String) throws -> (condition: InkExpression?, rest: String) {
         guard remainder.first == "{",
               let closeIndex = remainder.firstIndex(of: "}") else {
             return (nil, remainder)
@@ -1023,7 +1027,7 @@ public enum InkParser {
             .trimmingCharacters(in: .whitespaces)
         let rest = String(remainder[remainder.index(after: closeIndex)...])
             .trimmingCharacters(in: .whitespaces)
-        guard let condition = try? InkExpressionParser.parse(conditionText) else {
+        guard let condition = try InkExpressionParser.parseIfExpression(conditionText) else {
             return (nil, remainder)
         }
         return (condition, rest)

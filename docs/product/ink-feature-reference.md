@@ -4,7 +4,7 @@
 
 This document is the human-readable face of the native InkSwift compiler's accepted
 feature set. It classifies every Ink construct from the [Feature Coverage Matrix](architecture/brief.md#feature-coverage-matrix)
-(rows 1–41) as **MUST-COMPILE** or **MUST-REJECT**, with a one-line example and a
+(rows 1–43) as **MUST-COMPILE** or **MUST-REJECT**, with a one-line example and a
 one-line reason for each.
 
 ## The supported set == the runtime-playable set
@@ -72,7 +72,7 @@ These constructs compile to a playable blueprint. (Matrix rows 1–27, 29–35.)
 ## MUST-REJECT
 
 These constructs are rejected by the compiler with a located
-`.unsupportedConstruct` error. (Matrix rows 28, 36–41.)
+`.unsupportedConstruct` error. (Matrix rows 28, 36–43.)
 
 | # | Construct | Example | Reason |
 |---|-----------|---------|--------|
@@ -83,6 +83,8 @@ These constructs are rejected by the compiler with a located
 | 39 | External functions | `EXTERNAL beep()` | No host-binding mechanism for external calls. |
 | 40 | Multi-line sequences | `{stopping:` / `- Halt!` / `- I said halt!` / `}` (also `{cycle:`, `{once:`, `{shuffle:`, `{&`) | The compiler has no lowering for the block form; only the inline `{a\|b}` forms (rows 25–27) are supported. |
 | 41 | `INCLUDE` | `INCLUDE chapter_two.ink` | The compiler reads a single source string and has no file resolution. |
+| 42 | String with inline logic | `~ return "value {n}"` (also in `~ temp`, function arguments and conditions) | The compiler has no lowering that builds a string at runtime (`str` … `out` … `/str`). Quotes in prose (`She said "hi {n}".`) are text and are supported. |
+| 43 | Tag with inline logic | `A line. # pic{n}.jpg` (also `{a\|b}` in a tag, on content, choice and gather lines) | The compiler emits the tag text verbatim and does not lower the logic inside it. Static tags are supported. |
 
 ## Known gaps / future work
 
@@ -121,6 +123,13 @@ the reasons are not uniform:
   variable named `stopping`, `once` and so on; an `INCLUDE` line played as text), until
   the upstream conformance suite exposed it. They are rejected with a located error
   since 2026-11-17.
+
+- **Strings and tags with inline logic (rows 42–43)** are **compiler-unsupported**
+  the same way: the runtime plays inklecate's `.ink.json` for them correctly (#29), but
+  the native compiler kept the `{…}` as literal text, so `~ return "{3}"` printed
+  `{3}` and `# pic{n}.jpg` gave the tag `pic{n}.jpg`. A string inside a `{…}` condition
+  even broke the brace matching. They are rejected with a located error since
+  2026-11-18 (#31).
 
 ### Variable-text lowering, by example
 

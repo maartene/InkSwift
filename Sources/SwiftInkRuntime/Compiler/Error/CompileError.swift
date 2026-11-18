@@ -50,4 +50,20 @@ public struct CompileError: Error, Equatable {
         self.line = line
         self.column = column
     }
+
+    /// This error with a location filled in, when it was thrown without one
+    /// (e.g. by the expression sub-parser, which sees no source lines).
+    func located(line: Int, column: Int) -> CompileError {
+        guard self.line == 0 else { return self }
+        return CompileError(kind: kind, construct: construct, message: message, line: line, column: column)
+    }
+
+    /// Run `body`, giving an unlocated `CompileError` thrown inside it this position.
+    static func locating<Result>(line: Int, column: Int, _ body: () throws -> Result) throws -> Result {
+        do {
+            return try body()
+        } catch let error as CompileError {
+            throw error.located(line: line, column: column)
+        }
+    }
 }

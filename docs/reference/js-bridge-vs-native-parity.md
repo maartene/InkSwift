@@ -37,6 +37,8 @@ authoritative, always-current list. As of today they are:
 - **Shuffle variable-text (`{~a|b}`)** (MUST-REJECT row 28 — depends on `RANDOM`)
 - **Multi-line sequences (`{stopping:` … `}`)** (MUST-REJECT row 40 — the native compiler only; the inline forms are supported)
 - **`INCLUDE`** (MUST-REJECT row 41 — the native compiler only; load a multi-file story from its inklecate `.ink.json`)
+- **Strings with inline logic (`~ return "value {n}"`)** (MUST-REJECT row 42 — the native compiler only; quotes in prose are fine)
+- **Tags with inline logic (`# pic{n}.jpg`)** (MUST-REJECT row 43 — the native compiler only; static tags are fine)
 
 If your story uses any of these, stay on the JS-bridge for now.
 

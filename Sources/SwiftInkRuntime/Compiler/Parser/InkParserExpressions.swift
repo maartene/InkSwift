@@ -43,6 +43,20 @@ public enum InkExpressionParser {
     private static let multiplicativePrecedence = 5
 
     /// Parse a single arithmetic/comparison expression from `source`.
+    /// `source` parsed as an expression, or `nil` when it is not one. An
+    /// unsupported construct inside it (a string with inline logic, issue #31) is
+    /// rethrown: a caller falling back to another reading would miscompile it
+    /// instead of rejecting it.
+    static func parseIfExpression(_ source: String) throws -> InkExpression? {
+        do {
+            return try parse(source)
+        } catch let error as CompileError {
+            throw error
+        } catch {
+            return nil
+        }
+    }
+
     public static func parse(_ source: String) throws -> InkExpression {
         var tokens = ExpressionTokenizer(source)
         let expression = try parseExpression(minimumPrecedence: logicalOrPrecedence, from: &tokens)
@@ -178,6 +192,7 @@ public enum InkExpressionParser {
 
     private static func operand(from token: ExpressionToken) throws -> InkExpression {
         if token.isStringLiteral {
+            try UnsupportedConstructDetector.checkStringLiteral(token.text)
             return .stringLiteral(token.text)
         }
         if token.text == "true" {

@@ -275,7 +275,7 @@
   "runtime": "not ported \u2014 needs an external function binding API"
  },
  "TestNewlinesWithStringEval": {
-  "native": "native compiler keeps an inline expression in a string literal, like {3}, as literal text"
+  "native": "unsupported string with inline logic (#31)"
  },
  "TestNonTextInChoiceInnerContent": {
   "native": "whitespace around a conditional in choice content"
@@ -293,7 +293,7 @@
   "runtime": "glue and conditionals in a recursive function"
  },
  "TestQuoteCharacterSignificance": {
-  "native": "native compiler rejects a valid story: unexpectedToken('o')",
+  "native": "unsupported string with inline logic (#31)",
   "runtime": "quote characters inside strings"
  },
  "TestReadCountAcrossThreads": {
@@ -364,7 +364,7 @@
   "runtime": "needs a TagsForContentAtPath API; global tags before the first continue"
  },
  "TestTagsDynamicContent": {
-  "native": "native compiler keeps inline expressions and sequences in a tag as literal text"
+  "native": "unsupported tag with inline logic (#31)"
  },
  "TestTagsInChoice": {
   "native": "tags in choices",

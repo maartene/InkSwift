@@ -70,7 +70,7 @@ struct UpstreamConformance06Tests {
         c.equal("A\nB\nA\n3\nB\n", story.continueMaximally())
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: native compiler keeps an inline expression in a string literal, like {3}, as literal text"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: unsupported string with inline logic (#31)"))
     func `TestNewlinesWithStringEval — native compiler and runtime`() {
         Conformance.run("TestNewlinesWithStringEval", .native, Self.testNewlinesWithStringEval)
     }

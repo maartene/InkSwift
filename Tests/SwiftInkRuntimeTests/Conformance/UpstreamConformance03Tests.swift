@@ -240,7 +240,7 @@ struct UpstreamConformance03Tests {
         c.equal("My name is \"Joe\"\n", story.continueMaximally())
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: native compiler rejects a valid story: unexpectedToken('o')"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: unsupported string with inline logic (#31)"))
     func `TestQuoteCharacterSignificance — native compiler and runtime`() {
         Conformance.run("TestQuoteCharacterSignificance", .native, Self.testQuoteCharacterSignificance)
     }

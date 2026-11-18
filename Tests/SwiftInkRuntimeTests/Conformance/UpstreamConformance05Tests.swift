@@ -499,7 +499,7 @@ struct UpstreamConformance05Tests {
         c.equal(["pic8red.jpg"], story.currentTags)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: native compiler keeps inline expressions and sequences in a tag as literal text"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: unsupported tag with inline logic (#31)"))
     func `TestTagsDynamicContent — native compiler and runtime`() {
         Conformance.run("TestTagsDynamicContent", .native, Self.testTagsDynamicContent)
     }
