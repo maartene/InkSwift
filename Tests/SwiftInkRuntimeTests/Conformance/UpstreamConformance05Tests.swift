@@ -458,7 +458,7 @@ struct UpstreamConformance05Tests {
         c.equal(["white"], story.currentTags)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: tags in sequences"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: unsupported tag inside inline logic (#31)"))
     func `TestTagsInSeq — native compiler and runtime`() {
         Conformance.run("TestTagsInSeq", .native, Self.testTagsInSeq)
     }

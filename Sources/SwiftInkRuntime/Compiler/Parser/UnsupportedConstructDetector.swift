@@ -98,72 +98,57 @@ enum UnsupportedConstructDetector {
         )
     }
 
-    /// Reject a tag that carries inline logic (`Line # pic{n}.jpg`, `# {a|b}`)
-    /// on any statement line: content, choice, gather or tag-only, and inside a
-    /// conditional arm (`{x: A # t{n}}`). inklecate evaluates the logic into the
-    /// tag; the native compiler would keep it as literal text (issue #31). The
-    /// error points at the tag's `#`.
+    /// Reject the two tag shapes the native compiler would keep as literal text
+    /// (issue #31), on any statement line: content, choice, gather or
+    /// tag-only. The error points at the tag's `#`.
+    ///
+    /// - A tag inside inline logic: a `#` within a `{…}` group, i.e. in an inline
+    ///   conditional arm (`{x: A # t}`) or a sequence alternative (`{A # t|B}`).
+    ///   inklecate reads every unescaped `#` there as a tag, even inside quoted
+    ///   prose; inside a string literal it is a compile error.
+    /// - A tag with inline logic: a top-level tag, which runs to the end of the
+    ///   line, holding a `{` (`Line # pic{n}.jpg`, `# {a|b}`).
     static func checkTag(line trimmed: String, lineNumber: Int, column: Int) throws {
-        guard let hash = startOfTagWithLogic(in: trimmed) else { return }
+        guard let (hash, insideLogic) = firstTag(in: trimmed) else { return }
+        let construct: String
+        if insideLogic {
+            construct = "tag inside inline logic"
+        } else if unescapedIndex(of: "{", in: trimmed[hash...]) != nil {
+            construct = "tag with inline logic"
+        } else {
+            return
+        }
         throw CompileError(
             kind: .unsupportedConstruct,
-            construct: "tag with inline logic",
-            message: "A tag with inline logic (`# …{…}…`) is not supported by the native compiler yet.",
+            construct: construct,
+            message: "A \(construct) is not supported by the native compiler yet.",
             line: lineNumber,
             column: column + trimmed.distance(from: trimmed.startIndex, to: hash)
         )
     }
 
-    /// The `#` of the first tag that holds a `{`, or `nil` when no tag does.
-    /// A tag runs from an unescaped `#` to the end of its scope: the end of the
-    /// line at the top level, or, inside a `{…}` group, the `|` or `}` that ends
-    /// the arm it sits in. So `{x: A # t}{n}` holds a static tag followed by an
-    /// interpolation, as in inklecate; only a `{` inside the tag itself counts.
-    private static func startOfTagWithLogic(in line: String) -> String.Index? {
-        var scope = TagScope()
+    /// The first unescaped `#` in `line`, and whether it sits inside a `{…}`
+    /// group, or `nil` when the line has no tag.
+    private static func firstTag(in line: String) -> (hash: String.Index, insideLogic: Bool)? {
+        var depth = 0
         var index = line.startIndex
         while index < line.endIndex {
-            if line[index] == "\\" {
+            switch line[index] {
+            case "\\":
                 index = line.index(after: index)
                 if index == line.endIndex { return nil }
-            } else if let tagStart = scope.read(line[index], at: index) {
-                return tagStart
+            case "{":
+                depth += 1
+            case "}":
+                depth = max(0, depth - 1)
+            case "#":
+                return (index, depth > 0)
+            default:
+                break
             }
             index = line.index(after: index)
         }
         return nil
-    }
-
-    /// Where a line scan stands: its `{…}` depth, and the tag it is in, if any.
-    private struct TagScope {
-        private var depth = 0
-        private var tag: (start: String.Index, depth: Int)?
-
-        /// Read one unescaped character. Returns the tag's `#` when the
-        /// character is a `{` inside that tag.
-        mutating func read(_ character: Character, at index: String.Index) -> String.Index? {
-            switch character {
-            case "{":
-                if let tag { return tag.start }
-                depth += 1
-            case "}":
-                depth = max(0, depth - 1)
-                endTag { tagDepth, depth in depth < tagDepth }
-            case "|":
-                endTag { tagDepth, depth in tagDepth > 0 && depth == tagDepth }
-            case "#" where tag == nil || tag?.depth == depth:
-                tag = (index, depth)
-            default:
-                break
-            }
-            return nil
-        }
-
-        /// End the current tag when `ends` holds for the depth it started at
-        /// and the current depth.
-        private mutating func endTag(where ends: (_ tagDepth: Int, _ depth: Int) -> Bool) {
-            if let open = tag, ends(open.depth, depth) { tag = nil }
-        }
     }
 
     /// The first `character` in `text` not escaped by a preceding `\`.

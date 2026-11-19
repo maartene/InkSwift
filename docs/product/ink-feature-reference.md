@@ -4,7 +4,7 @@
 
 This document is the human-readable face of the native InkSwift compiler's accepted
 feature set. It classifies every Ink construct from the [Feature Coverage Matrix](architecture/brief.md#feature-coverage-matrix)
-(rows 1–43) as **MUST-COMPILE** or **MUST-REJECT**, with a one-line example and a
+(rows 1–44) as **MUST-COMPILE** or **MUST-REJECT**, with a one-line example and a
 one-line reason for each.
 
 ## The supported set == the runtime-playable set
@@ -72,7 +72,7 @@ These constructs compile to a playable blueprint. (Matrix rows 1–27, 29–35.)
 ## MUST-REJECT
 
 These constructs are rejected by the compiler with a located
-`.unsupportedConstruct` error. (Matrix rows 28, 36–43.)
+`.unsupportedConstruct` error. (Matrix rows 28, 36–44.)
 
 | # | Construct | Example | Reason |
 |---|-----------|---------|--------|
@@ -85,6 +85,7 @@ These constructs are rejected by the compiler with a located
 | 41 | `INCLUDE` | `INCLUDE chapter_two.ink` | The compiler reads a single source string and has no file resolution. |
 | 42 | String with inline logic | `~ return "value {n}"` (also in `~ temp`, function arguments and conditions) | The compiler has no lowering that builds a string at runtime (`str` … `out` … `/str`). Quotes in prose (`She said "hi {n}".`) are text and are supported. |
 | 43 | Tag with inline logic | `A line. # pic{n}.jpg` (also `{a\|b}` in a tag, on content, choice and gather lines) | The compiler emits the tag text verbatim and does not lower the logic inside it. Static tags are supported. |
+| 44 | Tag inside inline logic | `{met: Hi # greeting}`, `{A # t\|B}` (any `#` inside an inline `{…}`, even in quoted prose) | The compiler keeps the tag as literal text in the arm or alternative. A tag on its own line in a block conditional's branch is supported. |
 
 ## Known gaps / future work
 
@@ -116,9 +117,11 @@ the reasons are not uniform:
   **runtime-unsupported**: the engine has no execution model for them today. These
   are lower priority (the BEYOND tier) and out of scope for the current ceiling.
 
-- **Multi-line sequences and `INCLUDE` (rows 40–41)** are **compiler-unsupported**:
-  stories compiled by inklecate/Inky that use them may still play from their
-  `.ink.json`, but the native compiler cannot build them. Both used to compile
+- **Multi-line sequences and `INCLUDE` (rows 40–41)** are **compiler-unsupported**.
+  A story using `INCLUDE` plays correctly from its inklecate/Inky `.ink.json`. A
+  multi-line sequence does **not**: the runtime plays the wrong item from inklecate's
+  JSON too (`{stopping:` gives First, First, Second instead of First, Second, Second),
+  so it is a runtime gap as well. Both used to compile
   silently into the wrong story (a multi-line sequence became a conditional on a
   variable named `stopping`, `once` and so on; an `INCLUDE` line played as text), until
   the upstream conformance suite exposed it. They are rejected with a located error
@@ -130,6 +133,14 @@ the reasons are not uniform:
   `{3}` and `# pic{n}.jpg` gave the tag `pic{n}.jpg`. A string inside a `{…}` condition
   even broke the brace matching. They are rejected with a located error since
   2026-11-18 (#31).
+
+- **Tags inside inline logic (row 44)** are **compiler-unsupported** too: the native
+  compiler kept `{met: Hi # greeting}` as the text `Hi # greeting`, with no tag, where
+  the runtime plays inklecate's JSON correctly. Rejected with a located error since
+  2026-11-19.
+
+See [How InkSwift differs from inklecate](../reference/differences-from-inklecate.md)
+for the user-facing summary of which gaps are compile-time and which are runtime.
 
 ### Variable-text lowering, by example
 

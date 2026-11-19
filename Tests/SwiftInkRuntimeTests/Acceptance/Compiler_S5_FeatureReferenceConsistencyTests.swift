@@ -31,7 +31,7 @@ struct Compiler_S5_FeatureReferenceConsistencyTests {
         "vt-once-sticky",               // variable-text once (matrix row 27)
     ]
 
-    // The reference's MUST-REJECT half (matrix rows 28, 36-43). The deterministic
+    // The reference's MUST-REJECT half (matrix rows 28, 36-44). The deterministic
     // variable-text forms (rows 25-27) moved to `documentedSupported` in slice-01;
     // only shuffle (row 28) remains an unsupported variable-text form.
     private static let documentedUnsupported: [String] = [
@@ -39,6 +39,7 @@ struct Compiler_S5_FeatureReferenceConsistencyTests {
         "reject-thread", "reject-list", "reject-random", "reject-external",
         "reject-multiline-sequence", "reject-include",
         "reject-string-inline-logic", "reject-tag-inline-logic",
+        "reject-tag-inside-inline-logic",
     ]
 
     @Test(arguments: documentedSupported)

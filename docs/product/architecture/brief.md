@@ -256,6 +256,7 @@ Feature tiers follow inkle's own documentation structure:
 | 41 | `INCLUDE` | STANDARD | No | **MUST-REJECT** | Rejected with a located `.unsupportedConstruct` ("include") since 2026-11-17; previously the line played as text. Compile a multi-file story with inklecate/Inky and load the `.ink.json`. |
 | 42 | String with inline logic (`~ return "value {n}"`) | STANDARD | No | **MUST-REJECT** | Compiler only: rejected with a located `.unsupportedConstruct` ("string with inline logic") since 2026-11-18 (#31); previously the braces stayed literal text, and inside a `{…}` condition they broke the brace matching. The runtime plays inklecate's `str … out … /str` correctly (#29). |
 | 43 | Tag with inline logic (`# pic{n}.jpg`) | STANDARD | No | **MUST-REJECT** | Compiler only: rejected with a located `.unsupportedConstruct` ("tag with inline logic") since 2026-11-18 (#31); previously the tag kept the logic as literal text. The runtime plays inklecate's dynamic tags correctly (#29). |
+| 44 | Tag inside inline logic (`{met: Hi # greeting}`) | STANDARD | No | **MUST-REJECT** | Compiler only: rejected with a located `.unsupportedConstruct` ("tag inside inline logic") since 2026-11-19; previously the tag stayed literal text in the arm or alternative. The runtime plays inklecate's JSON correctly. |
 
 > **Native compiler coverage (native-ink-compiler DELIVER complete, 2026-06-14):** the native
 > in-process compiler now **COMPILES** the full supported ceiling — text/diverts/glue (rows 1–5, 15),

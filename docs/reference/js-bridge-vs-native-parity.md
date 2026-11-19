@@ -39,6 +39,12 @@ authoritative, always-current list. As of today they are:
 - **`INCLUDE`** (MUST-REJECT row 41 — the native compiler only; load a multi-file story from its inklecate `.ink.json`)
 - **Strings with inline logic (`~ return "value {n}"`)** (MUST-REJECT row 42 — the native compiler only; quotes in prose are fine)
 - **Tags with inline logic (`# pic{n}.jpg`)** (MUST-REJECT row 43 — the native compiler only; static tags are fine)
+- **Tags inside inline logic (`{met: Hi # greeting}`)** (MUST-REJECT row 44 — the native compiler only)
+
+For the gaps marked "the native compiler only", compiling with inklecate and loading the
+`.ink.json` with `Story(json:)` is a workaround (except multi-line sequences, which the
+runtime plays wrong too). See
+[How InkSwift differs from inklecate](differences-from-inklecate.md).
 
 If your story uses any of these, stay on the JS-bridge for now.
 
@@ -101,3 +107,4 @@ observation, tag shape, error handling) is owned and maintained here.
 
 - [Migration guide: InkStory → Story / InkCompiler](../how-to/migrate-from-js-bridge.md)
 - [Ink feature reference (construct-gap SSOT)](../product/ink-feature-reference.md)
+- [How InkSwift differs from inklecate](differences-from-inklecate.md)

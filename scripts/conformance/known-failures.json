@@ -371,7 +371,7 @@
   "runtime": "tags in choices"
  },
  "TestTagsInSeq": {
-  "native": "tags in sequences",
+  "native": "unsupported tag inside inline logic (#31)",
   "runtime": "tags in sequences"
  },
  "TestTempNotAllowedCrossStitch": {

@@ -1,6 +1,6 @@
 // @us-06 @error @kpi-2
 //
-// S6 / US-06 — every unsupported Ink construct (matrix rows 25-28, 36-43) is
+// S6 / US-06 — every unsupported Ink construct (matrix rows 25-28, 36-44) is
 // rejected with a CLEAR, LOCATED, construct-NAMED error and NO story produced.
 // This is the feature's defining safety property: 0% silent wrong output (D2 /
 // KPI #2 hard guardrail). One fixture per construct; sad paths are enumerated,
@@ -29,13 +29,15 @@ private let rejectCorpus: [(fixture: String, construct: String)] = [
     ("reject-include", "include"),
     ("reject-string-inline-logic", "string with inline logic"),
     ("reject-tag-inline-logic", "tag with inline logic"),
+    ("reject-tag-inside-inline-logic", "tag inside inline logic"),
 ]
 
-// Every place a string literal with inline logic, or a tag with inline logic,
-// can sit (issue #31), each checked against inklecate 1.2.1, which accepts all of
-// them but the `VAR` one ("Constant strings cannot contain any logic"). The
-// native compiler kept the braces as literal text, or, where the string sits in
-// a `{…}` condition, lost track of the braces and played garbage. Each entry is
+// Every place a string literal with inline logic, a tag with inline logic, or a
+// tag inside inline logic can sit (issue #31), each checked against inklecate
+// 1.2.1, which accepts all of them but the `VAR` one ("Constant strings cannot
+// contain any logic"). The native compiler kept the braces, or the tag inside an
+// inline `{…}`, as literal text; where a string sits in a `{…}` condition, it
+// lost track of the braces and played garbage. Each entry is
 // (source, construct, line, column). A `nil` column is not checked: a statement
 // inside a block reaches the parser trimmed, so its column counts from the
 // trimmed text, an existing location gap for every block body statement.
@@ -56,7 +58,13 @@ private let inlineLogicShapes: [(source: String, construct: String, line: Int, c
     ("VAR n = 1\n* [A] B # t{n}\n    -> END\n", "tag with inline logic", 2, 9),
     ("VAR n = 1\n- Gather # t{n}\n-> END\n", "tag with inline logic", 2, 10),
     ("VAR n = 1\n{ n > 0:\n    Arm. # t{n}\n}\nAfter.\n-> END\n", "tag with inline logic", 3, nil),
-    ("VAR n = 1\n{n > 0: A # t{n}}\nNext.\n-> END\n", "tag with inline logic", 2, 11),
+    ("VAR n = 1\n{n > 0: A # t{n}}\nNext.\n-> END\n", "tag inside inline logic", 2, 11),
+    ("VAR n = 1\n{n > 0: A # t}{n} after.\nNext.\n-> END\n", "tag inside inline logic", 2, 11),
+    ("VAR n = 0\n{n > 0: A|B # u} after.\nNext.\n-> END\n", "tag inside inline logic", 2, 13),
+    ("{A # t|B} after.\nNext.\n-> END\n", "tag inside inline logic", 1, 4),
+    ("{&A # t|B} after.\nNext.\n-> END\n", "tag inside inline logic", 1, 5),
+    ("VAR n = 1\n{n > 0: She said \"#1\".} after.\nNext.\n-> END\n", "tag inside inline logic", 2, 19),
+    ("VAR n = 1\n* [Pick {n > 0: A # t}]\n    -> END\n", "tag inside inline logic", 2, 19),
 ]
 
 // Every multi-line sequence opener the reference grammar accepts
@@ -88,16 +96,17 @@ struct Compiler_S6_UnsupportedRejectionTests {
     }
 
     // Only logic is rejected. Quotes in prose are text, with live interpolation,
-    // and an escaped brace is no logic at all; inklecate plays both. A tag inside
-    // a conditional arm ends with the arm, so a `{n}` after it is no part of it.
-    // (Only "not rejected" is checked: escaped braces keep their backslash, and a
-    // tag inside an inline conditional arm plays as literal text, in InkSwift's
-    // native compile today; both are separate gaps.)
+    // and an escaped brace or hash is no logic at all; inklecate plays them all.
+    // A tag in a block arm sits on a line of its own and compiles. (Only "not
+    // rejected" is checked: escaped braces keep their backslash in InkSwift's
+    // native compile today, a separate gap.)
     @Test(arguments: [
         "VAR n = 1\nShe said \"hi {n}\".\nAfter.\n-> END\n",
         "VAR n = 1\n{ n > 0: She said \"hi {n}\".}\nAfter.\n-> END\n",
         "Line # a\\{b\\}\nAfter.\n-> END\n",
-        "VAR n = 1\n{n > 0: A # t}{n} after.\nNext.\n-> END\n",
+        "VAR n = 1\n{n > 0: A \\# t} after.\nNext.\n-> END\n",
+        "VAR n = 1\n{n > 0: A} after. # t\nNext.\n-> END\n",
+        "VAR n = 1\n{ n > 0:\n    Arm. # t\n- else:\n    Other. # u\n}\nAfter.\n-> END\n",
         "~ temp t = \"a\\{b\\}\"\n{t}\nAfter.\n-> END\n",
     ])
     func `prose quotes and escaped braces are not mistaken for inline logic`(source: String) throws {
