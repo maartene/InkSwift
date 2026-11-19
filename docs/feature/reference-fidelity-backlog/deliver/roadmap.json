@@ -549,6 +549,7 @@
           "description": "Second part of feature-delta step 6a, ADR-020 §5. A pure diagnosis function (stop reason, return-stack top, choices empty, safe exit → message?) and the epilogue that applies it for ran-out stops: the C# message chosen by the return-stack top is appended to currentErrors.",
           "agent": "nw-software-crafter",
           "criteria": [
+            "PROBE FIRST (found in 02-06): upstream VisitCountBugDueToNestedContainers runs out of content after its choice even when played from inklecate's JSON on the InkSwift runtime (its g-0 -> g-1 path ends in `done`), and 02-04's first attempt saw 5 choice-continuation roots run out. Before re-applying the parked epilogue, find why these stop as ran-out instead of a safe exit; if it is a runtime gap (e.g. the choice continuation not reaching the gather's `done`), fix it here with a test, so the epilogue never reports an error on a story that plays error-free in inklecate Further cases found in 02-05, same family: (i) a divert into a labelled root gather (e.g. `- (top)`) runs out on inklecate's own JSON where `inklecate -p` ends cleanly (repro: scratchpad mine/fixture-v3-top.ink, path 5; turn it into a committed inklecate-compiled fixture); (ii) upstream TestChoiceDivertsToDone ('line ending before -> DONE', 01Tests:177) fails only in inklecate-JSON mode. Fix these runtime ran-out stops before re-enabling the epilogue; each gets an oracle test that ends with a safe exit.",
             "Tunnel top, the issue's concrete case: pop-function-exhaustion-over-tunnel (existing fixture) now reports exactly [\"unexpectedly reached end of content. Do you need a '->->' to return from a tunnel?\"]; Engine_TypeCheckedPopTests asserts it",
             "Empty stack, synthetic fixture issue28-ran-out-in-knot: a knot entered by a top-level divert whose flat body runs out after a line of prose reports exactly [\"ran out of content. Do you need a '-> DONE' or '-> END'?\"] after that prose plays, on the runtime path (inklecate JSON) and on the native path (flat knot bodies already get no done)",
             "Function top: probe whether any well-formed route reaches a ran-out stop with a function frame on top (C# auto-pops function frames on exhaustion); if none, cover \"unexpectedly reached end of content. Do you need a '~ return'?\" with a unit test of the pure diagnosis function only and record why in the test",
@@ -585,7 +586,8 @@
             "COMMIT MESSAGE references `Refs #28` (02-05 carries `Fixes #28`).",
             "MANUAL MUTATION CHECK (CLAUDE.md): 3-5 plausible-bug mutations (e.g. swap the tunnel and function messages, run the epilogue on safe-exit stops, ignore pending choices, append the error twice). Report each and its outcome in the commit message; never commit a mutation.",
             "CODE HEALTH: CodeScene CLI self-check on every changed production file against the main baseline; >=9.5 approve, 9–9.5 report, <9 rework.",
-            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass.",
+            "Resume from the parked work: `git stash list` shows '02-04 WIP: end-of-content epilogue …'; apply it (git stash apply, then drop once committed). Since it was parked, 02-06 (09048c7) and 02-05 changed native emission, so re-run everything."
           ],
           "deps": [
             "02-05"
