@@ -43,6 +43,8 @@ Every commit must pass the same gate CI enforces, so the trunk stays releasable:
 Versions are bare semver tags (`2.1.1`, no `v`). The major versions follow the JS-bridge retirement schedule in [ADR-019](docs/product/architecture/adr-019-release-schedule-js-bridge-retirement.md): **2.x** ships `SwiftInkRuntime` alongside a fully supported `InkStory`; **3.0.0** makes the native runtime the `InkSwift` product and deprecates the JS-bridge; **4.0.0** removes the JS-bridge.
 
 - **Every fixed issue that is not a breaking change gets a patch release** (`x.y.z` → `x.y.z+1`). Cut the release once the fix is on `main`. Don't let fixes pile up unreleased.
+- **A new feature that doesn't break existing code gets a minor release** (`x.y.z` → `x.y+1.0`), for example the native compiler gaining support for a construct it used to reject.
+- **A breaking change waits for the next major release.** That means a public API change that breaks existing code, such as #27's typed `setVariable`. Majors are reserved for the ADR-019 schedule, and with trunk-based development anything on `main` ships in the next patch or minor release. So a breaking change stays an issue, marked with the major it is waiting for, until that major is being prepared. Only then is it built.
 - **Docs-only and test-only commits** (no change to what a user's code or story does) don't need a release of their own. They ship with the next one.
 
 **Cutting a release:**
