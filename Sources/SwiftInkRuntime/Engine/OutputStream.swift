@@ -26,6 +26,11 @@ enum OutputItem: Equatable, Sendable, ExpressibleByStringLiteral {
         }
     }
 
+    var isTag: Bool {
+        if case .tag = self { return true }
+        return false
+    }
+
     /// Text holding anything but spaces and tabs.
     var isNonWhitespaceText: Bool {
         guard case .text(let text) = self else { return false }
@@ -61,5 +66,50 @@ struct OutputLine: Equatable {
             return tag
         }
         remainder = end < stream.endIndex ? Array(stream[(end + 1)...]) : []
+    }
+}
+
+/// A tag still in the output stream at a save (ADR-020 §6): `at` is the index
+/// into the saved `outputStream` strings before which it sat, `0...count`.
+struct PendingOutputTag: Codable, Equatable {
+    let at: Int
+    let text: String
+}
+
+/// The output stream as saved: its text and newline strings (the
+/// `outputStream` key, ADR-018) and its tags at their positions between them
+/// (the optional `outputStreamTags` key, ADR-020 §6).
+struct OutputStreamWire: Equatable {
+    let strings: [String]
+    let tags: [PendingOutputTag]
+
+    init(strings: [String], tags: [PendingOutputTag]) {
+        self.strings = strings
+        self.tags = tags
+    }
+
+    init(_ items: [OutputItem]) {
+        var strings: [String] = []
+        var tags: [PendingOutputTag] = []
+        for item in items {
+            if case .tag(let tag) = item {
+                tags.append(PendingOutputTag(at: strings.count, text: tag))
+            } else if let text = item.wireText {
+                strings.append(text)
+            }
+        }
+        self.init(strings: strings, tags: tags)
+    }
+
+    /// The stream with each tag put back before the string at its `at`, tags
+    /// at one position in array order; an `at` past the end goes last.
+    var items: [OutputItem] {
+        var tagsAt = Dictionary(grouping: tags) { min(max($0.at, 0), strings.count) }
+        var items: [OutputItem] = []
+        for (index, string) in strings.enumerated() {
+            items += (tagsAt.removeValue(forKey: index) ?? []).map { .tag($0.text) }
+            items.append(OutputItem(wireText: string))
+        }
+        return items + (tagsAt[strings.count] ?? []).map { .tag($0.text) }
     }
 }

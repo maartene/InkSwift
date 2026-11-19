@@ -318,11 +318,12 @@ struct ContainerStackFrame: Codable {
 struct StoryState: Codable {
     var pointer: StoryPointer
     /// Typed in memory (ADR-020 §1); saved as the `[String]` of its text and
-    /// newline items (ADR-018).
+    /// newline items (ADR-018) plus `outputStreamTags` when it holds a tag.
     var outputStream: [OutputItem]
     var variablesState: [String: InkValue]
     /// Saved as `{"a.b": n}`: keys are `ContainerPath.description` (ADR-018).
     var visitCounts: [ContainerPath: Int]
+    /// The tags of the line `continue()` last returned (ADR-020 §2).
     var currentTags: [String]
     var isEnded: Bool
     var currentChoices: [ChoiceData]
@@ -408,7 +409,7 @@ struct StoryState: Codable {
     // MARK: - Codable
 
     private enum CodingKeys: String, CodingKey {
-        case pointer, outputStream, variablesState, visitCounts, currentTags
+        case pointer, outputStream, outputStreamTags, variablesState, visitCounts, currentTags
         case isEnded, currentChoices, evalStack
         case inTagMode, tagAccumulator, inStringMode, stringAccumulator, stringModeTags
         case lastCompletedLine, stackFrames, returnStack
@@ -419,7 +420,10 @@ struct StoryState: Codable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         pointer              = try container.decode(StoryPointer.self,         forKey: .pointer)
-        outputStream         = try container.decode([String].self,             forKey: .outputStream).map(OutputItem.init(wireText:))
+        outputStream         = OutputStreamWire(
+            strings: try container.decode([String].self, forKey: .outputStream),
+            tags: try container.decodeIfPresent([PendingOutputTag].self, forKey: .outputStreamTags) ?? []
+        ).items
         variablesState       = try container.decode([String: InkValue].self,   forKey: .variablesState)
         let savedVisitCounts = try container.decode([String: Int].self,        forKey: .visitCounts)
         visitCounts          = savedVisitCounts.reduce(into: [:]) { $0[ContainerPath(savedKey: $1.key)] = $1.value }
@@ -444,7 +448,11 @@ struct StoryState: Codable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(pointer,           forKey: .pointer)
-        try container.encode(outputStream.compactMap(\.wireText), forKey: .outputStream)
+        let outputWire = OutputStreamWire(outputStream)
+        try container.encode(outputWire.strings, forKey: .outputStream)
+        if outputWire.tags.isEmpty == false {
+            try container.encode(outputWire.tags, forKey: .outputStreamTags)
+        }
         try container.encode(variablesState,    forKey: .variablesState)
         let savedVisitCounts = visitCounts.reduce(into: [String: Int]()) { $0[$1.key.description] = $1.value }
         try container.encode(savedVisitCounts,  forKey: .visitCounts)

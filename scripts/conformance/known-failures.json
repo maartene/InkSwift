@@ -62,10 +62,6 @@
  "TestComplexTunnels": {
   "native": "tunnels with arguments"
  },
- "TestConditionalChoiceInWeave2": {
-  "native": "conditional choice inside a weave",
-  "runtime": "conditional choice inside a weave"
- },
  "TestConditionalChoices": {
   "native": "choice conditions ({cond} {cond} text)"
  },
@@ -368,8 +364,7 @@
   "runtime": "tags in choices"
  },
  "TestTagsInSeq": {
-  "native": "unsupported tag inside inline logic (#31)",
-  "runtime": "tags in sequences"
+  "native": "unsupported tag inside inline logic (#31)"
  },
  "TestTempNotAllowedCrossStitch": {
   "native": "native accepts a story inklecate rejects ('Unresolved variable: x')"
@@ -460,12 +455,8 @@
   "native": "default (fallback) choices",
   "runtime": "default (fallback) choices"
  },
- "TestVisitCountBugDueToNestedContainers": {
-  "native": "visit counts in nested containers"
- },
  "TestVisitCountsWhenChoosing": {
-  "native": "visit counts when choosing a path or a choice",
-  "runtime": "visit counts when choosing a path or a choice"
+  "native": "visit counts when choosing a path or a choice"
  },
  "TestWeaveOptions": {
   "runtime": "choice text with [bracketed] options"

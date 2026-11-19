@@ -14,9 +14,8 @@
 // Every expected line below was probed with `inklecate -p` (1.2.1) before the
 // fix was written.
 //
-// Tags on lines AFTER the tagged one are deliberately NOT asserted here: a
-// line's tags currently stick in `currentTags` until the next choice (#30, a
-// runtime bug fixed separately in step 02-02).
+// The line after the tagged one reports no tags: a line's tags no longer stick
+// in `currentTags` until the next choice (#30).
 
 import Testing
 import Foundation
@@ -33,6 +32,7 @@ import Foundation
         #expect(story.`continue`().trimmingCharacters(in: .whitespacesAndNewlines) == "A after.")
         #expect(story.currentTags == ["t"])
         #expect(story.`continue`().trimmingCharacters(in: .whitespacesAndNewlines) == "Next.")
+        #expect(story.currentTags == [])
         while story.canContinue { _ = story.`continue`() }
         #expect(story.currentChoices.map(\.text) == ["Onward"])
         try story.chooseChoice(at: 0)

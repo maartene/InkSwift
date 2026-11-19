@@ -463,7 +463,7 @@ struct UpstreamConformance05Tests {
         Conformance.run("TestTagsInSeq", .native, Self.testTagsInSeq)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: tags in sequences"))
+    @Test
     func `TestTagsInSeq — inklecate JSON on the runtime`() {
         Conformance.run("TestTagsInSeq", .runtime, Self.testTagsInSeq)
     }

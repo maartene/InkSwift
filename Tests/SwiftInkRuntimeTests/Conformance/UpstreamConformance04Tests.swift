@@ -439,7 +439,7 @@ struct UpstreamConformance04Tests {
         Conformance.run("TestVisitCountsWhenChoosing", .native, Self.testVisitCountsWhenChoosing)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: visit counts when choosing a path or a choice"))
+    @Test
     func `TestVisitCountsWhenChoosing — inklecate JSON on the runtime`() {
         Conformance.run("TestVisitCountsWhenChoosing", .runtime, Self.testVisitCountsWhenChoosing)
     }
@@ -453,7 +453,7 @@ struct UpstreamConformance04Tests {
         c.equal("choice\n1\n", story.continueMaximally())
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: visit counts in nested containers"))
+    @Test
     func `TestVisitCountBugDueToNestedContainers — native compiler and runtime`() {
         Conformance.run("TestVisitCountBugDueToNestedContainers", .native, Self.testVisitCountBugDueToNestedContainers)
     }

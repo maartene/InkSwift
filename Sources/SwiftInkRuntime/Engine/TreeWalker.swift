@@ -72,8 +72,9 @@ struct TreeWalker {
             // A tag closed WHILE `inStringMode` is true is choice-level markup
             // (`* [Text # tag]`, only ever emitted inside a `str`/`/str` span —
             // see `StoryState.stringModeTags`), not a content-line tag: route it
-            // there instead of the generic `currentTags` so it does not leak
-            // into "tags of the current output line".
+            // there instead of the output stream so it does not leak into "tags
+            // of the current output line". A content tag becomes a tag item at
+            // its position in the stream (ADR-020 §1).
             //
             // The accumulated text is whitespace-cleaned and an empty tag is
             // dropped, matching the reference runtime: every tag added by
@@ -98,7 +99,7 @@ struct TreeWalker {
                 if state.inStringMode {
                     state.stringModeTags.append(tagText)
                 } else {
-                    state.currentTags.append(tagText)
+                    appendTag(tagText, state: &state)
                 }
             }
             state.inTagMode = false

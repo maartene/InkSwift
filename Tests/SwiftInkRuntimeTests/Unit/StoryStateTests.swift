@@ -2,7 +2,7 @@ import Testing
 import Foundation
 @testable import SwiftInkRuntime
 
-// Test Budget: 11 distinct behaviors x 2 = 22 max unit tests
+// Test Budget: 13 distinct behaviors x 2 = 26 max unit tests
 // Behaviors:
 //   B1 — default StoryState initialises with zero/empty fields
 //   B2 — StoryState encodes to JSON without throwing
@@ -16,6 +16,7 @@ import Foundation
 //   B10 — typed path fields encode to the legacy wire form (ADR-018)
 //   B11 — legacy wire strings decode to typed paths and re-encode byte-identically
 //   B12 — the typed output stream saves as its text and newline strings, tags left out (ADR-020 §6)
+//   B13 — stream tags save in the optional outputStreamTags key at their string index and restore in place
 
 @Suite("StoryState")
 struct StoryStateTests {
@@ -243,8 +244,35 @@ struct StoryStateTests {
         state.outputStream = [.text("Hello"), .tag("greeting"), .newline, .text("Next")]
         let wire = try Self.wireObject(of: state)
         #expect(wire["outputStream"] as? [String] == ["Hello", "\n", "Next"])
+    }
+
+    // Behavior 13: tags save in outputStreamTags at the string index before which they sat
+    // and restore to the same positions (ADR-020 §6).
+    @Test(arguments: [
+        [OutputItem.text("Hello"), .tag("greeting"), .newline, .text("Next")],
+        [.tag("first"), .tag("second"), .text("Line"), .newline, .tag("next"), .text("More"), .tag("last")],
+        [.text("Line"), .newline, .tag("pending")],
+    ])
+    func `output stream tags round-trip at their positions`(stream: [OutputItem]) throws {
+        var state = StoryState()
+        state.outputStream = stream
         let restored = try JSONDecoder().decode(StoryState.self, from: JSONEncoder().encode(state))
-        #expect(restored.outputStream == [.text("Hello"), .newline, .text("Next")])
+        #expect(restored.outputStream == stream)
+    }
+
+    @Test func `output stream tags are written with the index of the string they precede`() throws {
+        var state = StoryState()
+        state.outputStream = [.text("Line"), .newline, .tag("a"), .tag("b"), .text("Next"), .tag("c")]
+        let wire = try Self.wireObject(of: state)
+        let tags = try #require(wire["outputStreamTags"] as? [[String: Any]])
+        #expect(tags.map { $0["at"] as? Int } == [2, 2, 3])
+        #expect(tags.map { $0["text"] as? String } == ["a", "b", "c"])
+    }
+
+    @Test func `a stream without tags omits outputStreamTags`() throws {
+        var state = StoryState()
+        state.outputStream = [.text("Line"), .newline]
+        #expect(try Self.wireObject(of: state)["outputStreamTags"] == nil)
     }
 
     private static func wireObject(of state: StoryState) throws -> [String: Any] {

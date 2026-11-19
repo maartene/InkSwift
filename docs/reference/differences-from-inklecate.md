@@ -58,21 +58,17 @@ playing inklecate's `.ink.json` on the native runtime.
 |---|---|---|---|
 | `INCLUDE other.ink` | Rejected | ✅ Works | Compile with inklecate |
 | String with inline logic: `~ return "value {n}"` | Rejected | ✅ Works | Compile with inklecate |
-| Tag with inline logic: `Line. # pic{n}.jpg` | Rejected | ✅ Works¹ | Compile with inklecate |
-| Tag inside inline logic: `{met: Hi # greeting}`, `{A # t\|B}` | Rejected | ✅ Works¹ | Compile with inklecate |
+| Tag with inline logic: `Line. # pic{n}.jpg` | Rejected | ✅ Works | Compile with inklecate |
+| Tag inside inline logic: `{met: Hi # greeting}`, `{A # t\|B}` | Rejected | ✅ Works | Compile with inklecate |
 | Glue before a tag: `Text <> # t` | Compiles, **plays wrong** (prints `<>` and breaks the line) | ✅ Works | Put the tag on the glued line, or compile with inklecate |
 | A conditional inside a function body | Compiles, **plays wrong** | ✅ Works | Compile with inklecate |
-| `FLOOR()`, `INT()`, `CEILING()`, `FLOAT()` | Compile, **play wrong**² | ✅ Works | Compile with inklecate |
+| `FLOOR()`, `INT()`, `CEILING()`, `FLOAT()` | Compile, **play wrong**¹ | ✅ Works | Compile with inklecate |
 | Multi-line sequences: `{stopping:` … `}`, `{cycle:` … `}` | Rejected | ✅ Works | Compile with inklecate, or use the inline forms (`{a\|b}`, `{&a\|b}`, `{!a\|b}`) |
 | Shuffle: `{~a\|b}` | Rejected | ❌ Refused at load | JS-bridge |
 | `LIST`, `RANDOM()`, threads (`<-`), `EXTERNAL` | Rejected | ❌ Refused at load | JS-bridge |
-| `TURNS()`, `TURNS_SINCE()`, `CHOICE_COUNT()`, `POW()`, `?` / `!?`, `READ_COUNT()` of a variable | Compile and **play wrong**, or a cryptic error² | ❌ Refused at load | JS-bridge, or avoid the function |
+| `TURNS()`, `TURNS_SINCE()`, `CHOICE_COUNT()`, `POW()`, `?` / `!?`, `READ_COUNT()` of a variable | Compile and **play wrong**, or a cryptic error¹ | ❌ Refused at load | JS-bridge, or avoid the function |
 
-¹ A line's tags currently stay in `currentTags` for later lines until the next choice,
-for every tag ([#30](https://github.com/maartene/InkSwift/issues/30), a runtime
-difference).
-
-² The native compiler does not reject these yet: `{POW(2, 3)}` prints `3`, `{TURNS()}`
+¹ The native compiler does not reject these yet: `{POW(2, 3)}` prints `3`, `{TURNS()}`
 prints nothing, and `"hello" ? "xyz"` is true. Until it does, don't use them in a natively
 compiled story.
 
@@ -102,8 +98,8 @@ do {
 |---|---|---|
 | `INCLUDE` | `INCLUDE chapter_two.ink` | Yes |
 | String with inline logic | `~ temp label = "value {n}"`, `{f("a{n}")}` | Yes |
-| Tag with inline logic | `Line. # pic{n}.jpg`, `# {a\|b}` | Yes¹ |
-| Tag inside inline logic | `{met: Hi # greeting}`, `{A # t\|B}` | Yes¹ |
+| Tag with inline logic | `Line. # pic{n}.jpg`, `# {a\|b}` | Yes |
+| Tag inside inline logic | `{met: Hi # greeting}`, `{A # t\|B}` | Yes |
 | Multi-line sequence | `{stopping:` / `- Halt!` / `- I said halt!` / `}` | Yes |
 | Shuffle | `{~heads\|tails}` | No |
 | `LIST`, `RANDOM`, threads, `EXTERNAL` | `LIST colours = red, green` | No |
@@ -183,8 +179,6 @@ a player can see.
 
 Known places where the same compiled story plays differently on InkSwift's runtime:
 
-- A line's **tags stay in `currentTags`** for later lines until the next choice
-  ([#30](https://github.com/maartene/InkSwift/issues/30)).
 - **Running out of content** (a missing `->->`, `~ return` or `-> END`) ends the story
   silently; inkle's runtime reports an error
   ([#28](https://github.com/maartene/InkSwift/issues/28)).

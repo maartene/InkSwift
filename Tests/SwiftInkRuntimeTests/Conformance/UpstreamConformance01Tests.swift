@@ -291,12 +291,12 @@ struct UpstreamConformance01Tests {
         c.equal(0, story.currentChoices.count)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: conditional choice inside a weave"))
+    @Test
     func `TestConditionalChoiceInWeave2 — native compiler and runtime`() {
         Conformance.run("TestConditionalChoiceInWeave2", .native, Self.testConditionalChoiceInWeave2)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: conditional choice inside a weave"))
+    @Test
     func `TestConditionalChoiceInWeave2 — inklecate JSON on the runtime`() {
         Conformance.run("TestConditionalChoiceInWeave2", .runtime, Self.testConditionalChoiceInWeave2)
     }

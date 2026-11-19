@@ -33,9 +33,8 @@ struct Engine_OutputInsideSpanTests {
             "A tagged line.\n",
             "After the tag.\n",
         ])
-        // Only the tagged line's own tags: InkSwift keeps a line's tags until the
-        // next choice, where the reference clears them per line — a separate gap.
-        #expect(tags.prefix(4) == [[], [], [], ["pic8.jpg"]])
+        // Each line reports only its own tags (#30).
+        #expect(tags == [[], [], [], ["pic8.jpg"], []])
         #expect(story.currentChoices.map(\.text) == ["Onward"])
     }
 }

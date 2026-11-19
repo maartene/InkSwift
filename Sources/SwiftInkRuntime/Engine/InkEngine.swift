@@ -121,14 +121,15 @@ final class InkEngine {
     // MARK: - Computed properties
 
     var canContinue: Bool {
+        // Buffered complete lines (text + \n) are still drainable via continue()
+        // even after the story has ended or reached its choices. The step loop
+        // defers some flushes (e.g. inside eval blocks, or past a choice point)
+        // and may accumulate more than one line before stopping; allow the
+        // caller to consume them one at a time through subsequent continue()
+        // calls.
+        if hasBufferedLine { return true }
         // Choices pending — user must choose, can't continue.
         guard state.currentChoices.isEmpty else { return false }
-        // Buffered complete lines (text + \n) are still drainable via continue()
-        // even after the story has ended. The step loop defers some flushes
-        // (e.g. inside eval blocks) and may accumulate more than one line before
-        // hitting `end` / `done`; allow the caller to consume them one at a time
-        // through subsequent continue() calls.
-        if state.outputStream.contains(.newline) { return true }
         guard !state.isEnded else { return false }
         guard let top = containerStack.last else { return false }
         return top.index < top.container.children.count
@@ -138,8 +139,21 @@ final class InkEngine {
         return lastCompletedLine
     }
 
+    /// A complete line is still waiting in the output stream.
+    private var hasBufferedLine: Bool {
+        state.outputStream.contains(.newline)
+    }
+
+    /// The choices on offer: none while a buffered line is still to be returned.
+    /// C# rewinds a Continue that ran past a newline into more text, choice
+    /// points included, so a choice is offered only with the last line before
+    /// it; collected early, it stays hidden until that line is returned.
+    private var offeredChoices: [ChoiceData] {
+        hasBufferedLine ? [] : state.currentChoices
+    }
+
     var currentChoices: [Choice] {
-        return state.currentChoices.map { data in
+        return offeredChoices.map { data in
             Choice(text: data.text, index: data.index, tags: data.tags)
         }
     }
@@ -426,25 +440,31 @@ final class InkEngine {
         if context.evalBlockDepth > 0 {
             return false
         }
-        if assignmentFollowsEvalBlock(endingWith: node) {
+        if stepWithoutOutputFollowsEvalBlock(endingWith: node) {
             return false
         }
         return state.currentChoices.isEmpty
     }
 
-    /// After /ev, peek at the next node: if it is a VAR= assignment, defer
-    /// the flush so that the assignment executes before the buffered line is
+    /// After /ev, peek at the next node: if it is a VAR= assignment or a choice
+    /// point, defer the flush so that it executes before the buffered line is
     /// returned. This matches the C# runtime where Continue() keeps stepping
-    /// past /ev when the immediately-following node is a pure side-effect
-    /// (writes to variablesState, no output). A VAR= node after /ev is
-    /// semantically part of the same Ink statement as the preceding eval block.
-    private func assignmentFollowsEvalBlock(endingWith node: NodeKind) -> Bool {
+    /// past /ev when the immediately-following node adds no output. A VAR= node
+    /// after /ev is part of the same Ink statement as the preceding eval block;
+    /// a choice point after it is the choice that block built, so the line
+    /// before a choice is returned with that choice already offered, as C#
+    /// returns it (Continue steps on until the pointer runs out at the choices).
+    private func stepWithoutOutputFollowsEvalBlock(endingWith node: NodeKind) -> Bool {
         guard case .controlCommand("/ev") = node,
               let nextTop = containerStack.last,
-              nextTop.index < nextTop.container.children.count,
-              case .variableAssignment = nextTop.container.children[nextTop.index]
+              nextTop.index < nextTop.container.children.count
         else { return false }
-        return true
+        switch nextTop.container.children[nextTop.index] {
+        case .variableAssignment, .choicePoint:
+            return true
+        default:
+            return false
+        }
     }
 
     /// Process a `.choicePoint` node encountered during step execution.
@@ -593,12 +613,13 @@ final class InkEngine {
         return extractLine().text + "\n"
     }
 
-    /// Split the line off the front of the output stream, keeping the remainder.
-    /// Line tags are still tracked in `state.currentTags` until ADR-020 §2 lands
-    /// fully (02-02); the stream carries no tag items yet.
+    /// Split the line off the front of the output stream, keeping the remainder:
+    /// `currentTags` become that line's tags (ADR-020 §2). A tag the lookahead
+    /// collected past the newline stays in the remainder, with the next line.
     private func extractLine() -> OutputLine {
         let line = OutputLine(splitting: state.outputStream)
         state.outputStream = line.remainder
+        state.currentTags = line.tags
         return line
     }
 
@@ -681,6 +702,8 @@ final class InkEngine {
 
     /// Advance one line and store the result in lastCompletedLine.
     func step() {
+        // Prologue (ADR-020 §3, C# ResetOutput): the last line's tags go.
+        state.currentTags = []
         lastCompletedLine = stepToNextLine() ?? ""
         state.lastCompletedLine = lastCompletedLine
     }
@@ -905,10 +928,11 @@ final class InkEngine {
     // MARK: - Choice handling
 
     func chooseChoice(at index: Int) throws {
-        guard index >= 0 && index < state.currentChoices.count else {
+        let offered = offeredChoices
+        guard index >= 0 && index < offered.count else {
             throw StoryError.invalidChoiceIndex(index)
         }
-        let choice = state.currentChoices[index]
+        let choice = offered[index]
         if choice.flags.contains(.isOnceOnly) {
             recordChosen(choice)
         }
@@ -1098,11 +1122,12 @@ final class InkEngine {
         } else {
             targetPath = knot
         }
-        // D1: reset 13 StoryState fields (RD-01); stackFrames intentionally NOT cleared
+        // D1: reset 14 StoryState fields (RD-01); stackFrames intentionally NOT cleared
         state.returnStack = []
         state.evalStack = []
         state.currentChoices = []
         state.outputStream = []
+        state.currentTags = []
         state.callFrameVariables = []
         state.suppressNextNewline = false
         state.isEnded = false
