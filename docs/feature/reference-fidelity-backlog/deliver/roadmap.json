@@ -2,7 +2,7 @@
   "roadmap": {
     "project_id": "reference-fidelity-backlog",
     "created_at": "2026-11-19T12:00:00Z",
-    "total_steps": 18,
+    "total_steps": 19,
     "implementation_notes": [
       "Expected values marked as predictions are verified with `inklecate -p` before RED; inklecate's output is authoritative.",
       "Releases (tag, push, GitHub release, README `from:` snippet) are cut by the orchestrator, never by the crafter. No tag between 02-04 and 02-05 (one patch). No tag between 04-02 and 04-04 (one minor)."
@@ -261,7 +261,7 @@
             "DISTILL was skipped: write the RED tests in this step from the criteria. New ATs are never committed .disabled.",
             "Forward-only saves were already accepted by the maintainer (Q4, ADR-022 §4): a save written by this build is not supported on an older build. This replaces ADR-018's rollback-safety requirement for visitCounts keys only; all other fields keep the byte-identical wire.",
             "Earned Trust: the golden legacy saves are the probe for the restore conversion.",
-            "RELEASE: patch (ships 01-04, 01-05, 01-06). Release-note callouts: \"Multi-line sequences, labelled-gather loops and read counts play correctly.\" and \"Saves from this release are not supported on older builds. Restored there, some visit counts read as 0: sequence items and once-only content replay, and loops run extra passes.\"",
+            "RELEASE: none on its own: patch ships 01-04..01-07 together (01-07 added by maintainer decision). Release-note callouts: \"Multi-line sequences, labelled-gather loops and read counts play correctly.\" and \"Saves from this release are not supported on older builds. Restored there, some visit counts read as 0: sequence items and once-only content replay, and loops run extra passes.\"",
             "DOCS: differences doc / save notes: forward-only save compatibility.",
             "COMMIT MESSAGE references `Fixes #33`.",
             "MANUAL MUTATION CHECK (CLAUDE.md): 3-5 plausible-bug mutations (e.g. overwrite instead of sum, canonicalise only on save, drop unresolvable keys). Report each and its outcome in the commit message; never commit a mutation.",
@@ -270,6 +270,49 @@
           ],
           "deps": [
             "01-05"
+          ]
+        },
+        {
+          "id": "01-07",
+          "name": "Count every container a divert enters (VisitChangedContainersDueToDivert)",
+          "description": "Added after 01-05 (maintainer decision): a relative divert (`-> .^.stitch`, `.^.^.^`) records no visit, so knot, stitch and gather read counts are wrong after one; upstream TestKnotStitchGatherCounts (runtime, 06Tests:347) stays red. C# Story.cs VisitChangedContainersDueToDivert (~1000-1033) counts every container entered at its start by a divert, walking up from the target to the first common ancestor with the previous pointer. ADR-022 parked this as 'adopt only if observable'; 01-05 showed it is. Implement it in VisitCounter for every divert kind (absolute, relative, variable, tunnel, function call), not only relative ones.",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "PROBE FIRST: read Story.cs VisitChangedContainersDueToDivert and Container.cs CountStartOnly, and confirm on main that TestKnotStitchGatherCounts (runtime) fails because relative diverts record no visit; record which divert kinds currently record visits and which don't",
+            "An inklecate-oracle fixture with knots, stitches and a labelled gather reached by absolute and relative diverts, printing each read count after each divert and continuing past them (prose, then a choice), plays exactly as `inklecate -p`",
+            "TestKnotStitchGatherCounts (runtime) passes and is re-enabled (known-failures.json entry removed, regenerated); no conformance test or oracle fixture that passed before fails after; the 01-05 doc comment in VisitCounter.swift is updated to record the adoption and its evidence",
+            "Count-start-only (#f flag 4) is honoured if the C# walk depends on it (a container entered mid-way by a divert is not counted when the flag is set); decided from the C# source and pinned by a test if observable, otherwise recorded as equivalent in the comment",
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained; changed production files' Code Health not below their main baseline"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Engine_DivertVisitCountTests.swift",
+          "scenario_name": "A divert counts every container it enters, as C# does",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Engine/VisitCounter.swift",
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift",
+            "Sources/SwiftInkRuntime/Engine/ContainerPathResolver.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Engine_DivertVisitCountTests.swift",
+            "Tests/SwiftInkRuntimeTests/Fixtures/divert-visit-counts.ink",
+            "Tests/SwiftInkRuntimeTests/Fixtures/divert-visit-counts.ink.json",
+            "Tests/SwiftInkRuntimeTests/Unit/VisitCounterTests.swift",
+            "scripts/conformance/known-failures.json",
+            "Tests/SwiftInkRuntimeTests/Conformance/UpstreamConformance06Tests.swift",
+            "docs/reference/differences-from-inklecate.md"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express invariant checks as parametrized tests over representative inputs.",
+            "MANUAL MUTATION CHECK (CLAUDE.md): 3-5 plausible-bug mutations (e.g. canonicalise to the index instead of the name, skip canonicalisation in .readCount only, canonicalise only the last component). Report each and its outcome in the commit message; never commit a mutation.",
+            "CODE HEALTH: CodeScene CLI self-check on every changed production file against the main baseline; >=9.5 approve, 9–9.5 report, <9 rework.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass.",
+            "DISTILL was skipped: write the RED tests in this step from the criteria. New ATs are never committed .disabled.",
+            "FIXTURES: inklecate-produced .ink.json only, never hand-edited; expected output from `inklecate -p`; the fixture continues past every divert it pins.",
+            "C# reference: /Users/maartene/Downloads/ink/ink-engine-runtime/Story.cs VisitChangedContainersDueToDivert, IncrementVisitCountForContainer, Container.cs:73 (CountStartOnly).",
+            "CONFORMANCE: backlog run before and after; re-enable every test that now passes, same commit. TestVisitCountsWhenChoosing fails for an unrelated reason (invalidChoiceIndex after moveToKnot) and is not expected to move.",
+            "RELEASE: patch, the last commit of the #33 release (ships 01-04..01-07); the orchestrator tags after this step. Release-note callout: \"Read counts of knots, stitches and gathers reached by any divert, including relative ones, match inklecate.\"",
+            "COMMIT MESSAGE references `Refs #33` and ends with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.",
+            "GATE: des-commit commits with --no-verify; run `.githooks/pre-commit` yourself before des-commit."
+          ],
+          "deps": [
+            "01-06"
           ]
         }
       ]
