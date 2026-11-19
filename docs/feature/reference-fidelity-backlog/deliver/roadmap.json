@@ -2,7 +2,7 @@
   "roadmap": {
     "project_id": "reference-fidelity-backlog",
     "created_at": "2026-11-19T12:00:00Z",
-    "total_steps": 19,
+    "total_steps": 20,
     "implementation_notes": [
       "Expected values marked as predictions are verified with `inklecate -p` before RED; inklecate's output is authoritative.",
       "Releases (tag, push, GitHub release, README `from:` snippet) are cut by the orchestrator, never by the crafter. No tag between 02-04 and 02-05 (one patch). No tag between 04-02 and 04-04 (one minor)."
@@ -452,48 +452,44 @@
           ]
         },
         {
-          "id": "02-04",
-          "name": "Report running out of content with the C# messages (#28)",
-          "description": "Second part of feature-delta step 6a, ADR-020 §5. A pure diagnosis function (stop reason, return-stack top, choices empty, safe exit → message?) and the epilogue that applies it for ran-out stops: the C# message chosen by the return-stack top is appended to currentErrors.",
+          "id": "02-06",
+          "name": "Native emission reaches a safe exit where inklecate's does (DONE targets, rejoins, final gathers)",
+          "description": "Added 2026-11-19 (maintainer decision, feature-delta U13). Step 02-04's end-of-content epilogue showed 18 native-compiled stories that inklecate's JSON plays to a safe exit but whose native emission runs out of content, hidden until now by a silent stop: (a) `-> DONE` inside a knot or gather compiles to divert(path \"DONE\"), a target that does not exist; (b) a conditional's rejoin (`condN-end`) is a separate named container with nothing after it; (c) a weave's last gather (`g-N`) is a separate named container. Align the native emission with inklecate's so the flow continues (or ends safely) where inklecate's does. Runs before 02-05 and the parked 02-04.",
           "agent": "nw-software-crafter",
           "criteria": [
-            "Tunnel top, the issue's concrete case: pop-function-exhaustion-over-tunnel (existing fixture) now reports exactly [\"unexpectedly reached end of content. Do you need a '->->' to return from a tunnel?\"]; Engine_TypeCheckedPopTests asserts it",
-            "Empty stack, synthetic fixture issue28-ran-out-in-knot: a knot entered by a top-level divert whose flat body runs out after a line of prose reports exactly [\"ran out of content. Do you need a '-> DONE' or '-> END'?\"] after that prose plays, on the runtime path (inklecate JSON) and on the native path (flat knot bodies already get no done)",
-            "Function top: probe whether any well-formed route reaches a ran-out stop with a function frame on top (C# auto-pops function frames on exhaustion); if none, cover \"unexpectedly reached end of content. Do you need a '~ return'?\" with a unit test of the pure diagnosis function only and record why in the test",
-            "A choice-continuation root that exhausts reports \"ran out of content. Do you need a '-> DONE' or '-> END'?\"; temporarily instrument that path and confirm no well-formed oracle or conformance fixture reaches it (report the result; investigate any that does before keeping the classification)",
-            "`-> DONE`, `-> END`, a refused pop (still exactly one error) and a stop at a choice point yield no end-of-content error; the full oracle and conformance suites stay error-free; errors are not saved and are cleared by restoreState and moveToKnot",
-            "Conformance [P]: 'line ending before -> DONE' (01Tests:177) and 'DONE stops the flow' (04Tests:680, native; may need 02-05); re-enable those that pass",
+            "PROBE FIRST: for each of the 18 stories (enabled native conformance: ImplicitInlineGlueB, ImplicitInlineGlueC, KnotDotGather, LeftRightGlueMatching, MultipleConstantReferences, NewlineAtStartOfMultilineConditional, ReadCountAcrossCallstack, SameLineDivertIsInline, TempGlobalConflict, TrivialCondition, VariableDeclarationInConditional, VariableGetSetAPI, VisitCountBugDueToNestedContainers, WeaveGathers; backlog: AllSwitchBranchesFailIsClean, ChoiceWithBracketsOnly, ConditionalChoiceInWeave2, EmptyMultilineConditionalBranch), compare native emission with inklecate's JSON at the point the native flow runs out and classify it as (a), (b), (c) or other; report any 'other'",
+            "A parametrized test plays every one of those stories natively and asserts the flow ends with a safe exit (the engine's didSafeExit / stopReason from 02-03, @testable) wherever inklecate's JSON for the same story does; it is red on main for the affected stories",
+            "`-> DONE` anywhere (knot body, stitch, gather, choice body, conditional arm) compiles to the `done` control command as inklecate emits it; a native-vs-inklecate emission or play test pins it, with content after the construct where reachable",
+            "Flow continues through a conditional's rejoin and a weave's final gather as in inklecate's layout (inline content or an explicit continuation), so the content after the block or gather plays and the flow ends where inklecate's ends; derived from the C# compiler's structure (compiler/ParsedHierarchy Weave.cs, Conditional.cs), not an InkSwift-only patch-up",
+            "No change to which stories play which text: the full oracle suite, every enabled conformance test (both modes), TheIntercept e2e and Compiler_TheInterceptProgressTests stay green; re-enable any backlog test that now passes",
             "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained; changed production files' Code Health not below their main baseline"
           ],
-          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Engine_EndOfContentErrorTests.swift",
-          "scenario_name": "#28 running out of content reports the C# error",
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_SafeExitEmissionTests.swift",
+          "scenario_name": "Native-compiled stories end safely where inklecate's do",
           "files_to_modify": [
-            "Sources/SwiftInkRuntime/Engine/InkEngine.swift",
-            "Tests/SwiftInkRuntimeTests/Acceptance/Engine_EndOfContentErrorTests.swift",
-            "Tests/SwiftInkRuntimeTests/Acceptance/Engine_TypeCheckedPopTests.swift",
-            "Tests/SwiftInkRuntimeTests/Unit/FlowEndDiagnosisTests.swift",
-            "Tests/SwiftInkRuntimeTests/Fixtures/issue28-ran-out-in-knot.ink",
-            "Tests/SwiftInkRuntimeTests/Fixtures/issue28-ran-out-in-knot.ink.json",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/WeaveEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/ConditionalEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/RuntimeObjectEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/ExpressionLowering.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_SafeExitEmissionTests.swift",
             "scripts/conformance/known-failures.json",
             "Tests/SwiftInkRuntimeTests/Conformance/UpstreamConformance01Tests.swift",
-            "Tests/SwiftInkRuntimeTests/Conformance/UpstreamConformance04Tests.swift",
             "docs/reference/differences-from-inklecate.md"
           ],
           "implementation_notes": [
             "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express invariant checks as parametrized tests over representative inputs.",
-            "DISTILL was skipped: write the RED tests in this step from the criteria. New ATs are never committed .disabled.",
-            "Messages are bare, without inkjs's 'RUNTIME ERROR: (Ink Pointer -> …)' prefix (ADR-017). The C# 'unknown reason' branch needs threads and is omitted. No EvaluateFunction exists, so the temporary-evaluation-container condition is always true; leave a comment that a future EvaluateFunction must suppress the epilogue.",
-            "Contract shapes: diagnosis = pure function; applying it = bounded change {errors}.",
-            "FIXTURES: inklecate-produced .ink.json only, never hand-edited. issue28-ran-out-in-knot is synthetic (not from the issue). A ran-out fixture ends by definition; 'continues past the construct' here means real prose plays before the stop and the test asserts that prose, then the error.",
-            "C# reference: Story.cs:502-516 (epilogue).",
-            "ORCHESTRATOR: natively compiled weave-bearing knots still end in an implicit done until 02-05, so the two compile paths disagree on loose ends between these commits. No tag between 02-04 and 02-05 (ADR-021 §3).",
-            "CONFORMANCE: `INKSWIFT_CONFORMANCE_BACKLOG=1 swift test --filter UpstreamConformance` before and after; re-enable every test that now passes (remove its scripts/conformance/known-failures.json entry and regenerate with `scripts/conformance/import_upstream_tests.py /Users/maartene/Downloads/ink /Users/maartene/Downloads/inklecate_mac/inklecate`), same commit. A listed mover that stays red is reported, not forced. The harness fails any non-error test that reports a runtime error: that is the guard against false errors.",
-            "DOCS: differences doc (running out of content now reports an error).",
-            "RELEASE: patch, the SAME release as 02-05; no tag in between. Release-note callout (with 02-05): \"Running out of content reports an error on both compile paths.\"",
-            "COMMIT MESSAGE references `Refs #28` (02-05 carries `Fixes #28`).",
-            "MANUAL MUTATION CHECK (CLAUDE.md): 3-5 plausible-bug mutations (e.g. swap the tunnel and function messages, run the epilogue on safe-exit stops, ignore pending choices, append the error twice). Report each and its outcome in the commit message; never commit a mutation.",
+            "MANUAL MUTATION CHECK (CLAUDE.md): 3-5 plausible-bug mutations (e.g. emit done for every weave again, never emit the rejoin divert, emit it even after a divert, drop the root done). Report each and its outcome in the commit message; never commit a mutation.",
             "CODE HEALTH: CodeScene CLI self-check on every changed production file against the main baseline; >=9.5 approve, 9–9.5 report, <9 rework.",
-            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass.",
+            "DISTILL was skipped: write the RED tests in this step from the criteria. New ATs are never committed .disabled.",
+            "The parked 02-04 runtime work (end-of-content epilogue) is in `git stash` ('02-04 WIP …'); do NOT apply or drop it. Use the engine's stopReason/didSafeExit from 02-03 to observe a ran-out stop instead.",
+            "Files: the list is a best guess from the 02-04 report; the parser or lowering may be where `-> DONE` resolves to a path. Touch only what the cause needs, and name every file in the report.",
+            "If (b)/(c) cannot be fixed without the `done`-emission rework planned for 02-05 (ADR-021: done only for the root weave; terminateArm without a trailing done), say so and stop rather than doing 02-05's work here.",
+            "C# reference: /Users/maartene/Downloads/ink/compiler/ParsedHierarchy/ (Weave.cs, Conditional.cs, Divert.cs for DONE/END, Story.cs:193). Check that any termination mechanism has a counterpart there (CLAUDE.md).",
+            "FIXTURES: inklecate-produced .ink.json only, never hand-edited; any new fixture continues past the construct it pins.",
+            "RELEASE: none on its own; ships in the #28 patch with 02-03, 02-05 and 02-04 (maintainer: hold 02-03 for #28).",
+            "COMMIT MESSAGE: `fix(compiler): …`, `Refs #28`, ends with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.",
+            "GATE: des-commit commits with --no-verify; run `.githooks/pre-commit` yourself before des-commit."
           ],
           "deps": [
             "02-03"
@@ -544,7 +540,55 @@
             "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
           ],
           "deps": [
-            "02-04"
+            "02-06"
+          ]
+        },
+        {
+          "id": "02-04",
+          "name": "Report running out of content with the C# messages (#28)",
+          "description": "Second part of feature-delta step 6a, ADR-020 §5. A pure diagnosis function (stop reason, return-stack top, choices empty, safe exit → message?) and the epilogue that applies it for ran-out stops: the C# message chosen by the return-stack top is appended to currentErrors.",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "Tunnel top, the issue's concrete case: pop-function-exhaustion-over-tunnel (existing fixture) now reports exactly [\"unexpectedly reached end of content. Do you need a '->->' to return from a tunnel?\"]; Engine_TypeCheckedPopTests asserts it",
+            "Empty stack, synthetic fixture issue28-ran-out-in-knot: a knot entered by a top-level divert whose flat body runs out after a line of prose reports exactly [\"ran out of content. Do you need a '-> DONE' or '-> END'?\"] after that prose plays, on the runtime path (inklecate JSON) and on the native path (flat knot bodies already get no done)",
+            "Function top: probe whether any well-formed route reaches a ran-out stop with a function frame on top (C# auto-pops function frames on exhaustion); if none, cover \"unexpectedly reached end of content. Do you need a '~ return'?\" with a unit test of the pure diagnosis function only and record why in the test",
+            "A choice-continuation root that exhausts reports \"ran out of content. Do you need a '-> DONE' or '-> END'?\"; temporarily instrument that path and confirm no well-formed oracle or conformance fixture reaches it (report the result; investigate any that does before keeping the classification)",
+            "`-> DONE`, `-> END`, a refused pop (still exactly one error) and a stop at a choice point yield no end-of-content error; the full oracle and conformance suites stay error-free; errors are not saved and are cleared by restoreState and moveToKnot",
+            "Conformance [P]: 'line ending before -> DONE' (01Tests:177) and 'DONE stops the flow' (04Tests:680, native; may need 02-05); re-enable those that pass",
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained; changed production files' Code Health not below their main baseline"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Engine_EndOfContentErrorTests.swift",
+          "scenario_name": "#28 running out of content reports the C# error",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Engine_EndOfContentErrorTests.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Engine_TypeCheckedPopTests.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/FlowEndDiagnosisTests.swift",
+            "Tests/SwiftInkRuntimeTests/Fixtures/issue28-ran-out-in-knot.ink",
+            "Tests/SwiftInkRuntimeTests/Fixtures/issue28-ran-out-in-knot.ink.json",
+            "scripts/conformance/known-failures.json",
+            "Tests/SwiftInkRuntimeTests/Conformance/UpstreamConformance01Tests.swift",
+            "Tests/SwiftInkRuntimeTests/Conformance/UpstreamConformance04Tests.swift",
+            "docs/reference/differences-from-inklecate.md"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express invariant checks as parametrized tests over representative inputs.",
+            "DISTILL was skipped: write the RED tests in this step from the criteria. New ATs are never committed .disabled.",
+            "Messages are bare, without inkjs's 'RUNTIME ERROR: (Ink Pointer -> …)' prefix (ADR-017). The C# 'unknown reason' branch needs threads and is omitted. No EvaluateFunction exists, so the temporary-evaluation-container condition is always true; leave a comment that a future EvaluateFunction must suppress the epilogue.",
+            "Contract shapes: diagnosis = pure function; applying it = bounded change {errors}.",
+            "FIXTURES: inklecate-produced .ink.json only, never hand-edited. issue28-ran-out-in-knot is synthetic (not from the issue). A ran-out fixture ends by definition; 'continues past the construct' here means real prose plays before the stop and the test asserts that prose, then the error.",
+            "C# reference: Story.cs:502-516 (epilogue).",
+            "ORCHESTRATOR: natively compiled weave-bearing knots still end in an implicit done until 02-05, so the two compile paths disagree on loose ends between these commits. No tag between 02-04 and 02-05 (ADR-021 §3).",
+            "CONFORMANCE: `INKSWIFT_CONFORMANCE_BACKLOG=1 swift test --filter UpstreamConformance` before and after; re-enable every test that now passes (remove its scripts/conformance/known-failures.json entry and regenerate with `scripts/conformance/import_upstream_tests.py /Users/maartene/Downloads/ink /Users/maartene/Downloads/inklecate_mac/inklecate`), same commit. A listed mover that stays red is reported, not forced. The harness fails any non-error test that reports a runtime error: that is the guard against false errors.",
+            "DOCS: differences doc (running out of content now reports an error).",
+            "RELEASE: patch, the SAME release as 02-05; no tag in between. Release-note callout (with 02-05): \"Running out of content reports an error on both compile paths.\"",
+            "COMMIT MESSAGE references `Refs #28` (02-05 carries `Fixes #28`).",
+            "MANUAL MUTATION CHECK (CLAUDE.md): 3-5 plausible-bug mutations (e.g. swap the tunnel and function messages, run the epilogue on safe-exit stops, ignore pending choices, append the error twice). Report each and its outcome in the commit message; never commit a mutation.",
+            "CODE HEALTH: CodeScene CLI self-check on every changed production file against the main baseline; >=9.5 approve, 9–9.5 report, <9 rework.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
+          ],
+          "deps": [
+            "02-05"
           ]
         }
       ]
