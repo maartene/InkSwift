@@ -1,0 +1,880 @@
+{
+  "roadmap": {
+    "project_id": "reference-fidelity-backlog",
+    "created_at": "2026-11-19T12:00:00Z",
+    "total_steps": 18,
+    "implementation_notes": [
+      "Expected values marked as predictions are verified with `inklecate -p` before RED; inklecate's output is authoritative.",
+      "Releases (tag, push, GitHub release, README `from:` snippet) are cut by the orchestrator, never by the crafter. No tag between 02-04 and 02-05 (one patch). No tag between 04-02 and 04-04 (one minor)."
+    ]
+  },
+  "phases": [
+    {
+      "id": "01",
+      "name": "Independent fixes (ship now)",
+      "description": "Fixes with no dependency on the rest of the backlog: #34 trailing-only trim before a tag, 32-bit shortest float printing, the token-typed JSON reader (#37 part 1), and canonical visit identity (#33) behind a new visit counter with legacy-key restore.",
+      "steps": [
+        {
+          "id": "01-01",
+          "name": "Trim only trailing whitespace before a tag (#34)",
+          "description": "Feature-delta step 1, ADR-026 §1. parseContentSegments trims the literal before '#' on both sides (InkParser.swift:1401), dropping the space after an inline conditional on a tagged line. Trim only the trailing whitespace. Natively compiled path only.",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "PROBE FIRST (issue #34 notes): for each of `{n > 0: A} after. # t`, `{x} text # t`, `Text <> # t` followed by a glued line, `Text   # t` (several trailing spaces) and a tag-only line, record inklecate's output (`inklecate -p`) before writing the RED test; positions where native still differs after the fix are recorded in docs/reference/differences-from-inklecate.md and reported, not fixed here (ADR-026 §4 limits this step to the trailing trim)",
+            "The #34 repro (`VAR n = 1` / `{n > 0: A} after. # t` / `Next.`, followed by a choice and content after it) compiled natively returns `A after.` with currentTags [\"t\"] as its first line, then `Next.`, then offers the choice; identical to the runtime path on inklecate's JSON",
+            "Every probed position from criterion 1 that inklecate and the fix agree on is pinned by a parametrized oracle test (native output == inklecate output)",
+            "Tags on lines after the tagged one are NOT asserted in this step (the sticky-tag runtime bug is #30, fixed in 02-02); a comment in the test says so",
+            "Full suite green, including the TheIntercept e2e and the compiler oracle suites",
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained; changed production files' Code Health not below their main baseline"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_TagTrimTests.swift",
+          "scenario_name": "#34 space before a tag after an inline conditional is kept",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Compiler/Parser/InkParser.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_TagTrimTests.swift",
+            "Tests/SwiftInkRuntimeTests/Fixtures/issue34-space-before-tag.ink",
+            "Tests/SwiftInkRuntimeTests/Fixtures/issue34-space-before-tag.ink.json",
+            "docs/reference/differences-from-inklecate.md"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express invariant checks as parametrized tests over representative inputs.",
+            "DISTILL was skipped (maintainer decision): write the RED test in this step from the criteria, then GREEN, then COMMIT. New ATs are never committed .disabled.",
+            "FIXTURES: .ink plus .ink.json produced by the real inklecate (/Users/maartene/Downloads/inklecate_mac/inklecate), flat in Tests/SwiftInkRuntimeTests/Fixtures/; never hand-craft or hand-edit .ink.json (edit the .ink and recompile). Expected output comes from `inklecate -p` (mind its locale quirks, project memory). The fixture continues past the construct it pins: content and a choice after the tagged line, asserted to play.",
+            "Scope (ADR-026 §1/§4): only the trailing whitespace before '#'. Do not adopt the wider TrimEndWhitespace policy here.",
+            "C# reference: TrimEndWhitespace, compiler/InkParser/InkParser_Content.cs:10-32, 56.",
+            "DOCS: update docs/reference/differences-from-inklecate.md if it lists this difference; record any remaining probed divergence there.",
+            "RELEASE: patch. Release-note callout: \"Natively compiled text: a space after an inline conditional on a tagged line is kept (#34).\"",
+            "COMMIT MESSAGE references `Fixes #34`.",
+            "MANUAL MUTATION CHECK (CLAUDE.md 'Mutation Testing Strategy'): before COMMIT, pick 3-5 plausible-bug mutations in the production code this step changed (e.g. trim both sides again, trim leading only, drop the trim). Apply one at a time, run the step's tests plus the suites guarding that code, record caught/survived, revert. A survivor needs a killing test or a recorded equivalence argument. Report each mutation and its outcome in the commit message; never commit a mutation.",
+            "CODE HEALTH: self-check every changed production file with the bundled CodeScene CLI (`$(ls -d ~/Library/Caches/codehealth-mcp/MCP-*/cs | tail -1) review --output-format json <file>`, run from the repo root) against the main baseline before COMMIT; >=9.5 approve, 9–9.5 report what remains, <9 rework.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
+          ],
+          "deps": []
+        },
+        {
+          "id": "01-02",
+          "name": "Print floats as their shortest 32-bit form (ADR-024 §2)",
+          "description": "Split out of feature-delta step 7 and moved ahead of the JSON reader (see notes). One formatting function prints a float as Swift Float(value).description without a trailing '.0', used by output, string concatenation and choice text. Storage and arithmetic stay Double. Probes the exponent spelling and the precision divergence.",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "PROBE FIRST (Q2): compile a fixture that prints a large, a small and an overflowing float (e.g. `{100000000000.0 * 1000000000.0}`, `{1.0 / 10000000}`, and a value near 1e39, beyond Float's range) with inklecate and record its spelling against Swift's (`1e+20` vs .NET `1E+20`; `inf` vs .NET `∞`/`Infinity` for the overflow); search inkle/ink issues (`gh api \"search/issues?q=repo:inkle/ink+float+ToString&per_page=10\"`, also 'float exponent'). If they diverge, either match inklecate or record the divergence in docs/reference/differences-from-inklecate.md, and report the finding in the commit message",
+            "PROBE: record what `inklecate -p` prints for `{0.1 + 0.2 == 0.3}` (predicted `true`, 32-bit arithmetic) and what InkSwift prints (predicted `false`, 64-bit). If they differ, pin InkSwift's value in a test whose name and comment call it the documented ADR-024 divergence, and write it into docs/reference/differences-from-inklecate.md; if they agree, pin the agreement",
+            "The #37 repro (`A: {2.0} B: {1.0 / 3} C: {1.5} D: {0.1 + 0.2} E: {7 / 2.0}`, followed by a line of prose and a choice; `{FLOAT(2)}` is asserted in 03-01 and natively in 04-02, because FLOAT does not compile natively before then) compiled natively prints exactly `A: 2 B: 0.33333334 C: 1.5 D: 0.3 E: 3.5`, then the continuation",
+            "Float formatting is used by text output, string concatenation and choice text: `{2.0 / 3}` prints `0.6666667`, and a choice whose text interpolates `{2.0}` shows `2` (oracle fixture, native path)",
+            "getVariable still returns Double for a float variable (e.g. 0.30000000000000004 for `0.1 + 0.2`), and the save wire for floats is byte-identical (golden legacy saves unchanged)",
+            "Full suite green; existing test expectations that printed `x.0` or long decimals are updated to inklecate's form, and each updated expectation is listed in the commit message",
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained; changed production files' Code Health not below their main baseline"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Engine_FloatFormattingTests.swift",
+          "scenario_name": "Floats print as inklecate prints them",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Engine/StoryState.swift",
+            "Sources/SwiftInkRuntime/Engine/TreeWalker.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Engine_FloatFormattingTests.swift",
+            "Tests/SwiftInkRuntimeTests/Fixtures/issue37-float-printing.ink",
+            "Tests/SwiftInkRuntimeTests/Fixtures/issue37-float-printing.ink.json",
+            "docs/reference/differences-from-inklecate.md",
+            "docs/product/ink-feature-reference.md"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express invariant checks as parametrized tests over representative inputs.",
+            "DISTILL was skipped: write the RED tests in this step from the criteria. New ATs are never committed .disabled.",
+            "DEVIATION FROM FEATURE-DELTA (recorded in feature-delta.md, DELIVER [WHY]): ADR-024 §2 printing is pulled out of step 7 and placed before the token-typed reader. Once 01-03 decodes `2.0` as a float, the old `String(Double)` would print `2.0` where both inklecate and the previous release print `2`, a visible regression in a patch release.",
+            "FIXTURES: inklecate-produced .ink.json only (never hand-edited); expected output from `inklecate -p`. The runtime path on inklecate JSON still shows B: 0 and E: 3 until 01-03 (the decode bug); assert the runtime path for this fixture in 01-03.",
+            "Scope (ADR-024 §1-2): no 32-bit rounding anywhere; printing only. One formatting function in InkValue (StoryState.swift:91 today uses String(f)); every float-to-text site goes through it. Coercion, `1 == 1.0` and FLOOR/CEILING are 03-01.",
+            "Linux: Float.description is Swift stdlib, not Foundation, so it is platform-stable; avoid Foundation number formatters (project memory: Linux CI).",
+            "CONFORMANCE: run `INKSWIFT_CONFORMANCE_BACKLOG=1 swift test --filter UpstreamConformance` before and after; any backlog test that now passes is re-enabled in the same commit (remove its scripts/conformance/known-failures.json entry and regenerate with `scripts/conformance/import_upstream_tests.py /Users/maartene/Downloads/ink /Users/maartene/Downloads/inklecate_mac/inklecate`; never hand-edit generated files). No mover is predicted; report any.",
+            "DOCS: differences doc ('Behaviour that differs': float printing now matches; add the precision divergence and, if found, the exponent/overflow spelling); feature reference where it describes float output.",
+            "RELEASE: patch (may share one release with 01-03; orchestrator's call). Release-note callout: \"Float values print as inklecate prints them: `2` instead of `2.0`, `0.3` instead of `0.30000000000000004`.\"",
+            "COMMIT MESSAGE references `Refs #37` (the issue closes in 03-01).",
+            "MANUAL MUTATION CHECK (CLAUDE.md): 3-5 plausible-bug mutations (e.g. keep the trailing '.0', format via Double instead of Float, skip the formatter in concatenation or choice text). Report each and its outcome in the commit message; never commit a mutation.",
+            "CODE HEALTH: CodeScene CLI self-check on every changed production file against the main baseline; >=9.5 approve, 9–9.5 report, <9 rework.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
+          ],
+          "deps": []
+        },
+        {
+          "id": "01-03",
+          "name": "Type JSON numbers by token text with a hand-written reader (#37 part 1)",
+          "description": "Feature-delta step 2, ADR-023. Replace the JSONDecoder mechanism inside Decoder/ with a small hand-written reader over the input bytes that produces the existing InkJSONValue; a number is a float iff its token contains '.', 'e' or 'E'. The probe fixture gains 2.0 and 1e2.",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "PROBE FIRST: confirm that the backlog failure of upstream TestArithmetic (runtime mode, UpstreamConformance01Tests.swift:55, 'float division result truncated') is the decode, by recording its failure message before the change and after",
+            "Reader typing (parametrized unit test): `42` and `-3` → int; `2.0`, `2.5`, `1e2`, `1E2`, `-0.5` → double; `true`/`false` → bool; `null`; strings with `\\\"`, `\\\\`, `\\n`, `\\u00e9` and a surrogate pair decode per RFC 8259; nested arrays and objects keep order",
+            "Malformed input (truncated object, unterminated string, bare word, trailing garbage) throws InkDecodeError.malformedJSON",
+            "InkDecoder.probe() asserts `2.0` and `1e2` decode as floats next to `2.5`, `true` and `42`; drift reuses the existing seam: InkDecodeError.probeClassificationDrift (InkDecoder.swift:111, 131), mapped by StoryBlueprint (StoryBlueprint.swift:50) to the startup refusal; a test feeds the probe a mistyped value and observes that refusal",
+            "The #37 repro played from inklecate's JSON prints exactly `A: 2 B: 0.33333334 C: 1.5 D: 0.3 E: 3.5`, then its continuation (prose and a choice), matching the native path from 01-02",
+            "NativeRuntimeLinux_NumberTypeParityTests covers `2.0` and `1e2`; the full oracle suite (every committed .ink.json) stays green",
+            "Conformance [P]: TestArithmetic (runtime, 01Tests:55) expected to pass; re-enable whatever now passes. TestFloorCeilingAndCasts (runtime) is expected to stay red until 03-01",
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained; changed production files' Code Health not below their main baseline"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Unit/InkJSONReaderTests.swift",
+          "scenario_name": "Whole-number floats in inklecate JSON stay floats",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Decoder/InkDecoder.swift",
+            "Sources/SwiftInkRuntime/Decoder/InkJSONReader.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/InkJSONReaderTests.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/InkDecoderTests.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/NativeRuntimeLinux_NumberTypeParityTests.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Engine_FloatFormattingTests.swift",
+            "scripts/conformance/known-failures.json",
+            "Tests/SwiftInkRuntimeTests/Conformance/UpstreamConformance01Tests.swift",
+            "docs/reference/differences-from-inklecate.md"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express invariant checks as parametrized tests over representative inputs.",
+            "DISTILL was skipped: write the RED tests in this step from the criteria. New ATs are never committed .disabled.",
+            "Inline JSON literals are acceptable in the grammar-level reader unit tests (InkJSONReaderTests): they test JSON syntax, not stories, so the 'real inklecate JSON only' rule does not apply to them. Story-level assertions use inklecate-produced fixtures.",
+            "Shape (ADR-023): pure function bytes → InkJSONValue, pure Swift over [UInt8]; no JSONSerialization, NSNumber or CoreFoundation. InkJSONValue, ContainerNode, NodeKind and InkDecoder.decode(_:) keep their surface. The file name InkJSONReader.swift is a suggestion; it must live in Decoder/ (boundary R3 unchanged; StoryState's save/restore JSONDecoder exception stays).",
+            "Reuse the #37 fixture from 01-02 (issue37-float-printing) for the runtime-path assertion; extend Engine_FloatFormattingTests rather than adding a new AT file.",
+            "C# reference: SimpleJson.cs Reader (~225-245) for the number rule.",
+            "CONFORMANCE: `INKSWIFT_CONFORMANCE_BACKLOG=1 swift test --filter UpstreamConformance` before and after; re-enable every test that now passes (remove its scripts/conformance/known-failures.json entry and regenerate with `scripts/conformance/import_upstream_tests.py /Users/maartene/Downloads/ink /Users/maartene/Downloads/inklecate_mac/inklecate`), same commit. Expected movers are [P]: a listed test that stays red is reported, not forced.",
+            "DOCS: differences doc row for whole-number floats decoded as integers is removed.",
+            "RELEASE: patch, URGENT (values were wrong, not only printing). Release-note callout: \"Float values and results from inklecate JSON match inklecate, e.g. `1.0 / 3` and `7 / 2.0` are no longer integer division.\"",
+            "COMMIT MESSAGE references `Refs #37` (closes in 03-01).",
+            "MANUAL MUTATION CHECK (CLAUDE.md): 3-5 plausible-bug mutations (e.g. drop 'E' from the float test, treat '-' as a float marker, decode `1e2` as int, skip an escape case). Report each and its outcome in the commit message; never commit a mutation.",
+            "CODE HEALTH: CodeScene CLI self-check on every changed production file against the main baseline; >=9.5 approve, 9–9.5 report, <9 rework.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
+          ],
+          "deps": [
+            "01-02"
+          ]
+        },
+        {
+          "id": "01-04",
+          "name": "Route every visit-count read and write through one visit counter (refactor)",
+          "description": "First part of feature-delta step 3, split off as a behaviour-neutral refactor (ADR-022 §2). Create an engine-owned visit counter, the sole reader and writer of visitCounts in Sources/, and route recordVisit, the .readCount interception, the visit control command (moved from TreeWalker into the engine) and visitCount(forKnot:)/setVisitCount(forKnot:to:) through it. Keys stay exactly as today. Add the SwiftLint ban on `visitCounts[` outside the counter's file, scoped to Sources/.",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "Full suite green with no test changed except mechanical renames or moves (e.g. a TreeWalker visit test moving to the engine/counter)",
+            "The failure messages of `INKSWIFT_CONFORMANCE_BACKLOG=1 swift test --filter UpstreamConformance` are identical before and after (capture before, diff after; diff in the commit message)",
+            "Golden legacy saves (TypedPaths_LegacySaveCompatibilityTests) restore, continue and re-save byte-identically, unchanged",
+            "The counter has unit tests: record, read and set under a key",
+            "SwiftLint custom rule bans `visitCounts[` in Sources/ outside the counter's file (its `included` is Sources/, so test setup such as InkEngineVisitCountTests.swift:35, 51 stays as it is); a deliberate violation in Sources/ fails `swiftlint lint --strict` (checked manually, reported in the commit message, not committed)",
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained; changed production files' Code Health not below their main baseline"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Unit/VisitCounterTests.swift",
+          "scenario_name": "Visit counts have one reader and writer",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Engine/VisitCounter.swift",
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift",
+            "Sources/SwiftInkRuntime/Engine/TreeWalker.swift",
+            ".swiftlint.yml",
+            "Tests/SwiftInkRuntimeTests/Unit/VisitCounterTests.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/TreeWalkerTests.swift"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express invariant checks as parametrized tests over representative inputs.",
+            "DEVIATION FROM FEATURE-DELTA (recorded in feature-delta.md, DELIVER [WHY]): step 3 is split into this refactor, 01-05 (canonical keys, #33) and 01-06 (legacy-key restore).",
+            "Lint scope decision: the `visitCounts[` rule applies to Sources/ only. Tests may set up visitCounts directly (InkEngineVisitCountTests.swift:35, 51); the invariant being protected is that production code has one key policy.",
+            "The five sites (ADR-022 §2, feature-delta Reuse Analysis): recordVisit (sequential entry InkEngine.swift:92, absolute divert :806, choice continuation), .readCount (:309-313), TreeWalker's visit control command (moves into the engine because 01-05 needs the resolver), visitCount(forKnot:) and setVisitCount(forKnot:to:) (InkEngine.swift:1022-1031, public via Story.swift:104-105). Story.swift does not change.",
+            "Contract shape: bounded change, mutates only visitCounts. The name VisitCounter is the crafter's call. StoryState's hand-written Codable converts the dictionary as a whole and never subscripts it.",
+            "RELEASE: none, ships with 01-06.",
+            "MANUAL MUTATION CHECK (CLAUDE.md): 3-5 plausible-bug mutations in the moved code (e.g. increment by 2, skip the choice-continuation record, read the wrong key in visit). Report each and its outcome in the commit message; never commit a mutation.",
+            "CODE HEALTH: CodeScene CLI self-check on every changed production file against the main baseline; >=9.5 approve, 9–9.5 report, <9 rework.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
+          ],
+          "deps": []
+        },
+        {
+          "id": "01-05",
+          "name": "Key visit counts by canonical container path (#33)",
+          "description": "Second part of feature-delta step 3, ADR-022 §1, §3. Capture the legacy split-key golden save first; then ContainerPathResolver gains a canonical-path query (name wherever the child is named, as C# Object.path) and the visit counter keys by it. Ancestor counting on divert and count-start-only are adopted only if a probe shows them observable. Legacy-key restore is 01-06.",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "FIRST, before any production change: capture a golden legacy save from current main (the 01-04 commit is fine, keys are unchanged there) at a choice point inside a labelled-gather loop, whose visitCounts hold one container under both spellings (e.g. `0.0`: 1 and `0.loop`: 1); commit it with the commit SHA, source fixture and play route recorded, for use in 01-06. It is never regenerated afterwards",
+            "PROBE: on main confirm the #33 repros play as the issue's InkSwift column (sequence: `First. / After. / First. / After. / Second. / After.`; cycle: `A. / A. / B. / A.`), and read F4's JSON fixtures (TestVisitCountBugDueToNestedContainers, TestGatherReadCountWithInitialSequence) to confirm the index/name split",
+            "Resolver unit test on a real inklecate fixture: the index spelling and the name spelling of the same labelled gather (e.g. `0.0` and `0.loop`) give the same canonical path; an unnamed container keeps its index",
+            "The #33 sequence repro, extended so the flow continues after the loop (prose, then a choice), played from inklecate's JSON returns exactly `First.`, `After.`, `Second.`, `After.`, `Second.`, `After.`, then the continuation; the `{cycle:` repro returns exactly `A.`, `B.`, `A.`, then the continuation. The native compiler still rejects both with its existing located error (runtime-only fix)",
+            "PROBE, ancestor counting on divert (VisitChangedContainersDueToDivert): candidate evidence is TestVisitCountBugDueToNestedContainers (04Tests:456, 461); adopt it only if that test (or an oracle fixture) fails without it, and record the decision and evidence in a code comment",
+            "PROBE, count-start-only (#f flag 4, mask 0x4): candidate evidence is TestVisitCountsWhenChoosing (04Tests:437, 442) and 'read counts of knots, stitches and gathers' (06Tests:347); adopt it only if one of them fails without it, and record the decision and evidence in a code comment",
+            "Story.visitCount(forKnot:) returns the same counts as before for knot and knot.stitch names, and setVisitCount goes through the counter",
+            "Conformance [P], re-enable those that pass: 'visit counts when choosing a path or a choice' (04Tests:437, 442); 'visit counts in nested containers' (04Tests:456, 461); 'read count of a gather after a sequence' (02Tests:341, 346); 'read counts of knots, stitches and gathers' (06Tests:347); 'read counts of dot-separated paths' (03Tests:294); runtime mode of 'unsupported multi-line sequences' (01Tests:436, 02Tests:37, 595, 05Tests:242, 538)",
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained; changed production files' Code Health not below their main baseline"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Engine_CanonicalVisitCountTests.swift",
+          "scenario_name": "#33 multi-line sequences and labelled-gather loops count each container once",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Engine/ContainerPathResolver.swift",
+            "Sources/SwiftInkRuntime/Engine/VisitCounter.swift",
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Engine_CanonicalVisitCountTests.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/ContainerPathResolverTests.swift",
+            "Tests/SwiftInkRuntimeTests/Fixtures/issue33-multiline-sequence-loop.ink",
+            "Tests/SwiftInkRuntimeTests/Fixtures/issue33-multiline-sequence-loop.ink.json",
+            "Tests/SwiftInkRuntimeTests/Fixtures/issue33-multiline-cycle-loop.ink",
+            "Tests/SwiftInkRuntimeTests/Fixtures/issue33-multiline-cycle-loop.ink.json",
+            "Tests/SwiftInkRuntimeTests/Fixtures/issue33-loop-with-choice.ink",
+            "Tests/SwiftInkRuntimeTests/Fixtures/issue33-loop-with-choice.ink.json",
+            "Tests/SwiftInkRuntimeTests/Fixtures/legacy-save-split-visit-counts.json",
+            "scripts/conformance/known-failures.json",
+            "Tests/SwiftInkRuntimeTests/Conformance/UpstreamConformance01Tests.swift",
+            "Tests/SwiftInkRuntimeTests/Conformance/UpstreamConformance02Tests.swift",
+            "Tests/SwiftInkRuntimeTests/Conformance/UpstreamConformance03Tests.swift",
+            "Tests/SwiftInkRuntimeTests/Conformance/UpstreamConformance04Tests.swift",
+            "Tests/SwiftInkRuntimeTests/Conformance/UpstreamConformance05Tests.swift",
+            "Tests/SwiftInkRuntimeTests/Conformance/UpstreamConformance06Tests.swift",
+            "docs/reference/differences-from-inklecate.md",
+            "docs/product/ink-feature-reference.md"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express invariant checks as parametrized tests over representative inputs.",
+            "DISTILL was skipped: write the RED tests in this step from the criteria. New ATs are never committed .disabled.",
+            "FIXTURES: never edit .ink.json by hand. The #33 repro has no choice inside the loop; for the golden save point, write a separate .ink (issue33-loop-with-choice) with a choice inside the loop and compile it with inklecate. Expected output from `inklecate -p`. Each fixture continues after the loop exits (prose, then a choice), so a loop that runs one pass too many or too few fails.",
+            "Frame and pointer paths keep their spelling (B2 rejected). Memoising the canonical path is the crafter's choice. C# reference: Object.cs:86-89, Story.cs:975-1033, Container.cs:73.",
+            "Between 01-05 and 01-06, restoring an old save on main may lose split counts; that is why this step does not release on its own.",
+            "CONFORMANCE: `INKSWIFT_CONFORMANCE_BACKLOG=1 swift test --filter UpstreamConformance` before and after; re-enable every test that now passes (remove its scripts/conformance/known-failures.json entry and regenerate with `scripts/conformance/import_upstream_tests.py /Users/maartene/Downloads/ink /Users/maartene/Downloads/inklecate_mac/inklecate`), same commit. A listed mover that stays red is reported with its new failure message, not forced. Only the conformance files that actually change are committed.",
+            "DOCS: feature reference row 40 (multi-line sequences become a compiler-only gap, with inklecate JSON as the workaround); differences doc (remove the runtime multi-line sequence / read-count entries).",
+            "RELEASE: none, ships with 01-06 (patch).",
+            "COMMIT MESSAGE references `Refs #33` (01-06 carries `Fixes #33`).",
+            "MANUAL MUTATION CHECK (CLAUDE.md): 3-5 plausible-bug mutations (e.g. canonicalise to the index instead of the name, skip canonicalisation in .readCount only, canonicalise only the last component). Report each and its outcome in the commit message; never commit a mutation.",
+            "CODE HEALTH: CodeScene CLI self-check on every changed production file against the main baseline; >=9.5 approve, 9–9.5 report, <9 rework.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
+          ],
+          "deps": [
+            "01-04"
+          ]
+        },
+        {
+          "id": "01-06",
+          "name": "Convert legacy visit-count keys on restore (forward-only saves)",
+          "description": "Third part of feature-delta step 3, ADR-022 §4. restoreState converts every legacy visitCounts key to its canonical path using the loaded story's tree and sums split counts; a re-save writes canonical keys only.",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "The golden captured in 01-05 (hand-written expectation, ADR-022 §4) restores with a single canonical key holding the sum of the split counts (e.g. `0.loop`: 2), continues as the inklecate playthrough does from that point, and a re-save writes only canonical keys",
+            "TypedPaths_LegacySaveCompatibilityTests goldens still restore and continue identically; if a re-save differs, it differs only in visitCounts keys (canonical form) and that assertion is updated with a comment citing ADR-022 §4; every other field stays byte-identical",
+            "A legacy key that no longer resolves in the loaded tree is kept as is (not dropped, not an error), so re-saving preserves it; pinned by a test and commented",
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained; changed production files' Code Health not below their main baseline"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Engine_LegacyVisitCountRestoreTests.swift",
+          "scenario_name": "Old saves restore with split visit counts merged",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Engine/StoryState.swift",
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift",
+            "Sources/SwiftInkRuntime/Engine/VisitCounter.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Engine_LegacyVisitCountRestoreTests.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/TypedPaths_LegacySaveCompatibilityTests.swift",
+            "docs/reference/differences-from-inklecate.md"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express invariant checks as parametrized tests over representative inputs.",
+            "DISTILL was skipped: write the RED tests in this step from the criteria. New ATs are never committed .disabled.",
+            "Forward-only saves were already accepted by the maintainer (Q4, ADR-022 §4): a save written by this build is not supported on an older build. This replaces ADR-018's rollback-safety requirement for visitCounts keys only; all other fields keep the byte-identical wire.",
+            "Earned Trust: the golden legacy saves are the probe for the restore conversion.",
+            "RELEASE: patch (ships 01-04, 01-05, 01-06). Release-note callouts: \"Multi-line sequences, labelled-gather loops and read counts play correctly.\" and \"Saves from this release are not supported on older builds. Restored there, some visit counts read as 0: sequence items and once-only content replay, and loops run extra passes.\"",
+            "DOCS: differences doc / save notes: forward-only save compatibility.",
+            "COMMIT MESSAGE references `Fixes #33`.",
+            "MANUAL MUTATION CHECK (CLAUDE.md): 3-5 plausible-bug mutations (e.g. overwrite instead of sum, canonicalise only on save, drop unresolvable keys). Report each and its outcome in the commit message; never commit a mutation.",
+            "CODE HEALTH: CodeScene CLI self-check on every changed production file against the main baseline; >=9.5 approve, 9–9.5 report, <9 rework.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
+          ],
+          "deps": [
+            "01-05"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "02",
+      "name": "Continue boundary",
+      "description": "ADR-020 and ADR-021: a typed output stream with pure line extraction (refactor), per-line tags (#30), the flow-end state with a shared forceEnd(), the end-of-content diagnosis with the C# messages (#28), and inklecate's top-level-only done in the native compiler. 02-04 and 02-05 ship in one release.",
+      "steps": [
+        {
+          "id": "02-01",
+          "name": "Type the output stream and extract lines with a pure function (refactor)",
+          "description": "Feature-delta step 4, ADR-020 §1-2, strictly behaviour-preserving. In memory, output items become typed (text, newline, tag); line extraction becomes one pure function (stream → line text, line tags, remainder). Walker glue, nop trim and newline de-duplication keep exactly today's behaviour until 02-02. The save wire for outputStream stays a [String] of text and newline items. currentTags keeps today's observable behaviour.",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "All existing oracle fixtures and their expectations unchanged; full suite green with no test changed except mechanical renames",
+            "Walker glue, nop trim and newline de-duplication behave exactly as before this step (no new tag-aware logic in the walker until 02-02)",
+            "The failure messages of `INKSWIFT_CONFORMANCE_BACKLOG=1 swift test --filter UpstreamConformance` are identical before and after (diff in the commit message)",
+            "Golden legacy saves restore, continue and re-save byte-identically (outputStream wire unchanged)",
+            "Line extraction unit tests on the pure function only (parametrized): a tag before the first newline belongs to the line; a tag after the first newline stays in the remainder; several tags keep their order; glue next to a tag removes the newline but not the tag; an empty stream yields an empty line",
+            "SwiftLint custom rule bans `outputStream.append(` outside the walker's output helpers; a deliberate violation fails `swiftlint lint --strict` (checked manually, reported, not committed)",
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained; changed production files' Code Health not below their main baseline"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Unit/OutputLineExtractionTests.swift",
+          "scenario_name": "Typed output stream preserves behaviour",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Engine/StoryState.swift",
+            "Sources/SwiftInkRuntime/Engine/TreeWalker.swift",
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift",
+            ".swiftlint.yml",
+            "Tests/SwiftInkRuntimeTests/Unit/OutputLineExtractionTests.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/StoryStateTests.swift"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express invariant checks as parametrized tests over representative inputs.",
+            "BEHAVIOUR-NEUTRAL (blocker from review): tag items may exist in the stream type, but nothing observable changes. 'Glue next to a tag' is exercised only as a unit test of the pure line-extraction function; the walker's glue/nop/dedupe paths are not made tag-aware here. The per-line tag behaviour change belongs to 02-02 only.",
+            "Sites: StoryState.outputStream (:320), TreeWalker tag append (:103), glue (:223-226), nop (:228-240), InkEngine.consumeNextLine / flushRemainingOutput / mayFlushLine (:411-425).",
+            "Save wire (ADR-018/ADR-020 §6): outputStream encodes as the [String] of text and \"\\n\" items in order. The optional outputStreamTags key is 02-02.",
+            "RELEASE: none, ships with 02-02.",
+            "MANUAL MUTATION CHECK (CLAUDE.md): 3-5 plausible-bug mutations (e.g. assign a post-newline tag to the line, drop the remainder, reorder tags, encode a tag into the outputStream wire). Report each and its outcome in the commit message; never commit a mutation.",
+            "CODE HEALTH: CodeScene CLI self-check on every changed production file against the main baseline; >=9.5 approve, 9–9.5 report, <9 rework.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
+          ],
+          "deps": []
+        },
+        {
+          "id": "02-02",
+          "name": "Report only the returned line's tags (#30)",
+          "description": "Feature-delta step 5, ADR-020 §1-3, §6. Tags become positioned stream items (glue stops at a tag; nop trim and dedupe look at text items); currentTags is derived from the line just extracted; the prologue in step() clears line tags; chooseChoice and moveToKnot clear them (F2). Pending lookahead tags persist in a new optional save key outputStreamTags.",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "runtime-out-inside-string-and-tag.ink from its inklecate JSON: `A tagged line.` has currentTags [\"pic8.jpg\"] and `After the tag.` has []; Engine_OutputInsideSpanTests now checks the tags of every line",
+            "A new oracle fixture (inklecate JSON, and native compile) with an untagged line after a tagged one, a line that starts with a tag (`# t2` on the line before its text), glue next to a tag, and a tagged line inside a choice body, followed by more prose and a choice: every line's text and currentTags equal `inklecate -p` on both paths",
+            "Compiler_TagTrimTests (01-01) now also asserts that the line after the tagged one has no tags",
+            "F2: after moveToKnot to a knot whose first line is untagged, currentTags == []; after chooseChoice, the first returned line carries only its own tags",
+            "Save with a pending lookahead tag (hand-written expectation): saving after continue() returned a line whose lookahead already collected the next line's leading tag writes `outputStreamTags` as [{\"at\": k, \"text\": \"t2\"}] with k the outputStream index before which the tag sat; restoring and continuing returns the next line with currentTags [\"t2\"]",
+            "A save with nothing pending omits the outputStreamTags key; an old save without the key (the TypedPaths goldens) restores and continues identically; the currentTags save key keeps its meaning (tags of the last returned line)",
+            "Conformance [P], re-enable those that pass: 'tags in sequences' (05Tests:466); 'tags in choices' (05Tests:484, 489). TestTags is expected to stay blocked by TagsForContentAtPath; report whether any glue backlog entry moved",
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained; changed production files' Code Health not below their main baseline"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Engine_PerLineTagsTests.swift",
+          "scenario_name": "#30 currentTags belong to the line continue() returned",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift",
+            "Sources/SwiftInkRuntime/Engine/StoryState.swift",
+            "Sources/SwiftInkRuntime/Engine/TreeWalker.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Engine_PerLineTagsTests.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Engine_OutputInsideSpanTests.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_TagTrimTests.swift",
+            "Tests/SwiftInkRuntimeTests/Fixtures/issue30-per-line-tags.ink",
+            "Tests/SwiftInkRuntimeTests/Fixtures/issue30-per-line-tags.ink.json",
+            "scripts/conformance/known-failures.json",
+            "Tests/SwiftInkRuntimeTests/Conformance/UpstreamConformance05Tests.swift",
+            "docs/reference/differences-from-inklecate.md"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express invariant checks as parametrized tests over representative inputs.",
+            "DISTILL was skipped: write the RED tests in this step from the criteria. New ATs are never committed .disabled.",
+            "FIXTURES: inklecate-produced .ink.json only, never hand-edited.",
+            "Do not simply clear currentTags per continue() (rejected in ADR-020): a tag collected during lookahead must stay with the next line. A tag item is created when the tag closes (/#); an open tag at a save boundary stays carried by inTagMode / tagAccumulator.",
+            "Wire (ADR-020 §6): `at` ranges over 0...outputStream.count; several tags at one `at` keep array order; a tag at or before the index of a \"\\n\" belongs to the line that newline ends. No version field. Older builds ignore the key.",
+            "C# reference: StoryState.cs:355-414 (currentTags from the stream), Story.cs:443-444 (ResetOutput), Story.cs:689-718 (tag after newline ends the line), TrimNewlinesFromOutputStream (stops at a control command).",
+            "CONFORMANCE: `INKSWIFT_CONFORMANCE_BACKLOG=1 swift test --filter UpstreamConformance` before and after; re-enable every test that now passes (remove its scripts/conformance/known-failures.json entry and regenerate with `scripts/conformance/import_upstream_tests.py /Users/maartene/Downloads/ink /Users/maartene/Downloads/inklecate_mac/inklecate`), same commit. A listed mover that stays red is reported, not forced.",
+            "DOCS: differences doc entry for sticky tags removed, if present.",
+            "RELEASE: patch (ships with 02-01). Release-note callout: \"`currentTags` holds only the tags of the line just returned.\" Additional callout: \"Glue does not join text across a tag.\"",
+            "COMMIT MESSAGE references `Fixes #30`.",
+            "MANUAL MUTATION CHECK (CLAUDE.md): 3-5 plausible-bug mutations (e.g. skip the prologue clear, don't clear in moveToKnot, off-by-one `at` on save or restore, glue removes across a tag). Report each and its outcome in the commit message; never commit a mutation.",
+            "CODE HEALTH: CodeScene CLI self-check on every changed production file against the main baseline; >=9.5 approve, 9–9.5 report, <9 rework.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
+          ],
+          "deps": [
+            "02-01",
+            "01-01"
+          ]
+        },
+        {
+          "id": "02-03",
+          "name": "Add flow-end state and one shared forceEnd(); -> END discards pending choices",
+          "description": "First part of feature-delta step 6a, ADR-020 §3-4. Transient safeExit and stop reason (safeExit / ranOut) live in the engine, are reset in the prologue and are never saved. One forceEnd() is shared by `end` and refusePop: clears choices, resets the return stack, sets isEnded and pointer.index = Int.max, sets safeExit = true. `done` sets isEnded and safeExit and keeps choices. No end-of-content errors yet (02-04).",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "PROBE FIRST: confirm with a fixture (inklecate `-p` and the reference runtime via the InkSwift JS bridge) that `-> END` reached after a choice has been generated in the same continue discards that choice (e.g. a choice inside a block conditional followed by `-> END`, per inkle/ink#978); pin the reference's outcome",
+            "After `-> END` with a pending choice, currentChoices is empty and canContinue is false; after `-> DONE` in the same shape, the choice is still offered and choosing it plays its content",
+            "A refused pop still yields exactly one error (Engine_TypeCheckedPopTests unchanged) and now ends through forceEnd()",
+            "Saves: isEnded keeps its key and meaning; neither safeExit nor the stop reason appears in a save (golden re-saves unchanged)",
+            "Unit tests: the stop reason is ranOut when the root frame pops empty or a choice-continuation root exhausts, and safeExit after done / end / refusePop; both are reset at the start of each continue()",
+            "Full oracle and conformance suites green, with no new errors anywhere",
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained; changed production files' Code Health not below their main baseline"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Engine_FlowEndStateTests.swift",
+          "scenario_name": "-> END discards pending choices; one forceEnd for end and refused pops",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift",
+            "Sources/SwiftInkRuntime/Engine/TreeWalker.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Engine_FlowEndStateTests.swift",
+            "Tests/SwiftInkRuntimeTests/Fixtures/issue28-end-discards-choices.ink",
+            "Tests/SwiftInkRuntimeTests/Fixtures/issue28-end-discards-choices.ink.json",
+            "docs/reference/differences-from-inklecate.md"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express invariant checks as parametrized tests over representative inputs.",
+            "DISTILL was skipped: write the RED tests in this step from the criteria. New ATs are never committed .disabled.",
+            "DEVIATION FROM FEATURE-DELTA (review): step 6a is split into this step (state + forceEnd + `-> END`) and 02-04 (diagnosis + epilogue).",
+            "Contract shape: forceEnd() = bounded change {choices, returnStack, isEnded, pointer.index, safeExit}. Sites: TreeWalker done/end (:212-214), InkEngine .stop (:227-243), choice-continuation root (:228-234), refusePop (:383-388).",
+            "FIXTURES: inklecate-produced .ink.json only, never hand-edited; the `-> END` fixture asserts the choice is NOT offered, and the `-> DONE` variant has content after the choice that plays.",
+            "C# reference: StoryState.cs:1185-1195 (ForceEnd), Story.cs:1544-1566 (done/end).",
+            "DOCS: differences doc (`-> END` discards pending choices, if listed).",
+            "RELEASE: patch (orchestrator may ship it alone or with 02-04/02-05). Release-note callout: \"`-> END` now discards pending choices.\"",
+            "COMMIT MESSAGE references `Refs #28`.",
+            "MANUAL MUTATION CHECK (CLAUDE.md): 3-5 plausible-bug mutations (e.g. forceEnd keeps choices, done does not set safeExit, prologue does not reset the stop reason, refusePop bypasses forceEnd). Report each and its outcome in the commit message; never commit a mutation.",
+            "CODE HEALTH: CodeScene CLI self-check on every changed production file against the main baseline; >=9.5 approve, 9–9.5 report, <9 rework.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
+          ],
+          "deps": [
+            "02-01"
+          ]
+        },
+        {
+          "id": "02-04",
+          "name": "Report running out of content with the C# messages (#28)",
+          "description": "Second part of feature-delta step 6a, ADR-020 §5. A pure diagnosis function (stop reason, return-stack top, choices empty, safe exit → message?) and the epilogue that applies it for ran-out stops: the C# message chosen by the return-stack top is appended to currentErrors.",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "Tunnel top, the issue's concrete case: pop-function-exhaustion-over-tunnel (existing fixture) now reports exactly [\"unexpectedly reached end of content. Do you need a '->->' to return from a tunnel?\"]; Engine_TypeCheckedPopTests asserts it",
+            "Empty stack, synthetic fixture issue28-ran-out-in-knot: a knot entered by a top-level divert whose flat body runs out after a line of prose reports exactly [\"ran out of content. Do you need a '-> DONE' or '-> END'?\"] after that prose plays, on the runtime path (inklecate JSON) and on the native path (flat knot bodies already get no done)",
+            "Function top: probe whether any well-formed route reaches a ran-out stop with a function frame on top (C# auto-pops function frames on exhaustion); if none, cover \"unexpectedly reached end of content. Do you need a '~ return'?\" with a unit test of the pure diagnosis function only and record why in the test",
+            "A choice-continuation root that exhausts reports \"ran out of content. Do you need a '-> DONE' or '-> END'?\"; temporarily instrument that path and confirm no well-formed oracle or conformance fixture reaches it (report the result; investigate any that does before keeping the classification)",
+            "`-> DONE`, `-> END`, a refused pop (still exactly one error) and a stop at a choice point yield no end-of-content error; the full oracle and conformance suites stay error-free; errors are not saved and are cleared by restoreState and moveToKnot",
+            "Conformance [P]: 'line ending before -> DONE' (01Tests:177) and 'DONE stops the flow' (04Tests:680, native; may need 02-05); re-enable those that pass",
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained; changed production files' Code Health not below their main baseline"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Engine_EndOfContentErrorTests.swift",
+          "scenario_name": "#28 running out of content reports the C# error",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Engine_EndOfContentErrorTests.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Engine_TypeCheckedPopTests.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/FlowEndDiagnosisTests.swift",
+            "Tests/SwiftInkRuntimeTests/Fixtures/issue28-ran-out-in-knot.ink",
+            "Tests/SwiftInkRuntimeTests/Fixtures/issue28-ran-out-in-knot.ink.json",
+            "scripts/conformance/known-failures.json",
+            "Tests/SwiftInkRuntimeTests/Conformance/UpstreamConformance01Tests.swift",
+            "Tests/SwiftInkRuntimeTests/Conformance/UpstreamConformance04Tests.swift",
+            "docs/reference/differences-from-inklecate.md"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express invariant checks as parametrized tests over representative inputs.",
+            "DISTILL was skipped: write the RED tests in this step from the criteria. New ATs are never committed .disabled.",
+            "Messages are bare, without inkjs's 'RUNTIME ERROR: (Ink Pointer -> …)' prefix (ADR-017). The C# 'unknown reason' branch needs threads and is omitted. No EvaluateFunction exists, so the temporary-evaluation-container condition is always true; leave a comment that a future EvaluateFunction must suppress the epilogue.",
+            "Contract shapes: diagnosis = pure function; applying it = bounded change {errors}.",
+            "FIXTURES: inklecate-produced .ink.json only, never hand-edited. issue28-ran-out-in-knot is synthetic (not from the issue). A ran-out fixture ends by definition; 'continues past the construct' here means real prose plays before the stop and the test asserts that prose, then the error.",
+            "C# reference: Story.cs:502-516 (epilogue).",
+            "ORCHESTRATOR: natively compiled weave-bearing knots still end in an implicit done until 02-05, so the two compile paths disagree on loose ends between these commits. No tag between 02-04 and 02-05 (ADR-021 §3).",
+            "CONFORMANCE: `INKSWIFT_CONFORMANCE_BACKLOG=1 swift test --filter UpstreamConformance` before and after; re-enable every test that now passes (remove its scripts/conformance/known-failures.json entry and regenerate with `scripts/conformance/import_upstream_tests.py /Users/maartene/Downloads/ink /Users/maartene/Downloads/inklecate_mac/inklecate`), same commit. A listed mover that stays red is reported, not forced. The harness fails any non-error test that reports a runtime error: that is the guard against false errors.",
+            "DOCS: differences doc (running out of content now reports an error).",
+            "RELEASE: patch, the SAME release as 02-05; no tag in between. Release-note callout (with 02-05): \"Running out of content reports an error on both compile paths.\"",
+            "COMMIT MESSAGE references `Refs #28` (02-05 carries `Fixes #28`).",
+            "MANUAL MUTATION CHECK (CLAUDE.md): 3-5 plausible-bug mutations (e.g. swap the tunnel and function messages, run the epilogue on safe-exit stops, ignore pending choices, append the error twice). Report each and its outcome in the commit message; never commit a mutation.",
+            "CODE HEALTH: CodeScene CLI self-check on every changed production file against the main baseline; >=9.5 approve, 9–9.5 report, <9 rework.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
+          ],
+          "deps": [
+            "02-03"
+          ]
+        },
+        {
+          "id": "02-05",
+          "name": "Emit done only for the root weave; rework conditional arm termination (loose ends)",
+          "description": "Feature-delta step 6b, ADR-021. WeaveEmitter appends done only for the root weave (WeaveEmitter.swift:880); knot, stitch and nested weave bodies end without it so a loose end reaches 02-04's diagnosis. ConditionalEmitter's terminateArm (:230-242) and the rejoin asymmetry in registerContinuation (:168-176) are re-derived without relying on a trailing done.",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "PROBE FIRST, committed before the emitter change: an AT pins that TheIntercept's \"sipping at my tea\" line (ConditionalEmitter.swift:170-173) plays exactly once on the native path, matching inklecate's JSON; it is green on main",
+            "A knot with a weave (a choice and a gather) whose flow runs out after prose, compiled natively, plays the same prose as inklecate's JSON and then reports exactly [\"ran out of content. Do you need a '-> DONE' or '-> END'?\"], the same as the runtime path",
+            "The root weave still ends with done: a top-level story without `-> END` stops without an error on both paths",
+            "Conditional arms with weaves still rejoin: Compiler_ChoiceInConditionalArmTests, Compiler_ChoiceInNestedConditionalArmTests and Compiler_NestedConditionalArmTests stay green, and each fixture plays the content after the block; a rejoin weave at knot level does not fall through into content already played",
+            "Every existing fixture or AT that now reports an error is examined: if inklecate's JSON reports the same error on the runtime path the expectation is updated (recorded in the commit message); otherwise it is a bug in this step",
+            "The full oracle suite, the TheIntercept e2e (Milestone5b, Compiler_TheInterceptProgressTests) and the native-mode conformance tests stay error-free; conformance [P]: 'DONE stops the flow' (04Tests:680, native), 'line ending before -> DONE' (01Tests:177), re-enable those that pass",
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained; changed production files' Code Health not below their main baseline"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_LooseEndTests.swift",
+          "scenario_name": "Native loose ends report the same error as inklecate JSON",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Compiler/Codegen/WeaveEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/ConditionalEmitter.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_LooseEndTests.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_TheInterceptProgressTests.swift",
+            "Tests/SwiftInkRuntimeTests/Fixtures/loose-end-weave-in-knot.ink",
+            "Tests/SwiftInkRuntimeTests/Fixtures/loose-end-weave-in-knot.ink.json",
+            "scripts/conformance/known-failures.json",
+            "Tests/SwiftInkRuntimeTests/Conformance/UpstreamConformance01Tests.swift",
+            "Tests/SwiftInkRuntimeTests/Conformance/UpstreamConformance04Tests.swift",
+            "docs/reference/differences-from-inklecate.md",
+            "docs/product/ink-feature-reference.md"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express invariant checks as parametrized tests over representative inputs.",
+            "DISTILL was skipped: write the RED tests in this step from the criteria. New ATs are never committed .disabled. The 'sipping' pin is a short-series first commit (green on main), then the emitter change.",
+            "terminateArm can no longer key on a trailing done: append the rejoin divert whenever the arm does not end in control flow. RuntimeObjectEmitter.swift:90 is already root-only; no change there. Do NOT strip done in a post-pass (rejected in ADR-021).",
+            "No warning channel: inklecate's 'Apparent loose end' warning is not surfaced (future #38/#39).",
+            "C# reference: compiler/ParsedHierarchy/Story.cs:193 (top-level done), FlowBase.cs:398-411 (loose-end warning). Before keeping any InkSwift-only termination mechanism, check whether it has a counterpart there (CLAUDE.md 'oracle is necessary, not sufficient').",
+            "FIXTURES: inklecate-produced .ink.json only, never hand-edited. Fixtures continue past the conditional block inside the same scope (CLAUDE.md), so a rejoin that terminates instead of continuing fails.",
+            "CONFORMANCE: `INKSWIFT_CONFORMANCE_BACKLOG=1 swift test --filter UpstreamConformance` before and after; re-enable every test that now passes (remove its scripts/conformance/known-failures.json entry and regenerate with `scripts/conformance/import_upstream_tests.py /Users/maartene/Downloads/ink /Users/maartene/Downloads/inklecate_mac/inklecate`), same commit. A listed mover that stays red is reported, not forced.",
+            "DOCS: differences doc and feature reference wherever they describe native termination / loose ends.",
+            "RELEASE: patch, the SAME release as 02-04; no tag in between. Release-note callout: \"Running out of content reports an error on both compile paths. Natively compiled stories with a loose end used to stop silently.\"",
+            "COMMIT MESSAGE references `Fixes #28`.",
+            "MANUAL MUTATION CHECK (CLAUDE.md): 3-5 plausible-bug mutations (e.g. emit done for every weave again, never emit the rejoin divert, emit it even after a divert, drop the root done). Report each and its outcome in the commit message; never commit a mutation.",
+            "CODE HEALTH: CodeScene CLI self-check on every changed production file against the main baseline; >=9.5 approve, 9–9.5 report, <9 rework.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
+          ],
+          "deps": [
+            "02-04"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "03",
+      "name": "Numeric semantics",
+      "description": "ADR-024 §3-4: one C#-ordered coercion point for binary natives (bool < int < float < string), so `1 == 1.0` is true and `\"a\" + 1` is `a1`; a non-string operator on a string operand raises the C# runtime error; FLOOR/CEILING of a float return a float. Closes #37 together with 01-02 and 01-03.",
+      "steps": [
+        {
+          "id": "03-01",
+          "name": "Coerce binary operands to one type and fix cast result types (#37 part 2, F1)",
+          "description": "Feature-delta step 7 minus printing (moved to 01-02). Every binary native coerces both operands to the higher type first (CoerceValuesToSingleType, NativeFunctionCall.cs:231-250); == and != compare coerced values; MIN/MAX go through the same point; string + number concatenates using the 01-02 formatter; an operator with no string form on a coerced string raises the C# runtime error via currentErrors; FLOOR/CEILING of a float return a float, INT truncates, FLOAT returns a float, and on an int FLOOR/CEILING/INT are identity.",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "PROBE FIRST: find the exact C# error for a non-string operator on a string operand (`{\"a\" - 1}`, `{\"a\" < 1}`) from NativeFunctionCall.cs, the reference runtime via the JS bridge, or `inklecate -p`; pin it verbatim. InkSwift reports exactly that message in currentErrors (bare, ADR-017) and ends the flow through forceEnd(), with prose before it played and the content after it not played",
+            "PROBE: on main confirm `{1 == 1.0}` prints false and `{\"a\" + 1}` prints `1`",
+            "Oracle fixture on the runtime path (inklecate JSON) prints exactly what `inklecate -p` prints for (predictions in parentheses): `{1 == 1.0}`, `{1 != 1.0}`, `{MIN(1, 2.5)}` (`1`), `{MAX(1, 2.5)}` (`2.5`), `{\"a\" + 1}` (`a1`), `{\"a\" + 1.5}` (`a1.5`), `{true + 1}` (`2`), `{FLOOR(1.5)}` (`1`), `{CEILING(1.2) / 3}` (`0.6666667`), `{INT(1.7)}` (`1`), `{FLOAT(1) / 2}` (`0.5`), `{FLOAT(2)}` (`2`, from the #37 fixture suggestion), `{FLOOR(3)}` (`3`), followed by prose and a choice",
+            "The same fixture compiled natively matches the oracle for the operator lines (`==`, `!=`, `+` with strings and bools); the built-in-call lines (FLOOR, CEILING, INT, FLOAT, MIN, MAX) are asserted natively in 04-02, where calls start resolving",
+            "Value-level unit tests: coercion order bool < int < float < string for each pair; FLOOR/CEILING of a float are `.float`; INT of a float is `.int`",
+            "Conformance [P], re-enable those that pass: TestFloorCeilingAndCasts runtime (06Tests:297), 'FLOOR, INT, CEILING and casts' (06Tests:292), TestArithmetic runtime (01Tests:55) if still red after 01-03, 'string and number comparison coercion' (03Tests:570, 575)",
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained; changed production files' Code Health not below their main baseline"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Engine_NumericCoercionTests.swift",
+          "scenario_name": "Mixed-type operators and casts follow the C# reference",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Engine/StoryState.swift",
+            "Sources/SwiftInkRuntime/Engine/TreeWalker.swift",
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Engine_NumericCoercionTests.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/InkValueCoercionTests.swift",
+            "Tests/SwiftInkRuntimeTests/Fixtures/numeric-coercion-and-casts.ink",
+            "Tests/SwiftInkRuntimeTests/Fixtures/numeric-coercion-and-casts.ink.json",
+            "Tests/SwiftInkRuntimeTests/Fixtures/string-operand-error.ink",
+            "Tests/SwiftInkRuntimeTests/Fixtures/string-operand-error.ink.json",
+            "scripts/conformance/known-failures.json",
+            "Tests/SwiftInkRuntimeTests/Conformance/UpstreamConformance01Tests.swift",
+            "Tests/SwiftInkRuntimeTests/Conformance/UpstreamConformance03Tests.swift",
+            "Tests/SwiftInkRuntimeTests/Conformance/UpstreamConformance06Tests.swift",
+            "docs/reference/differences-from-inklecate.md",
+            "docs/product/ink-feature-reference.md"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express invariant checks as parametrized tests over representative inputs.",
+            "DISTILL was skipped: write the RED tests in this step from the criteria. New ATs are never committed .disabled.",
+            "MAINTAINER DECISION (final): a non-string operator on a string operand follows C#: a runtime error reported via currentErrors, ending the flow through the shared forceEnd() from 02-03. Recorded in feature-delta.md (DELIVER [WHY]).",
+            "Sites: InkValue arithmetic and casts (StoryState.swift:64-177, adding at :98-103, FLOOR/CEILING at :144-156), TreeWalker ==/!= (:327-328) and MIN/MAX (:352-353). Storage stays Double, no rounding (ADR-024 §1). Host values from setVariable do not go through the coercion point (§5).",
+            "FIXTURES: inklecate-produced .ink.json only, never hand-edited. If inklecate rejects the string-operand fixture at compile time, get the runtime error from the JS-bridge reference on a story that reaches it via variables, and record the route.",
+            "The `0.1 + 0.2 == 0.3` divergence test from 01-02 must stay as it is (float/float comparison is unaffected by coercion).",
+            "C# reference: NativeFunctionCall.cs:231-250 (coercion), :382-383 (FLOOR/CEILING), Value.cs.",
+            "CONFORMANCE: `INKSWIFT_CONFORMANCE_BACKLOG=1 swift test --filter UpstreamConformance` before and after; re-enable every test that now passes (remove its scripts/conformance/known-failures.json entry and regenerate with `scripts/conformance/import_upstream_tests.py /Users/maartene/Downloads/ink /Users/maartene/Downloads/inklecate_mac/inklecate`), same commit. A listed mover that stays red is reported, not forced.",
+            "DOCS: differences doc ('Behaviour that differs': remove the float/int equality and cast entries; keep the precision divergence from 01-02); feature reference where it describes operators or casts.",
+            "RELEASE: patch. Release-note callouts: \"Stories loaded from inklecate JSON: `FLOOR`/`CEILING` keep their fractional type (natively compiled stories get this in the next minor release, when built-in calls compile).\", \"`1 == 1.0` is true.\", \"`\\\"a\\\" + 1` is `a1`.\", \"An arithmetic or comparison operator with no string form applied to a string now reports the reference runtime's error.\"",
+            "COMMIT MESSAGE references `Fixes #37`.",
+            "MANUAL MUTATION CHECK (CLAUDE.md): 3-5 plausible-bug mutations (e.g. coerce to the lower type, skip coercion for ==, FLOOR returns int again, swap int/float rank, no error for `\"a\" - 1`). Report each and its outcome in the commit message; never commit a mutation.",
+            "CODE HEALTH: CodeScene CLI self-check on every changed production file against the main baseline; >=9.5 approve, 9–9.5 report, <9 rework.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
+          ],
+          "deps": [
+            "01-02",
+            "01-03",
+            "02-03"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "04",
+      "name": "Native-function catalog",
+      "description": "ADR-025: one NativeFunctionCatalog in Decoder/ shared by decoder, TreeWalker (exhaustive switch) and compiler (refactor); compile-time call resolution with located errors; unsupported-built-in rejections under the runtime's names, SEED_RANDOM accepted with srnd pushing void; POW and string ?/!? supported. 04-02, 04-03 and 04-04 ship together as ONE minor release.",
+      "steps": [
+        {
+          "id": "04-01",
+          "name": "Introduce the native-function catalog and type NodeKind.nativeFunction (refactor)",
+          "description": "Feature-delta step 8, behaviour-preserving. Create Decoder/NativeFunctionCatalog.swift (source name, runtime token, arity, supported/unsupported with author-facing name, plus the unsupported statement-level constructs) and an internal enum for supported natives. InkDecoder's sets derive from it; NodeKind.nativeFunction carries the enum; TreeWalker switches exhaustively with no default:; every construction site maps to the enum. Add the SwiftLint ban on `.nativeFunction(\"` string construction. CompileError.construct strings are NOT renamed here.",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "Full suite green with no test changed except mechanical renames (tests that build `.nativeFunction(\"+\")` use the enum)",
+            "The failure messages of `INKSWIFT_CONFORMANCE_BACKLOG=1 swift test --filter UpstreamConformance` are identical before and after (diff in the commit message)",
+            "Engine_UnsupportedFeatureLoadTests and Compiler_S6_UnsupportedRejectionTests pass unchanged (runtime names and compiler construct strings are both still today's)",
+            "Catalog unit tests: every runtime token the decoder accepted before maps to the same catalog entry; every unsupported runtime token yields the same UnsupportedFeature name as before",
+            "TreeWalker's native switch is exhaustive with no `default:`; any token that today falls into `default: break` is reported in the commit message and kept as an explicit, commented no-op case (behaviour unchanged; the decision goes to the maintainer)",
+            "SwiftLint custom rule bans `.nativeFunction(\"` outside Decoder/; a deliberate violation fails `swiftlint lint --strict` (checked manually, reported, not committed)",
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained; changed production files' Code Health not below their main baseline"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Unit/NativeFunctionCatalogTests.swift",
+          "scenario_name": "One catalog of built-in names, behaviour unchanged",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Decoder/NativeFunctionCatalog.swift",
+            "Sources/SwiftInkRuntime/Decoder/InkDecoder.swift",
+            "Sources/SwiftInkRuntime/Decoder/NodeKind.swift",
+            "Sources/SwiftInkRuntime/Engine/TreeWalker.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/ExpressionLowering.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/VariableTextEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/ConditionalEmitter.swift",
+            ".swiftlint.yml",
+            "Tests/SwiftInkRuntimeTests/Unit/NativeFunctionCatalogTests.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/NodeKindTests.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/TreeWalkerTests.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/InkDecoderTests.swift"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express invariant checks as parametrized tests over representative inputs.",
+            "Construction sites (ADR-025 §3): ExpressionLowering.swift:64 (binary) and :66 (unary); VariableTextEmitter.swift:120-137 (MIN, %, == for sequence dispatch); ConditionalEmitter.swift:413 (literal ==); InkDecoder.classifyString (:255). Decoder sets today: InkDecoder.swift:21-48. TreeWalker switch: :321-360.",
+            "srnd keeps today's runtime behaviour here (TreeWalker.swift:354 pops the seed and pushes nothing); the change to push void is 04-03.",
+            "Placement: Decoder/ is the lowest layer; Compiler and Engine may depend on it (R1/R5 unchanged). NodeKind access control stays internal.",
+            "Same-step rule: changing the NodeKind payload breaks every constructor and match site, so all of them change in this commit.",
+            "RELEASE: none, ships with the 04-02..04-04 minor.",
+            "MANUAL MUTATION CHECK (CLAUDE.md): 3-5 plausible-bug mutations (e.g. map two tokens to one case, swap MIN/MAX in the switch, mark a supported token unsupported, wrong arity). Report each and its outcome in the commit message; never commit a mutation.",
+            "CODE HEALTH: CodeScene CLI self-check on every changed production file against the main baseline; >=9.5 approve, 9–9.5 report, <9 rework.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
+          ],
+          "deps": []
+        },
+        {
+          "id": "04-02",
+          "name": "Resolve function calls at compile time with located errors (#36 part 1)",
+          "description": "First part of feature-delta step 9a, ADR-025 §4. Short series: (1) behaviour-neutral throws ripple (lowerExpression and lowerFunctionCall become throws; callers propagate); (2) call resolution: supported native → arity check then .nativeFunction; user function → .functionCall; any other name not in the catalog → located .unresolvedReference with inklecate's text. Catalog-unsupported names keep today's lowering until 04-03.",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "PROBE FIRST: on main confirm `{MIN(1, 2)}` compiled natively prints `2` with a leaked function frame (the issue's 'MIN and MAX work' is coincidence); and record inklecate's verbatim error text for `{nosuchfunction(1.5)}` (in its compiler only `\"target not found: '…'\"` in Divert.cs was found, so the real output decides)",
+            "The throws ripple lands first as its own green commit with the full suite unchanged",
+            "`Value: {nosuchfunction(1.5)}.` and `~ nosuchfunction(2)` (each followed by prose and a choice) fail to compile with CompileError kind .unresolvedReference, located at the call's line, with inklecate's verbatim message from the probe; a misspelled user function (`~ gret()` with `greet` defined) fails the same way",
+            "Natively compiled `{FLOOR(1.5)}`, `{INT(1.7)}`, `{CEILING(1.2)}`, `{FLOAT(1) / 2}`, `{FLOAT(2)}`, `{MIN(1, 2)}`, `{MAX(1, 2)}`, `{CEILING(1.2) / 3}` print exactly what `inklecate -p` prints (predicted `1`, `1`, `2`, `0.5`, `2`, `1`, `2`, `0.6666667`), then the continuation",
+            "Arity mismatch is a located .syntaxError with C#'s wording (FunctionCall.cs:130-133): `{FLOOR(1, 2)}` → \"FLOOR should take 1 parameter\"; `{MIN(1)}` → \"MIN should take 2 parameters\"",
+            "Conformance [P]: \"native accepts a story inklecate rejects ('not found')\" (01Tests:424); re-enable whatever passes. Native-mode tests that now fail to compile are correct only if inklecate also rejects them; report the diff",
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained; changed production files' Code Health not below their main baseline"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_FunctionCallResolutionTests.swift",
+          "scenario_name": "#36 undefined calls do not compile; supported built-ins compile to natives",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Compiler/Codegen/ExpressionLowering.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/RuntimeObjectEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/ConditionalEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/WeaveEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/VariableTextEmitter.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_FunctionCallResolutionTests.swift",
+            "Tests/SwiftInkRuntimeTests/Fixtures/issue36-builtin-casts.ink",
+            "Tests/SwiftInkRuntimeTests/Fixtures/issue36-builtin-casts.ink.json",
+            "scripts/conformance/known-failures.json",
+            "Tests/SwiftInkRuntimeTests/Conformance/UpstreamConformance01Tests.swift",
+            "docs/reference/differences-from-inklecate.md",
+            "docs/product/ink-feature-reference.md"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express invariant checks as parametrized tests over representative inputs.",
+            "DISTILL was skipped: write the RED tests in this step from the criteria. New ATs are never committed .disabled.",
+            "DEVIATION FROM FEATURE-DELTA (review): step 9a is split into this step and 04-03.",
+            "Throws ripple: lowerExpression (:46-49) and lowerFunctionCall (:91-95) become throws; propagate through RuntimeObjectEmitter's statement lowerers, lowerInlineExpression, and the guard/subject closures and closure parameter types of ConditionalEmitter and WeaveEmitter. Locate errors with the existing CompileError.locating pattern at the statement sites.",
+            "FIXTURES: inklecate-produced .ink.json only, never hand-edited. Rejection cases put content after the call so a test proves compilation stops instead of playing on.",
+            "C# reference: compiler/ParsedHierarchy/FunctionCall.cs:35-229 (resolution order, arity wording at :130-133).",
+            "CONFORMANCE: `INKSWIFT_CONFORMANCE_BACKLOG=1 swift test --filter UpstreamConformance` before and after; re-enable every test that now passes (remove its scripts/conformance/known-failures.json entry and regenerate with `scripts/conformance/import_upstream_tests.py /Users/maartene/Downloads/ink /Users/maartene/Downloads/inklecate_mac/inklecate`), same commit. A listed mover that stays red is reported, not forced.",
+            "DOCS: differences doc (undefined calls rejected; supported casts compile); feature reference rows for built-ins. Doc-consistency tests (Compiler_S5_FeatureReferenceConsistencyTests, DocAccuracy_ParityStatementConsistencyTests) must stay green.",
+            "RELEASE: MINOR, shipped together with 04-03 and 04-04; NO tag between 04-02 and 04-04 (maintainer decision). Release-note callouts (collected for the minor): \"Undefined function calls no longer compile.\" and \"Natively compiled `FLOOR`/`CEILING`/`INT`/`FLOAT`/`MIN`/`MAX` play as inklecate.\"",
+            "COMMIT MESSAGE references `Refs #36` (04-03 carries `Fixes #36`).",
+            "MANUAL MUTATION CHECK (CLAUDE.md): 3-5 plausible-bug mutations (e.g. resolve user functions before built-ins, skip the arity check, drop the location, fall back to .functionCall for unknown names). Report each and its outcome in the commit message; never commit a mutation.",
+            "CODE HEALTH: CodeScene CLI self-check on every changed production file against the main baseline; >=9.5 approve, 9–9.5 report, <9 rework.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
+          ],
+          "deps": [
+            "04-01",
+            "03-01"
+          ]
+        },
+        {
+          "id": "04-03",
+          "name": "Reject unsupported built-ins under the runtime's names; accept SEED_RANDOM with srnd pushing void (#36 part 2)",
+          "description": "Second part of feature-delta step 9a, ADR-025 §4-6. Unsupported special built-ins → located .unsupportedConstruct with the catalog name; CompileError.construct strings become the runtime's names, with a compiler/runtime name-consistency test; the runtime's srnd pushes void as C# does; SEED_RANDOM compiles natively; TURNS_SINCE( is rejected at the call site before argument parsing.",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "PROBE FIRST: on main, show that the discarded-call pop for `~ SEED_RANDOM(5)` on the inklecate-JSON runtime path is currently unbalanced (TreeWalker.swift:354 pops the seed and pushes nothing, so the following `pop` removes something else or underflows); record the observed effect",
+            "Runtime: srnd pops the seed and pushes void, as C# does (Story.cs:1517-1528); `~ SEED_RANDOM(5)` followed by prose and a choice plays from inklecate's JSON identically to `inklecate -p`, with the evaluation stack balanced (no stray output)",
+            "`~ SEED_RANDOM(5)` with the same continuation compiles natively and plays identically to the runtime path",
+            "Unsupported built-ins are located .unsupportedConstruct errors under the runtime's names: `TURNS()`, `CHOICE_COUNT()`, `RANDOM()`, `READ_COUNT() of a divert-target variable` (names checked against InkDecoder/the catalog before asserting)",
+            "TURNS_SINCE: `{TURNS_SINCE(-> k)}` is rejected at the call site, before argument parsing, with a located `.unsupportedConstruct` whose construct is \"TURNS_SINCE()\" (never an unlocated unexpectedToken)",
+            "CompileError.construct strings are the runtime's names: \"RANDOM()\", \"LIST\", \"threads (<-)\", \"EXTERNAL functions\", \"INCLUDE\"; Compiler_S6_UnsupportedRejectionTests.swift:24-29 updated; a consistency test asserts that for every unsupported catalog entry the compiler's construct equals the runtime's UnsupportedFeature.name",
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained; changed production files' Code Health not below their main baseline"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_UnsupportedBuiltinRejectionTests.swift",
+          "scenario_name": "#36 unsupported built-ins are rejected under one vocabulary; SEED_RANDOM plays",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Compiler/Codegen/ExpressionLowering.swift",
+            "Sources/SwiftInkRuntime/Compiler/Parser/UnsupportedConstructDetector.swift",
+            "Sources/SwiftInkRuntime/Decoder/NativeFunctionCatalog.swift",
+            "Sources/SwiftInkRuntime/Engine/TreeWalker.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_UnsupportedBuiltinRejectionTests.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_S6_UnsupportedRejectionTests.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/NativeFunctionCatalogTests.swift",
+            "Tests/SwiftInkRuntimeTests/Fixtures/issue36-seed-random.ink",
+            "Tests/SwiftInkRuntimeTests/Fixtures/issue36-seed-random.ink.json",
+            "docs/reference/differences-from-inklecate.md",
+            "docs/product/ink-feature-reference.md"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express invariant checks as parametrized tests over representative inputs.",
+            "DISTILL was skipped: write the RED tests in this step from the criteria. New ATs are never committed .disabled.",
+            "Correction to the DESIGN premise (recorded in feature-delta.md, DELIVER [WHY]): ADR-025 §5 assumed srnd's discarded-call pop was already balanced; it is not, because TreeWalker.swift:354 pushes nothing. The runtime change to push void is part of this step and the commit message names it as a runtime behaviour change on the JSON path.",
+            "TURNS_SINCE decision (final): the divert-target argument `-> k` is not parsable today (backlog 'divert-target values'), so the rejection fires on `TURNS_SINCE(` at the call site, before argument parsing (e.g. in UnsupportedConstructDetector), located.",
+            "Construct renames are acceptable in 2.x (maintainer decision): only the diagnostic text in CompileError.construct changes; the type and its fields are unchanged, so no host code stops compiling. It is called out in the release notes for hosts that match on the strings.",
+            "Rejection fixtures put content after the call so a test proves compilation stops instead of playing on. FIXTURES: inklecate-produced .ink.json only, never hand-edited.",
+            "C# reference: compiler/ParsedHierarchy/FunctionCall.cs:35-106 (special built-ins, SEED_RANDOM at :95-106), Story.cs:1517-1528 (srnd pushes Void).",
+            "DOCS: differences doc (remove footnote ², update the 'At a glance' rows, list the renamed construct strings); feature reference rows for SEED_RANDOM and the rejection names.",
+            "RELEASE: MINOR, shipped together with 04-02 and 04-04; NO tag in between. Release-note callouts (collected for the minor): \"`CompileError.construct` strings change to the runtime's names (`\\\"RANDOM()\\\"`, `\\\"LIST\\\"`, `\\\"threads (<-)\\\"`, `\\\"EXTERNAL functions\\\"`, `\\\"INCLUDE\\\"`). This is not API-breaking, but hosts that match on these strings must update.\" and \"SEED_RANDOM compiles natively.\" Additional callouts: \"Natively compiled stories that call TURNS(), TURNS_SINCE(), CHOICE_COUNT(), RANDOM() or READ_COUNT() of a variable now fail to compile with a located error, as they are already refused when loading inklecate JSON; previously they compiled and played wrong.\" and \"`SEED_RANDOM` no longer leaves the evaluation stack unbalanced on stories loaded from inklecate JSON.\"",
+            "COMMIT MESSAGE references `Fixes #36` and names the srnd runtime change.",
+            "MANUAL MUTATION CHECK (CLAUDE.md): 3-5 plausible-bug mutations (e.g. srnd pushes nothing again, use the old construct string for one entry, drop the location on TURNS_SINCE, accept RANDOM). Report each and its outcome in the commit message; never commit a mutation.",
+            "CODE HEALTH: CodeScene CLI self-check on every changed production file against the main baseline; >=9.5 approve, 9–9.5 report, <9 rework.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
+          ],
+          "deps": [
+            "04-02"
+          ]
+        },
+        {
+          "id": "04-04",
+          "name": "Support POW and the string ? / !? operators natively and at runtime",
+          "description": "Feature-delta step 9b, ADR-025 §5. POW and string `?`/`!?` become supported catalog entries; the expression tokenizer learns `?` and `!?`; the runtime implements them per C#.",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "PROBE FIRST: `?` and `!?` with non-string operands (e.g. `{5 ? 5}`, `{1.5 !? 1}`) in inklecate and the reference runtime (JS bridge); implement the reference behaviour or, if it needs lists, reject with a located error and record the decision",
+            "`{POW(2, 3)}` prints `8` and `{POW(2, 0.5)}` prints `1.4142135` (predictions; POW of two ints is a float, C# `(float)Math.Pow`), on the native path and from inklecate's JSON, followed by prose and a choice",
+            "`{\"hello\" ? \"xyz\": yes|no}` prints `no`, `{\"hello\" !? \"xyz\": yes|no}` prints `yes`, `{\"hello\" ? \"ell\": yes|no}` prints `yes`, on both paths, matching `inklecate -p`",
+            "Every other unsupported built-in is still rejected under its runtime name; the 04-03 consistency test stays green",
+            "Conformance [P]: 'string contains operator (?)' / 'unsupported ? (contains)' (05Tests:520, 525); re-enable those that pass",
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained; changed production files' Code Health not below their main baseline"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_PowAndContainsTests.swift",
+          "scenario_name": "POW and string contains play as inklecate",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Decoder/NativeFunctionCatalog.swift",
+            "Sources/SwiftInkRuntime/Decoder/InkDecoder.swift",
+            "Sources/SwiftInkRuntime/Engine/TreeWalker.swift",
+            "Sources/SwiftInkRuntime/Engine/StoryState.swift",
+            "Sources/SwiftInkRuntime/Compiler/Parser/InkParserExpressions.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/ExpressionLowering.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_PowAndContainsTests.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Engine_UnsupportedFeatureLoadTests.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/InkExpressionTests.swift",
+            "Tests/SwiftInkRuntimeTests/Fixtures/pow-and-contains.ink",
+            "Tests/SwiftInkRuntimeTests/Fixtures/pow-and-contains.ink.json",
+            "scripts/conformance/known-failures.json",
+            "Tests/SwiftInkRuntimeTests/Conformance/UpstreamConformance05Tests.swift",
+            "docs/reference/differences-from-inklecate.md",
+            "docs/product/ink-feature-reference.md"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express invariant checks as parametrized tests over representative inputs.",
+            "DISTILL was skipped: write the RED tests in this step from the criteria. New ATs are never committed .disabled.",
+            "If the runtime currently rejects POW / `?` / `!?` at load (UnsupportedFeature), Engine_UnsupportedFeatureLoadTests changes accordingly: inklecate JSON using them now loads and plays.",
+            "Operator precedence of `?`/`!?` follows inklecate's expression grammar (compiler/InkParser/InkParser_Expressions.cs).",
+            "FIXTURES: inklecate-produced .ink.json only, never hand-edited.",
+            "C# reference: NativeFunctionCall.cs (Pow, Has/Hasnt for strings).",
+            "CONFORMANCE: `INKSWIFT_CONFORMANCE_BACKLOG=1 swift test --filter UpstreamConformance` before and after; re-enable every test that now passes (remove its scripts/conformance/known-failures.json entry and regenerate with `scripts/conformance/import_upstream_tests.py /Users/maartene/Downloads/ink /Users/maartene/Downloads/inklecate_mac/inklecate`), same commit. A listed mover that stays red is reported, not forced.",
+            "DOCS: differences doc and feature reference rows for POW and `?`/`!?` become supported.",
+            "RELEASE: MINOR, the last commit of the 04-02..04-04 release; the orchestrator tags after this step and updates the README SwiftPM `from:` snippet. Release-note callout: \"POW and string `?`/`!?` work.\"",
+            "COMMIT MESSAGE references `Refs #36`.",
+            "MANUAL MUTATION CHECK (CLAUDE.md): 3-5 plausible-bug mutations (e.g. POW returns int, swap ? and !?, reverse the contains operands, wrong precedence). Report each and its outcome in the commit message; never commit a mutation.",
+            "CODE HEALTH: CodeScene CLI self-check on every changed production file against the main baseline; >=9.5 approve, 9–9.5 report, <9 rework.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
+          ],
+          "deps": [
+            "04-03"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "05",
+      "name": "Content-text scanner",
+      "description": "ADR-026 §2-5: one ContentTextScanner in Compiler/Parser, introduced escape-agnostic so every consumer switches over with no behaviour change, then switched to escape-aware to fix #35.",
+      "steps": [
+        {
+          "id": "05-01",
+          "name": "Introduce ContentTextScanner in escape-agnostic mode and switch every consumer (refactor)",
+          "description": "Feature-delta step 10. A pure scanner (text + context content/choice/string/tag → literal runs and structural markers with source offsets). In escape-agnostic mode a backslash is ordinary text and runs are raw; trim stays as after 01-01. parseContentSegments, scanBraceSegment, topLevelIndex, topLevelBarSplit, GlueMarker, the mid-line divert scan, carriesInterpolationOrTag, the tag text and the string-literal tokenizer consume it; UnsupportedConstructDetector uses its single escape primitive, which stays escape-aware.",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "Full suite green with no test changed except mechanical renames, including the compiler oracle suites and the TheIntercept e2e",
+            "The failure messages of `INKSWIFT_CONFORMANCE_BACKLOG=1 swift test --filter UpstreamConformance` are identical before and after (diff in the commit message)",
+            "Scanner unit tests (parametrized): per context the stop set is content `{ } | # newline`, choice adds `[ ]`, string adds `\"`; glue and the divert arrow come out as markers; every run and marker carries its source offset; in escape-agnostic mode `a\\{b` yields the raw run with the backslash and a brace marker",
+            "No raw content-text scanner remains: a grep over Sources/SwiftInkRuntime/Compiler for character-level scans of `{`, `}`, `|`, `#`, `<>` and `->` in content text finds them only in ContentTextScanner.swift (the grep and its result are in the commit message)",
+            "UnsupportedConstructDetector's private escape helpers are replaced by the scanner's escape primitive, which remains escape-aware even in agnostic mode, so #31's acceptance of `\\{` and `\\#` is kept and its tests are unchanged",
+            "PROBE (recorded, not acted on): how `modeAndContent` reads a leading `\\` in a brace body (InkParser.swift:1490-1491) compared with ContentTextAllowingEcapeChar; the finding goes in the commit message and a code comment for 05-02",
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained; changed production files' Code Health not below their main baseline"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Unit/ContentTextScannerTests.swift",
+          "scenario_name": "One content-text scanner, behaviour unchanged",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Compiler/Parser/ContentTextScanner.swift",
+            "Sources/SwiftInkRuntime/Compiler/Parser/InkParser.swift",
+            "Sources/SwiftInkRuntime/Compiler/Parser/InkParserExpressions.swift",
+            "Sources/SwiftInkRuntime/Compiler/GlueMarker.swift",
+            "Sources/SwiftInkRuntime/Compiler/Parser/UnsupportedConstructDetector.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/ContentTextScannerTests.swift"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express invariant checks as parametrized tests over representative inputs.",
+            "Contract shape: pure function. The mode switch exists so that 05-02 is the single behaviour change (ADR-026 §5).",
+            "C# reference: compiler/InkParser/InkParser_Content.cs:117-199 (ContentTextAllowingEcapeChar, upstream spelling, and ContentTextNoEscape).",
+            "If the step grows too large, land it as a short series (scanner + unit tests, then consumers one or two at a time), each commit green and behaviour-neutral.",
+            "RELEASE: none, ships with 05-02.",
+            "MANUAL MUTATION CHECK (CLAUDE.md): 3-5 plausible-bug mutations (e.g. drop '|' from the content stop set, off-by-one an offset, forget the choice-context brackets, make the detector's primitive escape-agnostic). Report each and its outcome in the commit message; never commit a mutation.",
+            "CODE HEALTH: CodeScene CLI self-check on every changed production file against the main baseline; >=9.5 approve, 9–9.5 report, <9 rework. InkParser.swift should improve as the raw scanners leave it.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
+          ],
+          "deps": [
+            "01-01"
+          ]
+        },
+        {
+          "id": "05-02",
+          "name": "Switch the scanner to escape-aware mode (#35)",
+          "description": "Feature-delta step 11, ADR-026 §5. `\\x` becomes a literal `x` and an escaped character never acts as a stop, in prose, choice text, tags and string literals. Trim stays as after 01-01.",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "The #35 repro (`Prose \\{a\\} and \\# hash.` / `Tagged. # a\\{b\\}` / `~ temp t = \"c\\{d\\}\"` / `String: {t}.`, followed by prose and a choice) compiled natively returns exactly `Prose {a} and # hash.` with no tags, then `Tagged.` with currentTags [\"a{b}\"], then `String: c{d}.`, then the continuation; identical to the runtime path on inklecate's JSON",
+            "Escapes in choice text (`* Pick \\[x\\] now` and an escaped `|`) and in alternatives (`{&a\\|b|c}`) and a literal backslash (`\\\\`) play as `inklecate -p` on both paths, each followed by content",
+            "The `{\\…}` handling in modeAndContent matches inklecate per the 05-01 probe (oracle test), or the difference is recorded in docs/reference/differences-from-inklecate.md and reported",
+            "UnsupportedConstructDetector and the content parser agree on what is escaped: a story using `\\{`, `\\#` is accepted (Compiler_S6 rejection tests for escapes unchanged)",
+            "Conformance [P]: 'escaped characters in alternatives' (02Tests:113); re-enable it if it passes",
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained; changed production files' Code Health not below their main baseline"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_EscapeTests.swift",
+          "scenario_name": "#35 backslash escapes print literally in prose, tags and strings",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Compiler/Parser/ContentTextScanner.swift",
+            "Sources/SwiftInkRuntime/Compiler/Parser/InkParser.swift",
+            "Sources/SwiftInkRuntime/Compiler/Parser/InkParserExpressions.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_EscapeTests.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/ContentTextScannerTests.swift",
+            "Tests/SwiftInkRuntimeTests/Fixtures/issue35-escapes.ink",
+            "Tests/SwiftInkRuntimeTests/Fixtures/issue35-escapes.ink.json",
+            "Tests/SwiftInkRuntimeTests/Fixtures/escapes-in-choices-and-alternatives.ink",
+            "Tests/SwiftInkRuntimeTests/Fixtures/escapes-in-choices-and-alternatives.ink.json",
+            "scripts/conformance/known-failures.json",
+            "Tests/SwiftInkRuntimeTests/Conformance/UpstreamConformance02Tests.swift",
+            "docs/reference/differences-from-inklecate.md",
+            "docs/product/ink-feature-reference.md"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express invariant checks as parametrized tests over representative inputs.",
+            "DISTILL was skipped: write the RED tests in this step from the criteria. New ATs are never committed .disabled.",
+            "FIXTURES: inklecate-produced .ink.json only, never hand-edited; expected output from `inklecate -p`. Every escaped construct has content after it (issue #35 notes).",
+            "Trim policy stays trailing-only (as after 01-01); any further TrimEndWhitespace alignment is out of scope and gated on its own probe (ADR-026 §5).",
+            "CONFORMANCE: `INKSWIFT_CONFORMANCE_BACKLOG=1 swift test --filter UpstreamConformance` before and after; re-enable every test that now passes (remove its scripts/conformance/known-failures.json entry and regenerate with `scripts/conformance/import_upstream_tests.py /Users/maartene/Downloads/ink /Users/maartene/Downloads/inklecate_mac/inklecate`), same commit. A listed mover that stays red is reported, not forced.",
+            "DOCS: differences doc (remove the 'escapes keep their backslash' note); feature reference row for escapes.",
+            "RELEASE: patch (ships with 05-01). Release-note callout: \"Natively compiled text: escaped `\\{`, `\\}`, `\\#` print literally and no longer keep their backslash in tags and strings (#35).\"",
+            "COMMIT MESSAGE references `Fixes #35`.",
+            "MANUAL MUTATION CHECK (CLAUDE.md): 3-5 plausible-bug mutations (e.g. keep the backslash, let an escaped char still stop the run, ignore escapes in string context only, unescape twice). Report each and its outcome in the commit message; never commit a mutation.",
+            "CODE HEALTH: CodeScene CLI self-check on every changed production file against the main baseline; >=9.5 approve, 9–9.5 report, <9 rework.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass."
+          ],
+          "deps": [
+            "05-01"
+          ]
+        }
+      ]
+    }
+  ],
+  "implementation_scope": {
+    "source_directories": [
+      "Sources/SwiftInkRuntime/"
+    ],
+    "test_directories": [
+      "Tests/SwiftInkRuntimeTests/",
+      "scripts/conformance/"
+    ],
+    "excluded_patterns": [
+      "*.ink.json"
+    ]
+  },
+  "validation": {
+    "status": "approved",
+    "reviewer": "nw-acceptance-designer-reviewer",
+    "notes": "Approved on second review after one revision; final release-callout fixes applied by the orchestrator.",
+    "approved_at": "2026-11-19T12:23:29Z"
+  }
+}

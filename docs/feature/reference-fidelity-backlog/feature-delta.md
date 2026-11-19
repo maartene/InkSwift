@@ -357,3 +357,23 @@ Refactor-first steps (4, 8, 10) keep the fixes that follow them small. Steps 1, 
   - The backlog entry "escaped characters in alternatives".
 
 **Peer review**: design review returned APPROVE WITH CHANGES (2026-11-19). All 19 findings are applied to this file, ADR-020 to ADR-026 and the brief.
+
+---
+
+## Wave: DELIVER / [WHY] Upstream Issues
+
+Changes to the DESIGN above, made while planning DELIVER (roadmap review and maintainer
+decisions, 2026-11-19). The roadmap is `deliver/roadmap.json`.
+
+| # | Change | Why | Affects |
+|---|---|---|---|
+| U1 | Float printing (ADR-024 §2) moves out of step 7 and lands **before** the token-typed reader (roadmap 01-02, then 01-03) | Once `2.0` decodes as a float, the old `String(Double)` would print `2.0` where inklecate and the previous release print `2`: a visible regression in the urgent patch | Sequencing; ADR-024 §2 unchanged |
+| U2 | Step 3 is split into a visit-counter refactor (01-04), canonical keys for #33 (01-05) and legacy-key restore (01-06). The split-key golden save is captured from main before 01-05 changes anything | Separates refactor from behaviour change; the golden must predate the change. 01-04..01-06 ship as one patch | Sequencing; ADR-022 unchanged |
+| U3 | Step 6a is split into flow-end state, `forceEnd()` and `-> END` discarding choices (02-03), and then the end-of-content diagnosis and epilogue (02-04). 02-04 and 02-05 (loose ends, step 6b) share one patch with no tag between | Smaller steps. ADR-021 §3's "never disagree on a release" still holds | Sequencing |
+| U4 | Step 9a is split into call resolution and arity (04-02) and unsupported rejections, renames, srnd and TURNS_SINCE (04-03). **04-02, 04-03 and 04-04 ship as ONE minor** (maintainer) | The release split in ADR-025 ("patch" for #36, "minor" for POW and `?`) is superseded; no tag between 04-02 and 04-04 | ADR-025 *Release split* |
+| U5 | **srnd premise corrected.** ADR-025 §5 assumed the discarded-call `pop` stays balanced. Today `srnd` pops the seed and pushes nothing (`TreeWalker.swift:354`), so the JSON path is unbalanced. 04-03 makes `srnd` push void, as C# does (`Story.cs:1517-1528`), and probes the current imbalance first | It is a runtime behaviour change on the inklecate-JSON path, named in the commit message | ADR-025 §5 |
+| U6 | **TURNS_SINCE fallback decided.** `-> k` is not parsable as an argument, so `TURNS_SINCE(` is rejected at the call site before argument parsing, as a located `.unsupportedConstruct("TURNS_SINCE()")` | Avoids an unlocated `unexpectedToken` | ADR-025 §5 |
+| U7 | **Construct renames are acceptable in 2.x** (maintainer). Only the diagnostic text in `CompileError.construct` changes; the type and its fields don't, so no host stops compiling. They get a release-note callout | Confirms ADR-025's "not API-breaking" | ADR-025 consequences |
+| U8 | **A non-string operator on a string operand** (`"a" - 1`, `"a" < 1`) follows C# (maintainer): a runtime error in `currentErrors` with the exact C# message, which is pinned verbatim after a probe. It ends the flow through `forceEnd()` | Replaces the open DELIVER probe in ADR-024 §3 | ADR-024 §3 |
+| U9 | Undefined-function error text: use inklecate's verbatim output, after a probe. Only `"target not found: '…'"` (`Divert.cs:262`) was found in its source, not ADR-025's "Function call target not found: X" | Matches the reference exactly | ADR-025 §4 |
+| U10 | Forward-only saves (Q4) are restated in roadmap 01-06 | Already accepted; recorded at the step that implements it | ADR-022 §4 |
