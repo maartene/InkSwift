@@ -60,6 +60,7 @@ playing inklecate's `.ink.json` on the native runtime.
 | String with inline logic: `~ return "value {n}"` | Rejected | ✅ Works | Compile with inklecate |
 | Tag with inline logic: `Line. # pic{n}.jpg` | Rejected | ✅ Works¹ | Compile with inklecate |
 | Tag inside inline logic: `{met: Hi # greeting}`, `{A # t\|B}` | Rejected | ✅ Works¹ | Compile with inklecate |
+| Glue before a tag: `Text <> # t` | Compiles, **plays wrong** (prints `<>` and breaks the line) | ✅ Works | Put the tag on the glued line, or compile with inklecate |
 | A conditional inside a function body | Compiles, **plays wrong** | ✅ Works | Compile with inklecate |
 | `FLOOR()`, `INT()`, `CEILING()`, `FLOAT()` | Compile, **play wrong**² | ✅ Works | Compile with inklecate |
 | Multi-line sequences: `{stopping:` … `}`, `{cycle:` … `}` | Rejected | ❌ **Plays wrong** (repeats an item) | Use the inline forms (`{a\|b}`, `{&a\|b}`, `{!a\|b}`), or the JS-bridge |

@@ -1398,7 +1398,12 @@ public enum InkParser {
                 continue
             }
             if character == "#" {
-                appendLiteral(literal.trimmingCharacters(in: .whitespaces), into: &segments)
+                // Only the TRAILING spaces and tabs go, like inklecate's
+                // `TrimEndWhitespace` (`InkParser_Content.cs`): leading whitespace
+                // is content, e.g. the space in `{n > 0: A} after. # t` (#34).
+                let trailingTrimmed = literal.replacingOccurrences(
+                    of: "[ \t]+$", with: "", options: .regularExpression)
+                appendLiteral(trailingTrimmed, into: &segments)
                 literal = ""
                 let tag = String(line[line.index(after: index)...]).trimmingCharacters(in: .whitespaces)
                 segments.append(.tag(tag))

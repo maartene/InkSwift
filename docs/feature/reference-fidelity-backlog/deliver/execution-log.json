@@ -1,5 +1,27 @@
 {
-  "schema_version": "5.0",
+  "schema_version": "3.0",
   "feature_id": "reference-fidelity-backlog",
-  "events": []
+  "events": [
+    {
+      "sid": "01-01",
+      "p": "RED",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-11-19T12:26:16Z"
+    },
+    {
+      "sid": "01-01",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-11-19T12:27:28Z"
+    },
+    {
+      "sid": "01-01",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-11-19T12:31:39Z"
+    }
+  ]
 }
