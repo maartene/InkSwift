@@ -58,6 +58,36 @@ struct ContainerPathResolver {
         return chain
     }
 
+    /// The ancestors the container at `path` steps out into once it runs out,
+    /// innermost last, each resuming just past that container. C# Story.cs
+    /// `IncrementContentPointer` (~2709-2745) falls out into the parent only
+    /// while the container sits in the parent's content (`IndexOf != -1`); a
+    /// container that is only named content ends the climb, and the flow runs
+    /// out there. A labelled gather or choice block is both named and in the
+    /// content array, so a divert to it by name still falls out into its parent.
+    func contentAncestors(of path: ContainerPath) -> [Ancestor] {
+        var chain: [Ancestor] = []
+        for (ancestor, component) in zip(ancestors(along: path), path.components).reversed() {
+            guard let position = contentPosition(of: component, in: ancestor.container) else { break }
+            chain.insert(Ancestor(container: ancestor.container, path: ancestor.path, resumeIndex: position + 1), at: 0)
+        }
+        return chain
+    }
+
+    /// Where the child `component` names sits in `container`'s content array,
+    /// or nil when it is only named content.
+    private func contentPosition(of component: PathComponent, in container: ContainerNode) -> Int? {
+        switch component {
+        case .index(let index):
+            return index
+        case .name(let name):
+            return container.children.firstIndex { child in
+                guard case .container(let sub) = child else { return false }
+                return sub.name == name
+            }
+        }
+    }
+
     /// The one path every spelling of a container shares, for keying its visit
     /// count (ADR-022 §1). inklecate gives a named child of a content array both
     /// an index and a name (a labelled gather is `0.0` and `0.loop`); like C#

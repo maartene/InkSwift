@@ -46,8 +46,7 @@
   "runtime": "unsupported CHOICE_COUNT(), threads"
  },
  "TestChoiceDivertsToDone": {
-  "native": "a divert to DONE on a choice line is kept as text",
-  "runtime": "line ending before -> DONE"
+  "native": "a divert to DONE on a choice line is kept as text"
  },
  "TestChoiceThreadForking": {
   "native": "not ported \u2014 needs state save/load to JSON, and threads",

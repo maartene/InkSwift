@@ -82,11 +82,9 @@ struct Engine_TypeCheckedPopTests {
     // The reference (Story.cs NextContent ~2676-2705) pops on function-body
     // exhaustion only when CanPop(Function); with a tunnel frame on top it does
     // not pop, the pointer runs out and the flow ends. Nothing is consumed, so
-    // "After the tunnel." never plays. inkjs then also reports "unexpectedly
-    // reached end of content. Do you need a '->->' to return from a tunnel?"
-    // (Story.cs ContinueInternal ~505-514). That end-of-content check is a
-    // separate family from ADR-017's pop check and InkSwift does not implement
-    // it, so errors are deliberately not asserted here.
+    // "After the tunnel." never plays. The end-of-content check (Story.cs
+    // ContinueInternal ~502-516, ADR-020 §5, #28) then reports the tunnel
+    // message, as inkjs does.
     @Test func `a function body that runs out over a tunnel frame ends the flow without consuming the frame`() throws {
         let story = try Story(json: try CompilerOracle.oracleJSON("pop-function-exhaustion-over-tunnel"))
 
@@ -96,6 +94,9 @@ struct Engine_TypeCheckedPopTests {
         #expect(story.canContinue == false)
         #expect(story.currentChoices.isEmpty)
         #expect(story.engine.state.returnStack.map(\.kind) == [.tunnel])
+        #expect(story.currentErrors == [
+            "unexpectedly reached end of content. Do you need a '->->' to return from a tunnel?",
+        ])
     }
 
     // D7: a runtime error is unrecoverable, so it is never written to a save.

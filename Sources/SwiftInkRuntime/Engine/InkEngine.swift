@@ -694,7 +694,7 @@ final class InkEngine {
         if let line = consumeNextLine() { return line }
         // No newline left — return remaining text as the trailing line.
         let remaining = extractLine().text
-        return remaining.isEmpty ? nil : remaining + "\n"
+        return remaining.isEmpty ? nil : remaining
     }
 
     // MARK: - Function call / return
@@ -764,6 +764,22 @@ final class InkEngine {
         stopReason = nil
         lastCompletedLine = stepToNextLine() ?? ""
         state.lastCompletedLine = lastCompletedLine
+        reportEndOfContent()
+    }
+
+    /// Epilogue (ADR-020 §5, C# Story.cs ContinueInternal ~502-516): a flow
+    /// that ran out without choices reports why. C# also requires that no
+    /// temporary evaluation container is active; InkSwift has no
+    /// `EvaluateFunction`, so that holds. A future `EvaluateFunction` must
+    /// suppress this epilogue while it runs.
+    private func reportEndOfContent() {
+        let message = FlowEndDiagnosis.message(
+            stopReason: stopReason,
+            returnStackTop: state.returnStack.last?.kind,
+            choicesEmpty: state.currentChoices.isEmpty)
+        if let message {
+            errors.append(message)
+        }
     }
 
     // MARK: - Path resolution
@@ -936,7 +952,10 @@ final class InkEngine {
             return
         }
         if let container = resolver.node(at: path) {
-            containerStack = [ContainerFrame(container: container, index: 0, pathFromRoot: path)]
+            let ancestors = resolver.contentAncestors(of: path).map { ancestor in
+                ContainerFrame(container: ancestor.container, index: ancestor.resumeIndex, pathFromRoot: ancestor.path)
+            }
+            containerStack = ancestors + [ContainerFrame(container: container, index: 0, pathFromRoot: path)]
             state.pointer.containerPath = path
             return
         }

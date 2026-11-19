@@ -121,6 +121,9 @@ reproduction:
   prints nothing);
 - a block conditional before a choice in the same branch (the text after the block is
   dropped).
+- a divert back to a labelled gather at the top of the story whose choices are all used
+  up or hidden: inklecate's story ends cleanly, the native one runs out of content and
+  reports an error.
 
 ink's own test suite finds a few more, such as a tunnel call in the middle of a line, or
 a divert after choice text being kept as text. Each is a disabled test in
@@ -182,9 +185,11 @@ a player can see.
 
 Known places where the same compiled story plays differently on InkSwift's runtime:
 
-- **Running out of content** (a missing `->->`, `~ return` or `-> END`) ends the story
-  silently; inkle's runtime reports an error
-  ([#28](https://github.com/maartene/InkSwift/issues/28)).
+- **Running out of content** (a missing `->->`, `~ return` or `-> END`) reports the same
+  error as inkle's runtime in `currentErrors`
+  ([#28](https://github.com/maartene/InkSwift/issues/28)), on both compile paths. The
+  message has no `RUNTIME ERROR: (<location>):` prefix, and like every InkSwift runtime
+  error it is never saved; `restoreState` and `moveToKnot` clear it.
 - **Float arithmetic is 64-bit.** ink floats are 32-bit; InkSwift computes and stores
   them as `Double` (ADR-024) and only *prints* the 32-bit value. Printed floats match
   inklecate (`2`, `0.33333334`, `0.3`, `1E+20`, `1E-05`, `Infinity`, `NaN`), but

@@ -174,7 +174,7 @@ struct UpstreamConformance01Tests {
         Conformance.run("TestChoiceDivertsToDone", .native, Self.testChoiceDivertsToDone)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: line ending before -> DONE"))
+    @Test
     func `TestChoiceDivertsToDone — inklecate JSON on the runtime`() {
         Conformance.run("TestChoiceDivertsToDone", .runtime, Self.testChoiceDivertsToDone)
     }
