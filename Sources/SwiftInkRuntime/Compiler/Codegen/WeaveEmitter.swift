@@ -68,7 +68,9 @@ enum WeaveEmitter {
     enum FallThrough {
         /// Divert to a gather container at this qualified path.
         case gather([String])
-        /// Terminate the story (top-level weave with no enclosing gather).
+        /// No enclosing gather: the flow runs out here. Emits nothing, as
+        /// inklecate does — an `end` would force-end the flow and discard a
+        /// choice generated earlier in the same continue (#28).
         case end
     }
 
@@ -1192,7 +1194,7 @@ private final class WeaveResolver {
         case .gather(let path):
             return [.divert(target: .path(PathReference(parsing: path.joined(separator: "."))), isConditional: false)]
         case .end:
-            return [.controlCommand("end")]
+            return []
         }
     }
 

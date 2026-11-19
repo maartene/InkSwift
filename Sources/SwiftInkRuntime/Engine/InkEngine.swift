@@ -27,6 +27,28 @@ final class InkEngine {
     /// `restoreState` / `moveToKnot` clear them (they start somewhere else).
     private var errors: [String] = []
 
+    /// How the flow stopped in the current `continue()` (ADR-020 §4), or nil
+    /// while it has not stopped. Transient: reset by the `step()` prologue,
+    /// never part of `StoryState`, so never saved.
+    ///
+    /// A ran-out stop deliberately does NOT set `isEnded` (a deviation from
+    /// ADR-020 §4): an ordinary stop at a choice point is a ran-out stop, so
+    /// setting it would persist `isEnded = true` in every save taken at a choice.
+    /// `isEnded` stays the flag for done / end / a forced end only.
+    enum FlowStop: Equatable {
+        /// `done`, `end` or a forced end (C# `didSafeExit`).
+        case safeExit
+        /// The container stack exhausted with no invisible default to fire.
+        case ranOut
+    }
+
+    private(set) var stopReason: FlowStop?
+
+    /// C# `didSafeExit`: the flow stopped through `done`, `end` or a forced end.
+    var didSafeExit: Bool {
+        stopReason == .safeExit
+    }
+
     init(root: ContainerNode) {
         self.root = root
         self.resolver = ContainerPathResolver(root: root)
@@ -255,7 +277,7 @@ final class InkEngine {
             // now that all visible choices have been exhausted. This allows the
             // auto-continuation pattern (`+ [] -> target`) to work inside a choice
             // continuation (e.g., after "Ask about the shop." is exhausted).
-            return firePendingInvisibleDefault(context: &context, poppingFrame: true) ? .proceed : .stop
+            return firePendingInvisibleDefault(context: &context, poppingFrame: true) ? .proceed : ranOut()
         }
         if returnFromExhaustedFunctionBody() {
             return .proceed
@@ -264,7 +286,15 @@ final class InkEngine {
         if firePendingInvisibleDefault(context: &context, poppingFrame: false) {
             return .proceed
         }
-        return containerStack.isEmpty ? .stop : .proceed
+        return containerStack.isEmpty ? ranOut() : .proceed
+    }
+
+    /// The container stack exhausted with no invisible default to fire: the
+    /// root frame popped empty, or a choice-continuation root ran out (the C#
+    /// named-container null-pointer case). Not a safe exit (ADR-020 §4).
+    private func ranOut() -> StepOutcome {
+        stopReason = .ranOut
+        return .stop
     }
 
     /// Divert to the pending invisible default once no visible choice remains.
@@ -362,36 +392,30 @@ final class InkEngine {
         return .proceed
     }
 
-    /// Choice points, function returns and tunnels: nodes the engine handles
-    /// itself rather than dispatching to the TreeWalker. Returns whether the
-    /// node was one of them.
+    /// Choice points, flow ends, function returns and tunnels: nodes the engine
+    /// handles itself rather than dispatching to the TreeWalker. Returns whether
+    /// the node was one of them.
     private func executeFlowNode(_ node: NodeKind, context: inout StepContext) -> Bool {
         switch node {
+        // end: C# `ForceEnd` — the pending choices go too (#28).
+        case .controlCommand("end"):
+            forceEnd()
+        // done: stop here, keeping the choices already generated (Story.cs ~1544-1566).
+        case .controlCommand("done"):
+            endFlow()
         case .choicePoint(let target, let flags):
             collectChoicePoint(
                 target: target, flags: flags, pendingInvisibleDefaultPath: &context.pendingInvisibleDefaultPath)
-        // ~ret: pop the function element and jump back to the caller. Any other
-        // element on top, or none, refuses the pop and ends the flow.
         case .controlCommand("~ret"):
-            if let element = state.returnStack.pop(.function) {
-                applyFunctionReturn(to: element)
-            } else {
-                refusePop(.function)
-            }
+            returnFromFunction()
         // ->t->: tunnel entry — push a tunnel element for the current position
         // (index already incremented past the ->t-> node) and jump to the target.
         case .tunnelDivert(let target):
             state.returnStack.append(returnElement(.tunnel))
             followDivert(to: target)
             context.noteDivert(outputEndsInNewline: state.outputStream.last == .newline)
-        // ->->: tunnel return — pop the tunnel element and resume at its position.
-        // Any other element on top, or none, refuses the pop and ends the flow.
         case .controlCommand("->->"):
-            if let element = state.returnStack.pop(.tunnel) {
-                applyAbsoluteDivert(element.returnPath.appending(.index(element.returnIndex)))
-            } else {
-                refusePop(.tunnel)
-            }
+            returnFromTunnel()
             context.noteDivert(outputEndsInNewline: state.outputStream.last == .newline)
         default:
             return false
@@ -399,14 +423,46 @@ final class InkEngine {
         return true
     }
 
+    /// ~ret: pop the function element and jump back to the caller. Any other
+    /// element on top, or none, refuses the pop and ends the flow.
+    private func returnFromFunction() {
+        guard let element = state.returnStack.pop(.function) else {
+            return refusePop(.function)
+        }
+        applyFunctionReturn(to: element)
+    }
+
+    /// ->->: pop the tunnel element and resume at its position. Any other
+    /// element on top, or none, refuses the pop and ends the flow.
+    private func returnFromTunnel() {
+        guard let element = state.returnStack.pop(.tunnel) else {
+            return refusePop(.tunnel)
+        }
+        applyAbsoluteDivert(element.returnPath.appending(.index(element.returnIndex)))
+    }
+
     /// A `->->` or `~ret` whose element is missing or of the other kind: report
     /// the reference's error and end the flow, as C# `AddError` → `ForceEnd`
     /// (Story.cs ~2838-2857) resets the call stack and drops the choices.
     private func refusePop(_ kind: CallKind) {
         errors.append(state.returnStack.popRefusal(kind))
+        forceEnd()
+    }
+
+    /// C# `StoryState.ForceEnd` (StoryState.cs ~1185-1195), shared by `end`
+    /// and every runtime error: reset the return stack, drop the choices and
+    /// stop the flow with a safe exit (ADR-020 §4).
+    private func forceEnd() {
         state.returnStack = []
         state.currentChoices = []
+        endFlow()
+    }
+
+    /// Stop the flow with a safe exit (`done`), keeping the choices.
+    private func endFlow() {
         state.isEnded = true
+        state.pointer.index = Int.max
+        stopReason = .safeExit
     }
 
     /// Whether a completed line may be returned after `node`.
@@ -702,8 +758,10 @@ final class InkEngine {
 
     /// Advance one line and store the result in lastCompletedLine.
     func step() {
-        // Prologue (ADR-020 §3, C# ResetOutput): the last line's tags go.
+        // Prologue (ADR-020 §3-4, C# ResetOutput): the last line's tags and
+        // the last stop reason go.
         state.currentTags = []
+        stopReason = nil
         lastCompletedLine = stepToNextLine() ?? ""
         state.lastCompletedLine = lastCompletedLine
     }

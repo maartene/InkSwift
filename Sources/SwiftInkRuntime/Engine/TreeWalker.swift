@@ -179,6 +179,9 @@ struct TreeWalker {
         case "pop":
             _ = state.evalStack.popLast()
 
+        // The step loop never reaches these: InkEngine.executeFlowNode handles
+        // `done` and `end` itself, because `end` is the engine's forceEnd()
+        // (ADR-020 §4). Only standalone dispatch (`global decl`) ends here.
         case "done", "end":
             state.isEnded = true
             state.pointer.index = Int.max

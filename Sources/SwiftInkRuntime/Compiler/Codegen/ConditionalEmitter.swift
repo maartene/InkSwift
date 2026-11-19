@@ -197,13 +197,15 @@ enum ConditionalEmitter {
     }
 
     /// The loose-end fall-through nodes for the rejoin continuation: a divert to the
-    /// enclosing gather, or `end` for a top-level loose end.
+    /// enclosing gather, or nothing for a top-level loose end. inklecate emits no
+    /// `end` there; one would force-end the flow and drop a choice generated in
+    /// a conditional arm (#28, inkle/ink#978).
     private static func fallThroughNodes(_ fallThrough: WeaveEmitter.FallThrough) -> [NodeKind] {
         switch fallThrough {
         case .gather(let target):
             return [unconditionalDivert(to: target)]
         case .end:
-            return [.controlCommand("end")]
+            return []
         }
     }
 
