@@ -35,13 +35,17 @@ stop set per context (`InkParser_Content.cs:117-199`):
 - choice: content plus `[]`
 - string: content plus `"`
 
-Tags and string expressions reuse it. Only the line's trailing whitespace is trimmed
-(`TrimEndWhitespace`, `:10-32`). The runtime cleans the rest.
+Tags and string expressions reuse it. `TrimEndWhitespace` (`:10-32`) trims only the last
+parsed object of a line. On a tagged line that object is the tag text, so the content literal
+before `#` is emitted **untrimmed** (`"^ after. "`, `"^Text   "` in inklecate's JSON). The
+runtime cleans line-end whitespace.
 
 ## Decision
 
-1. **#34 first, alone.** Trim only *trailing* whitespace before a `#`. This is a one-line
-   patch release ahead of the refactor.
+1. **#34 first, alone.** Do not trim the literal before a `#` at all; emit it as inklecate
+   does. This is a one-line patch release ahead of the refactor. (Step 01-01 first trimmed
+   only the trailing whitespace; its manual mutation check showed that trim was unobservable
+   and had no counterpart in inklecate, so a follow-up commit under the same step removed it.)
 2. **`Compiler/Parser/ContentTextScanner.swift` (new)**, a pure scanner.
    - Input: text and a context (content, choice, string, tag).
    - Output: a sequence of *literal runs*, already unescaped (`\x` becomes `x`), and
@@ -52,8 +56,9 @@ Tags and string expressions reuse it. Only the line's trailing whitespace is tri
    `UnsupportedConstructDetector` uses the scanner's single escape primitive instead of its
    private helpers. "Escaped" then has one definition.
 4. **Target trim policy follows `TrimEndWhitespace`**: trailing whitespace at end of line, and
-   before a divert, where a single trailing space is kept. Nothing is trimmed mid-line. Only
-   what #34 needs is adopted in step 1; see §5 for when anything more changes.
+   before a divert, where a single trailing space is kept. Nothing is trimmed mid-line, and
+   the text before a `#` is not trimmed. Step 1 only removes the trim before `#`; see §5 for
+   when anything more changes.
 5. **Two modes, so only one step changes behaviour.**
    - **Step 10** introduces the scanner in an **escape-agnostic mode**. A `\` is ordinary
      text, runs are returned raw (backslashes kept), and the trim stays exactly as it is
@@ -61,7 +66,7 @@ Tags and string expressions reuse it. Only the line's trailing whitespace is tri
      the oracle, conformance and TheIntercept e2e are unchanged, and no AT changes.
    - **Step 11** switches the mode to **escape-aware**: `\x` becomes a literal `x`, and an
      escaped character never acts as a stop. This is the single behaviour change that fixes
-     #35. Trim behaviour stays as after #34: trailing whitespace only, and any further
+     #35. Trim behaviour stays as after #34: no trim before `#`, and any further
      alignment of the trim policy with `TrimEndWhitespace` is gated on a separate probe.
 
    Two items stay DELIVER probes:

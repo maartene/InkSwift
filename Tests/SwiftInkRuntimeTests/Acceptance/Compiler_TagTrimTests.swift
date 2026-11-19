@@ -6,10 +6,10 @@
 // `{n > 0: A} after. # t` the literal " after. " lost its leading space and the
 // line printed "Aafter." instead of inklecate's "A after.".
 //
-// Reference (inklecate 1.2.1): `InkParser_Content.cs` `TrimEndWhitespace` only
-// ever trims the END of a line's text; the compiled json keeps the literal
-// verbatim ("^ after. ") and the runtime cleans the trailing space at line end.
-// ADR-026 §1 limits this fix to trimming the trailing whitespace before `#`.
+// Reference (inklecate 1.2.1): `InkParser_Content.cs` `TrimEndWhitespace` trims
+// only the tag text here; the content literal before `#` is emitted untrimmed
+// ("^ after. ") and the runtime cleans the trailing space at line end. So the
+// native compiler emits that literal unchanged too (ADR-026 §1).
 //
 // Every expected line below was probed with `inklecate -p` (1.2.1) before the
 // fix was written.
@@ -46,6 +46,29 @@ import Foundation
 
         #expect(oracle == ["A after.", "Next.", "After the choice."])
         #expect(native == oracle)
+    }
+
+    // Scenario: the text before a tag is emitted untrimmed, as inklecate emits it.
+    // inklecate's json carries "^ after. " (both spaces); `TrimEndWhitespace`
+    // trims only the tag text. The trailing space is invisible in played output
+    // (the runtime cleans line-end whitespace), so it is pinned on the blueprint.
+    @Test func `text before a tag is emitted untrimmed like inklecate`() throws {
+        let native = try InkCompiler.compile(source: try CompilerOracle.source(Self.fixture))
+        let oracle = try StoryBlueprint(json: try CompilerOracle.oracleJSON(Self.fixture))
+
+        #expect(Self.textRuns(in: oracle.root).contains(" after. "))
+        #expect(Self.textRuns(in: native.root).contains(" after. "))
+    }
+
+    private static func textRuns(in container: ContainerNode) -> [String] {
+        let own = container.children.flatMap { child -> [String] in
+            switch child {
+            case .text(let text): return [text]
+            case .container(let nested): return textRuns(in: nested)
+            default: return []
+            }
+        }
+        return own + container.namedContent.values.flatMap { textRuns(in: $0) }
     }
 
     // Scenario: each probed tag position prints what `inklecate -p` prints.
