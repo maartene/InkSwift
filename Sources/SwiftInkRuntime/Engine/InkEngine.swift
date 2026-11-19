@@ -2,12 +2,10 @@ import Foundation
 
 final class InkEngine {
 
-    /// Bit 0 of a container's `#f` flags: the container tracks visit counts.
-    private static let containerFlagCountVisits: Int = 0x1
-
     var state: StoryState
     let root: ContainerNode
     private let resolver: ContainerPathResolver
+    private let visitCounter = VisitCounter()
     private var lastCompletedLine: String = ""
 
     // Container execution stack. Each frame tracks a container, its execution
@@ -99,8 +97,7 @@ final class InkEngine {
     /// Called wherever execution enters a container: sequential descent, an
     /// absolute divert, and a chosen choice's continuation.
     private func recordVisit(to container: ContainerNode, at path: ContainerPath) {
-        guard container.flags & Self.containerFlagCountVisits != 0 else { return }
-        state.visitCounts[path, default: 0] += 1
+        visitCounter.recordVisit(to: container, at: path, in: &state)
     }
 
     private func popContainer() {
@@ -304,11 +301,7 @@ final class InkEngine {
         // the `visit` control command reads the correct container's visit count.
         state.pointer.containerPath = currentPath
 
-        // Intercept readCount before dispatching to TreeWalker so we can resolve
-        // relative CNT? paths using the actual containerStack frame paths.
-        if case .readCount(let key) = currentChild {
-            let visitCount = resolveReadCountKey(key).flatMap { state.visitCounts[$0] } ?? 0
-            state.evalStack.append(.int(visitCount))
+        if executeVisitCountNode(currentChild) {
             return .proceed
         }
 
@@ -742,6 +735,27 @@ final class InkEngine {
         return parentSnapshots + [continuation]
     }
 
+    /// Execute a node that reads a visit count, which TreeWalker cannot: the
+    /// counter and the resolver live here. Returns false for any other node.
+    ///
+    /// - `.readCount` resolves relative CNT? paths against the actual
+    ///   containerStack frame paths.
+    /// - `visit` pushes the 0-based visit index of the current container: its
+    ///   visit was already counted on entry, so the first visit yields 0.
+    private func executeVisitCountNode(_ node: NodeKind) -> Bool {
+        switch node {
+        case .readCount(let key):
+            let visitCount = resolveReadCountKey(key).map { visitCounter.count(at: $0, in: state) } ?? 0
+            state.evalStack.append(.int(visitCount))
+        case .controlCommand("visit"):
+            let visitCount = visitCounter.count(at: state.pointer.containerPath, in: state)
+            state.evalStack.append(.int(max(0, visitCount - 1)))
+        default:
+            return false
+        }
+        return true
+    }
+
     /// Resolve a CNT? path key to the absolute path its visit count is stored under.
     /// Nil for a relative key whose carets climb above the root: it matches no
     /// visit count.
@@ -1020,14 +1034,14 @@ final class InkEngine {
     /// Return the visit count for a knot by name. Returns 0 for unknown knots.
     /// The name is read as a saved key, so a dotted `knot.stitch` works too.
     func visitCount(forKnot name: String) -> Int {
-        state.visitCounts[ContainerPath(savedKey: name)] ?? 0
+        visitCounter.count(at: ContainerPath(savedKey: name), in: state)
     }
 
     /// Set the visit count for a knot by name.
     /// Pure no-op when the knot does not exist in the story structure.
     func setVisitCount(forKnot name: String, to count: Int) {
         guard root.namedContent[name] != nil else { return }
-        state.visitCounts[ContainerPath(savedKey: name)] = count
+        visitCounter.setCount(count, at: ContainerPath(savedKey: name), in: &state)
     }
 
     func moveToKnot(_ knot: String, stitch: String? = nil) throws {

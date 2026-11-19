@@ -240,11 +240,7 @@ struct TreeWalker {
             }
 
         case "visit":
-            // Push the 0-based visit index for the current container onto the eval stack.
-            // The visit count is incremented when the container is first entered (in enterContainer
-            // or applyDivert); "visit" reports count-1 so the first visit yields index 0.
-            let visitCount = state.visitCounts[state.pointer.containerPath] ?? 1
-            state.evalStack.append(.int(max(0, visitCount - 1)))
+            break  // handled by InkEngine before dispatchNode is reached (it owns the visit counter)
 
         case "#n":
             break  // anonymous named-container reference marker — no-op at walk time

@@ -27,8 +27,23 @@ only_rules:
   - r5_compiler_no_engine_import
   - r5_compiler_no_jsonserialization
   - r5_no_compiler_import_from_decoder_engine
+  - r6_visit_counts_through_counter
 
 custom_rules:
+  # R6 — One visit-count key policy (ADR-022 §2): Engine/VisitCounter.swift is
+  # the only reader and writer of StoryState.visitCounts. Subscripting the
+  # dictionary anywhere else in Sources/ bypasses the counter. StoryState's
+  # Codable converts the dictionary as a whole and never subscripts it. Tests
+  # are outside `included` (top-level and here), so test setup may still seed
+  # visitCounts directly.
+  r6_visit_counts_through_counter:
+    name: "R6 visitCounts only through VisitCounter"
+    included: "Sources/.*\\.swift"
+    excluded: "Sources/SwiftInkRuntime/Engine/VisitCounter\\.swift"
+    regex: "visitCounts\\["
+    message: "R6: read and write visit counts through VisitCounter (Engine/VisitCounter.swift), the one key policy for visitCounts."
+    severity: error
+
   # R4 — setVisitCount must not surface on the public Story facade. The internal
   # InkEngine.setVisitCount accessor (Engine/) is intentional per ST-04 Option C;
   # the public Story.setVisitCount extension lives ONLY in SwiftInkRuntimeTestSupport.
