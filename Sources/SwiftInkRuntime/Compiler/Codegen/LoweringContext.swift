@@ -60,6 +60,21 @@ struct LoweringContext {
         )
     }
 
+    /// Lower a divert written in the source. `-> END` and `-> DONE` are not
+    /// paths: inklecate compiles them to the `end` and `done` control commands
+    /// wherever they appear (`Divert.cs`, `isEnd` / `isDone`). Any other target
+    /// is qualified by `qualify` and diverted to.
+    static func divertNode(to target: String, qualify: (String) -> String) -> NodeKind {
+        switch target {
+        case "END":
+            return .controlCommand("end")
+        case "DONE":
+            return .controlCommand("done")
+        default:
+            return .divert(target: .path(PathReference(parsing: qualify(target))), isConditional: false)
+        }
+    }
+
     /// Resolve a bare divert target against the current knot scope. A bare `T`
     /// that names a sibling stitch (`knot.T` is a known stitch path) qualifies to
     /// `knot.T` so the runtime's absolute-from-root resolution finds it. A bare `T`

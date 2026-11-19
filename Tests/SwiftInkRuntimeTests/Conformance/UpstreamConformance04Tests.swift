@@ -677,7 +677,7 @@ struct UpstreamConformance04Tests {
         c.equal("", story.continueMaximally())
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: DONE stops the flow"))
+    @Test
     func `TestDoneStopsThread — native compiler and runtime`() {
         Conformance.run("TestDoneStopsThread", .native, Self.testDoneStopsThread)
     }

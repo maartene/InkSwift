@@ -172,7 +172,7 @@ enum ConditionalEmitter {
         // it here re-enters content that has already played (TheIntercept's
         // `sipping at my tea` line emits twice).
         if containsWeaveItem(continuation) == false, endsWithControlFlow(continuation) == false {
-            endChildren.append(contentsOf: fallThroughNodes(fallThrough))
+            endChildren.append(contentsOf: fallThrough.nodes)
         }
         // The rejoin's own diverts (`…cond{N}-end.cond{M}-*`, `…cond{N}-end.c-K`)
         // resolve under the `-end` container, so its nested containers NEST here —
@@ -193,19 +193,6 @@ enum ConditionalEmitter {
             default:
                 return false
             }
-        }
-    }
-
-    /// The loose-end fall-through nodes for the rejoin continuation: a divert to the
-    /// enclosing gather, or nothing for a top-level loose end. inklecate emits no
-    /// `end` there; one would force-end the flow and drop a choice generated in
-    /// a conditional arm (#28, inkle/ink#978).
-    private static func fallThroughNodes(_ fallThrough: WeaveEmitter.FallThrough) -> [NodeKind] {
-        switch fallThrough {
-        case .gather(let target):
-            return [unconditionalDivert(to: target)]
-        case .end:
-            return []
         }
     }
 
@@ -234,7 +221,9 @@ enum ConditionalEmitter {
         body: [InkStatement],
         rejoiningAt endPath: [String]
     ) {
-        if case .controlCommand("done")? = children.last {
+        // Only a WEAVE's `done` is swapped: an arm ending in `-> DONE` keeps its own
+        // `done`, which inklecate emits too (`Divert.cs`, `isDone`).
+        if WeaveEmitter.containsWeave(body), case .controlCommand("done")? = children.last {
             children.removeLast()
             children.append(unconditionalDivert(to: endPath))
             return
@@ -332,7 +321,7 @@ enum ConditionalEmitter {
         // Symmetric with `lowerInline` — and deliberately NOT the arm's `terminateArm`:
         // a rejoin's weave belongs to the enclosing knot, so its `done` stays.
         if containsWeaveItem(continuation) == false, endsWithControlFlow(continuation) == false {
-            children.append(contentsOf: fallThroughNodes(fallThrough))
+            children.append(contentsOf: fallThrough.nodes)
         }
         named[endKey] = ContainerNode(children: children, namedContent: endNamed, flags: 0, name: endKey)
     }
@@ -361,9 +350,7 @@ enum ConditionalEmitter {
                 children.append(.text(prose))
             }
             let target = String(trimmed[arrowRange.upperBound...]).trimmingCharacters(in: .whitespaces)
-            children.append(target == "END"
-                ? .controlCommand("end")
-                : unconditionalDivert(to: [qualifyDivertTarget(target)]))
+            children.append(LoweringContext.divertNode(to: target, qualify: qualifyDivertTarget))
             return ContainerNode(children: children, namedContent: [:], flags: 0, name: key)
         }
         // A branch carrying a glue marker `<>` must tokenize it into a glue control

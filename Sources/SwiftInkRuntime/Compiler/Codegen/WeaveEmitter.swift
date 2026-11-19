@@ -72,6 +72,25 @@ enum WeaveEmitter {
         /// inklecate does — an `end` would force-end the flow and discard a
         /// choice generated earlier in the same continue (#28).
         case end
+        /// No enclosing gather in the top-level flow: the loose end reaches the
+        /// `done` inklecate adds after the root's content (`Story.cs:193`). In
+        /// inklecate's layout a rejoin or a final gather sits inline in that
+        /// content, so its loose end falls out into that `done`; here it is a
+        /// named container with nothing after it, so the `done` goes at its end.
+        case done
+
+        /// The nodes a loose end emits: a divert to the gather, the root's
+        /// `done`, or nothing.
+        var nodes: [NodeKind] {
+            switch self {
+            case .gather(let path):
+                return [.divert(target: .path(PathReference(parsing: path.joined(separator: "."))), isConditional: false)]
+            case .done:
+                return [.controlCommand("done")]
+            case .end:
+                return []
+            }
+        }
     }
 
     /// Does this body contain at least one weave choice (and so must lower
@@ -1145,7 +1164,7 @@ private final class WeaveResolver {
             children.append(contentsOf: stripDone(resolved.children))
             for (nestedKey, container) in resolved.named { named[nestedKey] = container }
         } else if endsWithDivert(body) == false {
-            children.append(contentsOf: fallThroughNodes(looseEnd))
+            children.append(contentsOf: looseEnd.nodes)
         }
         return ContainerNode(children: children, namedContent: named, flags: 0, name: key)
     }
@@ -1187,15 +1206,6 @@ private final class WeaveResolver {
     ) -> FallThrough {
         guard ordinal + 1 < gathers.count else { return fallThrough }
         return .gather(gathers[ordinal + 1].path)
-    }
-
-    private func fallThroughNodes(_ fallThrough: FallThrough) -> [NodeKind] {
-        switch fallThrough {
-        case .gather(let path):
-            return [.divert(target: .path(PathReference(parsing: path.joined(separator: "."))), isConditional: false)]
-        case .end:
-            return []
-        }
     }
 
     // MARK: Helpers

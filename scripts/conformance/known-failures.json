@@ -95,9 +95,6 @@
  "TestDivertToWeavePoints": {
   "native": "unsupported multi-line sequences; also diverts to labelled weave points"
  },
- "TestDoneStopsThread": {
-  "native": "DONE stops the flow"
- },
  "TestElseBranches": {
   "native": "else branches",
   "runtime": "else branches"

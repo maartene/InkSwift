@@ -62,7 +62,7 @@ enum RuntimeObjectEmitter {
         context: LoweringContext,
         named: inout [String: ContainerNode]
     ) throws -> [NodeKind] {
-        try lowerBodyRoutingWeave(rootBody, context: context, keyPrefix: [], named: &named)
+        try lowerBodyRoutingWeave(rootBody, context: context, keyPrefix: [], fallThrough: .done, named: &named)
     }
 
     /// Lower a body, routing through the `WeaveEmitter` when it contains choices
@@ -75,6 +75,7 @@ enum RuntimeObjectEmitter {
         _ body: [InkStatement],
         context: LoweringContext,
         keyPrefix: [String],
+        fallThrough: WeaveEmitter.FallThrough = .end,
         named: inout [String: ContainerNode],
         terminateFlatBodyWithDone: Bool = true
     ) throws -> [NodeKind] {
@@ -86,7 +87,7 @@ enum RuntimeObjectEmitter {
         // choicePoints unreachable after the variable-text divert (loop never
         // advances). Bodies with no leading weave keep the flat `lowerBody` path.
         guard leadsWithWeave(body) else {
-            let flat = lowerBody(body, context: context, keyPrefix: keyPrefix, named: &named)
+            let flat = lowerBody(body, context: context, keyPrefix: keyPrefix, fallThrough: fallThrough, named: &named)
             return terminateFlatBodyWithDone ? flat + [.controlCommand("done")] : flat
         }
         // A weave lead / choice / gather body can itself emit named containers
@@ -99,6 +100,7 @@ enum RuntimeObjectEmitter {
         let weave = try WeaveEmitter.lower(
             body,
             keyPrefix: keyPrefix,
+            fallThrough: fallThrough,
             lowerStatement: { statements, _ in
                 // Seed the per-body collector with the SHARED accumulator so the
                 // anonymous `cond{N}`/`seq{N}` ordinal counter (`nextOrdinal(in:)`)
@@ -594,10 +596,7 @@ enum RuntimeObjectEmitter {
             let isGlobal = context.localNames.contains(name) == false
             return lowerAssignment(name: name, value: value, isGlobal: isGlobal, context: context)
         case .divert(let target):
-            return [.divert(
-                target: .path(PathReference(parsing: context.qualifiedDivertTarget(target))),
-                isConditional: false
-            )]
+            return [LoweringContext.divertNode(to: target, qualify: context.qualifiedDivertTarget)]
         case .tunnelDivert(let target):
             return [.tunnelDivert(target: PathReference(parsing: target))]
         case .tunnelReturn:
