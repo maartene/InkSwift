@@ -15,6 +15,7 @@ import Foundation
 //   B9 — ChoiceData decodes from JSON missing flags without error (backward compat)
 //   B10 — typed path fields encode to the legacy wire form (ADR-018)
 //   B11 — legacy wire strings decode to typed paths and re-encode byte-identically
+//   B12 — the typed output stream saves as its text and newline strings, tags left out (ADR-020 §6)
 
 @Suite("StoryState")
 struct StoryStateTests {
@@ -234,6 +235,16 @@ struct StoryStateTests {
         let decoded = try JSONDecoder().decode(StoryState.self, from: JSONSerialization.data(withJSONObject: wire))
         #expect(decoded.pointer.containerPath == ContainerPath(components: [.name("knot"), .index(4), .name("007")]))
         #expect(decoded.visitCounts == [.root: 1, ContainerPath(components: [.name("knot"), .index(4)]): 2])
+    }
+
+    // Behavior 12: the outputStream wire stays a [String] of text and "\n" items
+    @Test func `output stream saves its text and newline items in order and leaves tags out`() throws {
+        var state = StoryState()
+        state.outputStream = [.text("Hello"), .tag("greeting"), .newline, .text("Next")]
+        let wire = try Self.wireObject(of: state)
+        #expect(wire["outputStream"] as? [String] == ["Hello", "\n", "Next"])
+        let restored = try JSONDecoder().decode(StoryState.self, from: JSONEncoder().encode(state))
+        #expect(restored.outputStream == [.text("Hello"), .newline, .text("Next")])
     }
 
     private static func wireObject(of state: StoryState) throws -> [String: Any] {

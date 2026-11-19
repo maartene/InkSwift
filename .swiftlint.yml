@@ -28,8 +28,22 @@ only_rules:
   - r5_compiler_no_jsonserialization
   - r5_no_compiler_import_from_decoder_engine
   - r6_visit_counts_through_counter
+  - r7_output_stream_through_walker_helpers
 
 custom_rules:
+  # R7 — One way into the output stream (ADR-020 §1): only the walker's output
+  # helpers (Engine/TreeWalker+Output.swift) append to StoryState.outputStream,
+  # so glue, the nop trim, newline de-duplication and (from 02-02) tag items
+  # keep one set of rules. Whole-stream assignments (line extraction, resets,
+  # restore) are not appends and stay allowed.
+  r7_output_stream_through_walker_helpers:
+    name: "R7 outputStream appends only in the walker's output helpers"
+    included: "Sources/.*\\.swift"
+    excluded: "Sources/SwiftInkRuntime/Engine/TreeWalker\\+Output\\.swift"
+    regex: "outputStream\\.append\\("
+    message: "R7: append to the output stream through the walker's output helpers (Engine/TreeWalker+Output.swift)."
+    severity: error
+
   # R6 — One visit-count key policy (ADR-022 §2): Engine/VisitCounter.swift is
   # the only reader and writer of StoryState.visitCounts. Subscripting the
   # dictionary anywhere else in Sources/ bypasses the counter. StoryState's

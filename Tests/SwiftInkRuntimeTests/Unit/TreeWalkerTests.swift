@@ -78,13 +78,13 @@ struct TreeWalkerTests {
     // B3a–c: newlines are de-duplicated and never lead (issue #26, reference
     // StoryState.PushToOutputStreamIndividual)
     @Test(arguments: [
-        ([NodeKind.newline], [String]()),
+        ([NodeKind.newline], [OutputItem]()),
         ([.text("Line"), .newline, .newline], ["Line", "\n"]),
         ([.text("Line"), .newline, .text("  "), .newline], ["Line", "\n", "  "]),
         ([.text("  "), .newline], ["  ", "\n"]),
     ])
     func `newline is dropped when the output is empty or already ends in a newline`(
-        children: [NodeKind], expected: [String]
+        children: [NodeKind], expected: [OutputItem]
     ) {
         let container = ContainerNode(children: children, namedContent: [:], flags: 0, name: nil)
         let walker = TreeWalker()

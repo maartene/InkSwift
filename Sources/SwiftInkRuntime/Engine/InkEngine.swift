@@ -128,7 +128,7 @@ final class InkEngine {
         // (e.g. inside eval blocks) and may accumulate more than one line before
         // hitting `end` / `done`; allow the caller to consume them one at a time
         // through subsequent continue() calls.
-        if state.outputStream.contains("\n") { return true }
+        if state.outputStream.contains(.newline) { return true }
         guard !state.isEnded else { return false }
         guard let top = containerStack.last else { return false }
         return top.index < top.container.children.count
@@ -330,7 +330,7 @@ final class InkEngine {
         default:
             return settleLine(after: currentChild, context: &context)
         }
-        context.noteDivert(outputEndsInNewline: state.outputStream.last == "\n")
+        context.noteDivert(outputEndsInNewline: state.outputStream.last == .newline)
         return .proceed
     }
 
@@ -369,7 +369,7 @@ final class InkEngine {
         case .tunnelDivert(let target):
             state.returnStack.append(returnElement(.tunnel))
             followDivert(to: target)
-            context.noteDivert(outputEndsInNewline: state.outputStream.last == "\n")
+            context.noteDivert(outputEndsInNewline: state.outputStream.last == .newline)
         // ->->: tunnel return — pop the tunnel element and resume at its position.
         // Any other element on top, or none, refuses the pop and ends the flow.
         case .controlCommand("->->"):
@@ -378,7 +378,7 @@ final class InkEngine {
             } else {
                 refusePop(.tunnel)
             }
-            context.noteDivert(outputEndsInNewline: state.outputStream.last == "\n")
+            context.noteDivert(outputEndsInNewline: state.outputStream.last == .newline)
         default:
             return false
         }
@@ -557,7 +557,7 @@ final class InkEngine {
                 .compactMap { if case .text(let t) = $0 { return t } else { return nil } }
                 .joined()
         }
-        return state.outputStream.filter { $0 != "\n" }.joined()
+        return state.outputStream.joinedText
     }
 
     /// Follow a `.divert` node encountered during step execution.
@@ -589,10 +589,17 @@ final class InkEngine {
 
     /// Extract one complete line from the output stream, or nil if no newline is present yet.
     private func consumeNextLine() -> String? {
-        guard let newlineIndex = state.outputStream.firstIndex(of: "\n") else { return nil }
-        let lineContent = state.outputStream[..<newlineIndex].joined()
-        state.outputStream = Array(state.outputStream[(newlineIndex + 1)...])
-        return lineContent + "\n"
+        guard state.outputStream.contains(.newline) else { return nil }
+        return extractLine().text + "\n"
+    }
+
+    /// Split the line off the front of the output stream, keeping the remainder.
+    /// Line tags are still tracked in `state.currentTags` until ADR-020 §2 lands
+    /// fully (02-02); the stream carries no tag items yet.
+    private func extractLine() -> OutputLine {
+        let line = OutputLine(splitting: state.outputStream)
+        state.outputStream = line.remainder
+        return line
     }
 
     /// Flush any buffered output that remains after the step loop exits.
@@ -609,8 +616,7 @@ final class InkEngine {
         guard !state.outputStream.isEmpty else { return nil }
         if let line = consumeNextLine() { return line }
         // No newline left — return remaining text as the trailing line.
-        let remaining = state.outputStream.joined()
-        state.outputStream.removeAll()
+        let remaining = extractLine().text
         return remaining.isEmpty ? nil : remaining + "\n"
     }
 
