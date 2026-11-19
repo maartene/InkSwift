@@ -88,7 +88,7 @@ extension InkValue {
     var asString: String {
         switch self {
         case .int(let n): return String(n)
-        case .float(let f): return String(f)
+        case .float(let f): return InkFloatText(f).text
         case .string(let s): return s
         case .bool(let b): return b ? "true" : "false"
         case .variablePointer(let name, _): return name
@@ -485,5 +485,88 @@ extension ContainerPath {
     init(savedKey: String) {
         let saved = savedKey.isEmpty ? [] : savedKey.split(separator: ".", omittingEmptySubsequences: false)
         self.init(savedComponents: saved.map(String.init))
+    }
+}
+
+// MARK: - Float printing (ADR-024 §2)
+
+/// The text of an ink float, spelled as inklecate spells it.
+///
+/// ink floats are 32-bit and print with C# `float.ToString(InvariantCulture)`
+/// (Value.cs FloatValue; inkle/ink#842, maintainer: "just the default C#
+/// behaviour"). InkSwift stores and computes in `Double` (ADR-024 §1) and only
+/// prints the 32-bit value: the shortest round-trip digits of `Float(value)`,
+/// laid out the .NET way — fixed notation while the decimal point sits within
+/// nine digits (`100000000`, `0.0001`), otherwise `1.5E-05` / `1E+20`, and
+/// `Infinity`, `-Infinity`, `NaN`. Every float-to-text site goes through here.
+struct InkFloatText {
+    /// .NET "G" round-trip for `float`: scientific when the decimal exponent
+    /// exceeds the float round-trip precision (9) or falls below -4.
+    private static let maxFixedScale = 9
+    private static let minFixedScale = -3
+
+    let text: String
+
+    init(_ value: Double) {
+        let single = Float(value)
+        if single.isNaN {
+            text = "NaN"
+        } else if single.isInfinite {
+            text = single < 0 ? "-Infinity" : "Infinity"
+        } else {
+            let sign = single.sign == .minus ? "-" : ""
+            text = sign + Self.layout(ShortestDigits(single.magnitude))
+        }
+    }
+
+    private static func layout(_ number: ShortestDigits) -> String {
+        if number.digits.isEmpty { return "0" }
+        if number.scale > maxFixedScale || number.scale < minFixedScale {
+            return scientific(number)
+        }
+        return fixed(number)
+    }
+
+    private static func fixed(_ number: ShortestDigits) -> String {
+        let digits = number.digits
+        if number.scale <= 0 {
+            return "0." + String(repeating: "0", count: -number.scale) + digits
+        }
+        if number.scale >= digits.count {
+            return digits + String(repeating: "0", count: number.scale - digits.count)
+        }
+        let point = digits.index(digits.startIndex, offsetBy: number.scale)
+        return digits[..<point] + "." + digits[point...]
+    }
+
+    private static func scientific(_ number: ShortestDigits) -> String {
+        let digits = number.digits
+        let rest = digits.dropFirst()
+        let mantissa = rest.isEmpty ? String(digits.prefix(1)) : digits.prefix(1) + "." + rest
+        let exponent = number.scale - 1
+        let exponentDigits = String(abs(exponent))
+        let padded = exponentDigits.count < 2 ? "0" + exponentDigits : exponentDigits
+        return mantissa + "E" + (exponent < 0 ? "-" : "+") + padded
+    }
+}
+
+/// The shortest round-trip decimal digits of a finite, non-negative `Float`,
+/// as `0.digits × 10^scale`, read off Swift's own shortest-form `description`
+/// (`"123.45"`, `"1.5e-05"`). Leading and trailing zeros are dropped; zero has
+/// no digits.
+private struct ShortestDigits {
+    let digits: String
+    let scale: Int
+
+    init(_ magnitude: Float) {
+        let parts = magnitude.description.split(separator: "e")
+        let exponent = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
+        let mantissa = parts[0].split(separator: ".", omittingEmptySubsequences: false)
+        let integerPart = mantissa[0]
+        let allDigits = integerPart + (mantissa.count > 1 ? mantissa[1] : "")
+        let significant = allDigits.drop { $0 == "0" }
+        let leadingZeros = allDigits.count - significant.count
+        digits = String(significant.reversed().drop { $0 == "0" }.reversed())
+        scale = integerPart.count + exponent - leadingZeros
     }
 }
