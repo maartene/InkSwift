@@ -2,10 +2,12 @@
 // StoryState.visitCounts. The engine's recordVisit, `.readCount`, the `visit`
 // control command and the host visit-count API all go through it.
 //
-// Test Budget: 3 behaviors x 2 = 6 unit tests max
+// Test Budget: 4 behaviors x 2 = 8 unit tests max
 //   B1 — record counts a visit to a container that tracks visits, and only then
 //   B2 — read returns the count recorded under a key, 0 when none is
 //   B3 — set overwrites the count under a key
+//   B4 — canonicalising restored keys keeps a key that names no container
+//        (merging split spellings is pinned by Engine_LegacyVisitCountRestoreTests)
 
 import Testing
 @testable import SwiftInkRuntime
@@ -69,5 +71,16 @@ struct VisitCounterTests {
 
         counter.recordVisit(to: container(flags: 0x1), at: knot, in: &state)
         #expect(counter.count(at: knot, in: state) == 6)
+    }
+
+    // MARK: - B4: canonicalise restored keys
+
+    @Test func `canonicalising keys that name no container keeps each spelling and count`() {
+        var state = StoryState()
+        state.visitCounts = [knot: 2, ContainerPath(savedKey: "0.loop"): 1]
+
+        counter.canonicaliseKeys(in: &state)
+
+        #expect(state.visitCounts == [knot: 2, ContainerPath(savedKey: "0.loop"): 1])
     }
 }

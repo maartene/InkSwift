@@ -952,6 +952,7 @@ final class InkEngine {
         } catch {
             throw StoryError.invalidStateData
         }
+        visitCounter.canonicaliseKeys(in: &state)
         lastCompletedLine = state.lastCompletedLine
         errors = []
         rebuildContainerStack()

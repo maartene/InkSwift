@@ -220,6 +220,14 @@ The native `Story` API is not a copy of inkle's C# API:
 - **Errors** in the story itself are reported in `Story.currentErrors` and stop the
   story. Misuse of the API (an invalid choice index, an unknown knot) throws from the
   call instead.
+- **Saves are InkSwift's own format and forward-only.** `saveState()` / `restoreState(_:)`
+  do not read or write inkle's save JSON. A save from an older InkSwift build restores
+  on a newer one: visit counts an older build stored under two spellings of the same
+  container (its index and its name) are merged into one count
+  ([#33](https://github.com/maartene/InkSwift/issues/33)), and a count for a knot or
+  stitch the story no longer has is kept as it is. A save from a newer build is **not
+  supported on an older build**: restored there, some visit counts read as 0, so
+  sequence items and once-only content replay and loops run extra passes (ADR-022 §4).
 
 ## See also
 

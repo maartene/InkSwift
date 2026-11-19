@@ -31,6 +31,12 @@
 // single pointer-derived frame (visit-counts and choice-point goldens); goldens
 // with frames re-save verbatim. Either way one round reaches a fixed point.
 //
+// Re-save visitCounts keys (ADR-022 §4, forward-only saves, step 01-06): a
+// restore converts every legacy visitCounts key to its container's canonical
+// path (its name wherever it has one), so a re-save may spell a key
+// differently from the golden. Only those keys change, listed per golden in
+// `canonicalVisitCountKeys`; every other field stays byte-identical.
+//
 // A function-return frame ("fnret:path|N") cannot be captured here: ink allows
 // no choices inside a function, and a save is only taken between continue()
 // calls, so no golden can hold one. That wire form is covered by the step
@@ -70,6 +76,13 @@ private let legacySaveGoldens: [LegacySaveGolden] = [
     LegacySaveGolden(goldenName: "legacy-save-choice-point", storyName: "TheIntercept",
                      route: [0], continuation: [1, 0, 0],
                      pinnedStateKey: "currentChoices"),
+]
+
+/// Legacy visitCounts keys a re-save writes in canonical form (ADR-022 §4):
+/// golden name → legacy key → canonical key. Goldens not listed keep every key.
+private let canonicalVisitCountKeys: [String: [String: String]] = [
+    "legacy-save-once-only-chosen": ["0.0.c-0": "0.gather_point.c-0"],
+    "legacy-save-mid-tunnel": ["start.waited.0.g-4.9.c-15": "start.waited.0.g-4.g-5.c-15"],
 ]
 
 @Suite struct TypedPaths_LegacySaveCompatibilityTests {
@@ -148,10 +161,14 @@ private let legacySaveGoldens: [LegacySaveGolden] = [
 
     /// The canonical JSON a re-save of `golden` must produce: the golden
     /// itself, with an empty `stackFrames` replaced by the single frame the
-    /// restore fallback derives from `pointer` (see the file header).
+    /// restore fallback derives from `pointer`, and legacy visitCounts keys in
+    /// canonical form (see the file header).
     private func expectedResave(of golden: LegacySaveGolden) throws -> Data {
         let object = try JSONSerialization.jsonObject(with: goldenData(golden))
         var save = try #require(object as? [String: Any])
+        let renames = canonicalVisitCountKeys[golden.goldenName] ?? [:]
+        let visitCounts = try #require(save["visitCounts"] as? [String: Int])
+        save["visitCounts"] = Dictionary(uniqueKeysWithValues: visitCounts.map { (renames[$0.key] ?? $0.key, $0.value) })
         let frames = try #require(save["stackFrames"] as? [Any])
         if frames.isEmpty {
             let pointer = try #require(save["pointer"] as? [String: Any])
@@ -173,7 +190,8 @@ private let legacySaveGoldens: [LegacySaveGolden] = [
     // GIVEN: a legacy golden save restored into a fresh story
     // WHEN: the story is saved again immediately
     // THEN: the canonical (sorted-key) JSON is byte-identical to the golden's,
-    //       modulo the documented empty-stackFrames normalisation
+    //       modulo the documented empty-stackFrames normalisation and the
+    //       canonical visitCounts keys (ADR-022 §4)
 
     @Test(arguments: legacySaveGoldens)
     func `re-saving a restored legacy golden reproduces its canonical JSON`(golden: LegacySaveGolden) throws {

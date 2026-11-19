@@ -46,6 +46,19 @@ struct VisitCounter {
         state.visitCounts[key(for: path)] = count
     }
 
+    /// Re-key restored counts canonically (ADR-022 §4, forward-only saves).
+    ///
+    /// A save from before canonical keys may hold one container under both its
+    /// index and its name spelling; those counts are summed under the canonical
+    /// path. A key that names no container in the loaded story (content since
+    /// removed or renamed) is kept as it is, not dropped, so a re-save
+    /// preserves it.
+    func canonicaliseKeys(in state: inout StoryState) {
+        state.visitCounts = state.visitCounts.reduce(into: [:]) { merged, entry in
+            merged[key(for: entry.key), default: 0] += entry.value
+        }
+    }
+
     private func key(for path: ContainerPath) -> ContainerPath {
         resolver.canonicalPath(of: path) ?? path
     }
