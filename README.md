@@ -24,6 +24,12 @@ of complete parity. Known gaps include `LIST`, `RANDOM` / `SEED_RANDOM`, threads
 complete, maintained list is the
 [supported-parity / known-gaps statement](docs/reference/js-bridge-vs-native-parity.md).
 
+Some gaps are only in the native **compiler**: the runtime plays the same story correctly
+when it is compiled by inklecate (or exported from Inky) and loaded with `Story(json:)`.
+[How InkSwift differs from inklecate](docs/reference/differences-from-inklecate.md) lists
+which differences are compile-time and which are runtime, and when compiling with inklecate
+is a workaround.
+
 ---
 
 ## Legacy: the JavaScriptCore JS-bridge (`InkStory`)

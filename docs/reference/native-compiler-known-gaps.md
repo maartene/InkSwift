@@ -9,6 +9,9 @@
 > test suite, ported as `Tests/SwiftInkRuntimeTests/Conformance/`. Every upstream test
 > that fails is a disabled backlog item naming its gap (see CLAUDE.md "Upstream
 > conformance suite").
+>
+> For a user-facing summary of compile-time versus runtime differences, see
+> [How InkSwift differs from inklecate](differences-from-inklecate.md).
 
 Each entry names the layer it lives in. That distinction matters:
 
