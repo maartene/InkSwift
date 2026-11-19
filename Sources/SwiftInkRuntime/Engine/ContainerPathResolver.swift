@@ -75,6 +75,43 @@ struct ContainerPathResolver {
         return ContainerPath(components: canonical)
     }
 
+    /// One container a position sits inside, for counting a divert's entries:
+    /// the container, its canonical path, and whether the way in from the
+    /// position (or from the child container below) is the container's first child.
+    struct Enclosure {
+        let container: ContainerNode
+        let path: ContainerPath
+        let entersAtFirstChild: Bool
+    }
+
+    /// The containers around child `index` of the container at `path`, innermost
+    /// first, up to and including the root. Mirrors the walk in C# Story.cs
+    /// `VisitChangedContainersDueToDivert`: `Pointer.Resolve` gives the child at
+    /// `index`, or the container itself when it is empty (so the walk starts at
+    /// its parent), or nothing past the end. Empty when nothing resolves.
+    func enclosures(ofChild index: Int, in path: ContainerPath) -> [Enclosure] {
+        guard let canonical = canonicalPath(of: path), let container = node(at: canonical) else { return [] }
+        var chain: [Enclosure] = []
+        if container.children.isEmpty == false {
+            guard index < container.children.count else { return [] }
+            chain.append(Enclosure(container: container, path: canonical, entersAtFirstChild: index == 0))
+        }
+        var childPath = canonical
+        while let component = childPath.components.last, let parent = node(at: childPath.parent) {
+            chain.append(Enclosure(
+                container: parent, path: childPath.parent, entersAtFirstChild: isFirstChild(component, of: parent)))
+            childPath = childPath.parent
+        }
+        return chain
+    }
+
+    /// The canonical paths of the container at `path` and every ancestor of it,
+    /// the root included: the containers a flow at `path` is already inside.
+    func lineage(of path: ContainerPath) -> Set<ContainerPath> {
+        let components = (canonicalPath(of: path) ?? path).components
+        return Set((0...components.count).map { ContainerPath(components: Array(components.prefix($0))) })
+    }
+
     // MARK: - Relative resolution
 
     /// The anchor a relative path's carets reach from `current`. Nil when the
@@ -173,6 +210,18 @@ struct ContainerPathResolver {
     /// always leads back to it.
     private func canonicalComponent(of child: ContainerNode, reachedThrough component: PathComponent) -> PathComponent {
         child.name.map(PathComponent.name) ?? component
+    }
+
+    /// Whether the child `component` names (a canonical component) is the first
+    /// of `parent`'s ordered children. A child only in `namedContent` never is.
+    private func isFirstChild(_ component: PathComponent, of parent: ContainerNode) -> Bool {
+        guard case .container(let first)? = parent.children.first else { return false }
+        switch component {
+        case .index(let index):
+            return index == 0
+        case .name(let name):
+            return first.name == name
+        }
     }
 
     /// Navigate `components` down from `container`, following indices into

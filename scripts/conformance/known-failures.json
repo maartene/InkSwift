@@ -190,8 +190,7 @@
   "native": "native compiler rejects a valid story: unexpectedToken('+')"
  },
  "TestKnotStitchGatherCounts": {
-  "native": "native compiler rejects a valid story: unexpectedToken('+')",
-  "runtime": "read counts of knots, stitches and gathers"
+  "native": "native compiler rejects a valid story: unexpectedToken('+')"
  },
  "TestKnotThreadInteraction": {
   "native": "unsupported threads",

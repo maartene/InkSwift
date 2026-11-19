@@ -95,10 +95,23 @@ final class InkEngine {
     }
 
     /// Count a visit to `container` when it has the CountVisits flag (#f bit 0).
-    /// Called wherever execution enters a container: sequential descent, an
-    /// absolute divert, and a chosen choice's continuation.
+    /// Called where execution enters one container at its start: sequential
+    /// descent, a variable divert's target, and a chosen choice's continuation.
     private func recordVisit(to container: ContainerNode, at path: ContainerPath) {
         visitCounter.recordVisit(to: container, at: path, in: &state)
+    }
+
+    /// Count every container a divert entered, from inside `previous` to the
+    /// top frame's position (C# `VisitChangedContainersDueToDivert`).
+    private func recordDivertEntries(from previous: ContainerPath?) {
+        guard let top = containerStack.last else { return }
+        visitCounter.recordDivert(from: previous, landingAt: top.index, in: top.pathFromRoot, state: &state)
+    }
+
+    /// A chosen choice's body: its frame is on top, entered at its start.
+    private func recordVisitToTopFrame() {
+        guard let top = containerStack.last else { return }
+        recordVisit(to: top.container, at: top.pathFromRoot)
     }
 
     private func popContainer() {
@@ -251,6 +264,7 @@ final class InkEngine {
         }
         context.pendingInvisibleDefaultPath = nil
         applyAbsoluteDivert(autoPath)
+        recordVisitToTopFrame()
         return true
     }
 
@@ -354,7 +368,7 @@ final class InkEngine {
         // (index already incremented past the ->t-> node) and jump to the target.
         case .tunnelDivert(let target):
             state.returnStack.append(returnElement(.tunnel))
-            applyDivert(to: target)
+            followDivert(to: target)
             context.noteDivert(outputEndsInNewline: state.outputStream.last == "\n")
         // ->->: tunnel return — pop the tunnel element and resume at its position.
         // Any other element on top, or none, refuses the pop and ends the flow.
@@ -561,13 +575,14 @@ final class InkEngine {
         // then the target resolves — a variable target too, conditional or not.
         switch target {
         case .path(let reference):
-            applyDivert(to: reference)
+            followDivert(to: reference)
         case .variable(let name):
             // Variable divert: look up the target variable in variablesState.
             // The variable holds a divert-target path stored as a string value
             // (placed there by the {^->: "path"} + {temp=: "$varName"} mechanism).
             if case .string(let path)? = state.variablesState[name] {
                 applyDivert(target: path)
+                recordVariableDivertTarget(path)
             }
         }
     }
@@ -619,7 +634,7 @@ final class InkEngine {
         // inside the function body don't leak into `variablesState` (or get
         // confused with the caller's locals with the same name).
         state.callFrameVariables.append([:])
-        applyDivert(to: target)
+        followDivert(to: target)
         // Record the stack depth of the function's own body frame. Anything deeper
         // is a nested sub-container whose exhaustion must pop one level instead of
         // ending the call — see the implicit-void-return branch in stepToNextLine.
@@ -773,6 +788,24 @@ final class InkEngine {
         applyDivert(to: PathReference(parsing: target))
     }
 
+    /// Divert to a target in the story tree (a plain divert, a tunnel, a
+    /// function call) and count the containers it entered.
+    private func followDivert(to reference: PathReference) {
+        let previous = currentPath
+        applyDivert(to: reference)
+        recordDivertEntries(from: previous)
+    }
+
+    /// A variable divert to a container counts only that container: C#
+    /// `PointerAtPath` points at the container itself (index -1), so
+    /// `VisitChangedContainersDueToDivert` returns early and `Step` counts the
+    /// container as it enters it. Its ancestors are not counted.
+    private func recordVariableDivertTarget(_ target: String) {
+        guard case .absolute(let path) = PathReference(parsing: target),
+              let container = resolver.node(at: path) else { return }
+        recordVisit(to: container, at: path)
+    }
+
     /// Divert to an already-parsed path reference (a tunnel target from the tree).
     private func applyDivert(to reference: PathReference) {
         switch reference {
@@ -818,7 +851,6 @@ final class InkEngine {
         if let container = resolver.node(at: path) {
             containerStack = [ContainerFrame(container: container, index: 0, pathFromRoot: path)]
             state.pointer.containerPath = path
-            recordVisit(to: container, at: path)
             return
         }
         // Path whose last component is a numeric index into the parent container
@@ -1074,7 +1106,10 @@ final class InkEngine {
         state.stringAccumulator = ""
         state.stringModeTags = []
         errors = []
-        // D4: delegate stack installation to applyDivert
+        // D4: delegate stack installation to applyDivert. C# ChoosePathString
+        // resets the callstack first (previous pointer null), so every container
+        // on the way in is counted.
         applyDivert(target: targetPath)
+        recordDivertEntries(from: nil)
     }
 }

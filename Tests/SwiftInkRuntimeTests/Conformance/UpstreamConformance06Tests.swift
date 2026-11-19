@@ -344,7 +344,7 @@ struct UpstreamConformance06Tests {
         Conformance.run("TestKnotStitchGatherCounts", .native, Self.testKnotStitchGatherCounts)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: read counts of knots, stitches and gathers"))
+    @Test
     func `TestKnotStitchGatherCounts — inklecate JSON on the runtime`() {
         Conformance.run("TestKnotStitchGatherCounts", .runtime, Self.testKnotStitchGatherCounts)
     }

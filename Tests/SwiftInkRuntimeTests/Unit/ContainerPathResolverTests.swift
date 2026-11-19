@@ -25,7 +25,8 @@ struct ContainerPathResolverTests {
     // Behavior 4: read-count keys resolve like targets, falling back to concatenation
     // Behavior 5: the ancestor chain gives each ancestor's resume index
     // Behavior 6: every spelling of a container has one canonical path (name where named)
-    // Budget = 6 behaviors × 2 = 12 unit tests max
+    // Behavior 7: a position's enclosing containers and a path's lineage, for divert counting
+    // Budget = 7 behaviors × 2 = 14 unit tests max
 
     private static func resolver(for fixture: String) throws -> ContainerPathResolver {
         let url = try #require(Bundle.module.url(forResource: fixture, withExtension: "ink.json"))
@@ -164,5 +165,34 @@ struct ContainerPathResolverTests {
         let resolver = try Self.resolver(for: Self.labelledLoop)
 
         #expect(resolver.canonicalPath(of: Self.path(dotted)) == nil)
+    }
+
+    // MARK: - Behavior 7: enclosures and lineage
+
+    @Test(arguments: [
+        // the labelled gather: first child of `0`, which is first child of the root
+        ("0.0", 0, [("0.loop", true), ("0", true), ("", true)]),
+        // mid-way into it: not at its start; the chain above is unchanged
+        ("0.loop", 1, [("0.loop", false), ("0", true), ("", true)]),
+        // `g-0` is named-only content of `0`: never its first child
+        ("0.g-0", 0, [("0.g-0", true), ("0", false), ("", true)]),
+        // past the last child: nothing resolves
+        ("0.loop", 99, []),
+    ])
+    func `a position's enclosures run from its container to the root, canonically`(
+        dotted: String, index: Int, expected: [(String, Bool)]
+    ) throws {
+        let resolver = try Self.resolver(for: Self.labelledLoop)
+
+        let chain = resolver.enclosures(ofChild: index, in: Self.path(dotted))
+
+        #expect(chain.map(\.path) == expected.map { Self.path($0.0) })
+        #expect(chain.map(\.entersAtFirstChild) == expected.map(\.1))
+    }
+
+    @Test func `a path's lineage is its canonical path and every ancestor, the root included`() throws {
+        let resolver = try Self.resolver(for: Self.labelledLoop)
+
+        #expect(resolver.lineage(of: Self.path("0.0")) == [Self.path(""), Self.path("0"), Self.path("0.loop")])
     }
 }

@@ -276,6 +276,12 @@ struct Slice02_ConditionalChoiceTests {
 }
 
 // MARK: - Slice 03 — Visit Count Logic
+//
+// "Leave and come back." leaves café for `street`, which diverts back. It used
+// to divert straight from café to café, which inklecate does not count as a
+// visit (a knot diverting to itself, step 01-07; see
+// Engine_DivertVisitCountTests), so the recognition line never appeared there.
+// Expected lines are `inklecate -p` output.
 
 @Suite("Slice 03 — Visit Count Logic")
 struct Slice03_VisitCountTests {
@@ -320,6 +326,7 @@ struct Slice03_VisitCountTests {
                 lines.append(line)
             }
         }
+        #expect(lines.first == "You step out onto the street.\n")
         #expect(lines.contains { $0.contains("You recognise the smell now.") })
     }
 
