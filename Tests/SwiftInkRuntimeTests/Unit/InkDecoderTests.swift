@@ -18,7 +18,9 @@ struct InkDecoderTests {
     //             typed PathReference, relative or absolute (typed-runtime-paths 02-03, 02-05)
     // Behavior 6: a "->" divert decodes to a typed DivertTarget — a variable target
     //             when "var" is present, else a path — with its "c" flag (02-04)
-    // Budget = 6 behaviors × 2 = 12 unit tests max
+    // Behavior 7: the startup probe refuses a scalar fixture whose float, bool
+    //             or int slot comes back mistyped (ADR-023 §4, issue #37)
+    // Budget = 7 behaviors × 2 = 14 unit tests max
 
     // MARK: - Behavior 1: CNT? dict classified as readCount
 
@@ -219,5 +221,30 @@ struct InkDecoderTests {
         if case .controlCommand = firstChild {
             Issue.record("^var dict must not be classified as .controlCommand — got \(firstChild)")
         }
+    }
+
+    // MARK: - Behavior 7: the scalar probe refuses mistyped values
+
+    /// The probe's own fixture types `2.5`, `2.0` and `1e2` as floats, `true`
+    /// as a bool and `42` as an int. Each argument puts a wrongly typed token in
+    /// one slot, as a reader with the issue #37 defect would type it.
+    @Test(arguments: [
+        #"{"inkVersion":21,"root":[2.5,true,42,2,1e2,null],"listDefs":{}}"#,
+        #"{"inkVersion":21,"root":[2.5,true,42,2.0,100,null],"listDefs":{}}"#,
+        #"{"inkVersion":21,"root":[2,true,42,2.0,1e2,null],"listDefs":{}}"#,
+        #"{"inkVersion":21,"root":[2.5,1,42,2.0,1e2,null],"listDefs":{}}"#,
+        #"{"inkVersion":21,"root":[2.5,true,42.0,2.0,1e2,null],"listDefs":{}}"#,
+    ])
+    func `the scalar probe refuses to start on a mistyped value`(fixture: String) throws {
+        let error = try #require(throws: InkDecodeError.self) {
+            try InkDecoder().probeScalarTyping(of: fixture)
+        }
+
+        #expect(error == .probeClassificationDrift)
+        #expect(StoryError(error) == .decoderProbeFailure(reason: "number/bool classification drift"))
+    }
+
+    @Test func `the scalar probe accepts its own fixture`() throws {
+        try InkDecoder().probeScalarTyping(of: InkDecoder.scalarProbeFixture)
     }
 }

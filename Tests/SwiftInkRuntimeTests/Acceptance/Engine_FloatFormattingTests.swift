@@ -10,8 +10,9 @@
 // .NET's fixed-notation range, `Infinity` / `-Infinity` / `NaN`.
 //
 // Every expected line below was probed with `inklecate -p` (1.2.1) before the
-// change. The runtime path on inklecate's json still mis-decodes `2.0` and
-// `7 / 2.0` until step 01-03, so this suite asserts the native path.
+// change. Both paths are asserted: the native compiler, and inklecate's json
+// on the runtime, whose whole-number floats (`2.0`, `1.0`) decode as floats
+// since step 01-03 (ADR-023).
 
 import Testing
 import Foundation
@@ -41,6 +42,23 @@ import Foundation
             "The floats are printed.",
         ])
         #expect(lines.last == "You took the coins.")
+    }
+
+    // Scenario: whole-number floats in inklecate JSON stay floats. inklecate
+    // writes `1.0 / 3` as `"ev",1.0,3,"/"`; decoded as an int, `1.0` made it
+    // integer division (`0`) and `7 / 2.0` printed `3`. Played from inklecate's
+    // json, the story prints what the native path and `inklecate -p` print,
+    // and continues past the floats to the choice and beyond it.
+    @Test func `whole-number floats in inklecate JSON stay floats`() throws {
+        let story = try Story(json: try CompilerOracle.oracleJSON(Self.fixture))
+
+        #expect(try CompilerOracle.play(story) == [
+            "A: 2 B: 0.33333334 C: 1.5 D: 0.3 E: 3.5",
+            "Two thirds: 0.6666667 and the sum: 0.3",
+            "The floats are printed.",
+            "Take 0.3 coins",
+            "You took the coins.",
+        ])
     }
 
     // Scenario: a choice whose text interpolates a float shows it as inklecate

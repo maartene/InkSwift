@@ -7,8 +7,7 @@
   "native": "native accepts a story inklecate rejects (name collisions)"
  },
  "TestArithmetic": {
-  "native": "native compiler rejects a valid story: unexpectedToken('mod')",
-  "runtime": "float division result truncated"
+  "native": "native compiler rejects a valid story: unexpectedToken('mod')"
  },
  "TestAuthorWarningsInsideContentListBug": {
   "native": "unsupported multi-line sequences"

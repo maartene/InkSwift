@@ -52,7 +52,7 @@ struct UpstreamConformance01Tests {
         Conformance.run("TestArithmetic", .native, Self.testArithmetic)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: float division result truncated"))
+    @Test
     func `TestArithmetic — inklecate JSON on the runtime`() {
         Conformance.run("TestArithmetic", .runtime, Self.testArithmetic)
     }

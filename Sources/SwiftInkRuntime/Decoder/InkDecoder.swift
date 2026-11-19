@@ -52,13 +52,7 @@ struct InkDecoder {
     // MARK: - Public API
 
     func decode(_ data: Data) throws -> ContainerNode {
-        let topValue: InkJSONValue
-        do {
-            topValue = try JSONDecoder().decode(InkJSONValue.self, from: data)
-        } catch {
-            throw InkDecodeError.malformedJSON
-        }
-        guard case .object(let topLevel) = topValue else {
+        guard case .object(let topLevel) = try InkJSONReader.read(Array(data)) else {
             throw InkDecodeError.malformedJSON
         }
         if case .int(let inkVersion)? = topLevel["inkVersion"], inkVersion < 20 {
@@ -91,26 +85,32 @@ struct InkDecoder {
             throw InkDecodeError.malformedJSON
         }
 
-        // Earned Trust (ADR-013 DD-4): exercise the number/bool classification
-        // substrate, which is exactly what differs across platforms — CoreFoundation
-        // type identity is unavailable under swift-corelibs-foundation, and the
-        // JSONDecoder path must reproduce macOS int/float/bool tagging. Decode a
-        // fixture carrying a float, a bool, and an int, and verify each keeps its
-        // type. On a platform whose JSON decoding misclassifies scalars this fails
-        // HERE — surfaced as StoryError.decoderProbeFailure at Story.init — rather
-        // than shipping a silently wrong story ("2.5" -> "2", "true" -> "1").
-        let scalarProbe = #"{"inkVersion":21,"root":[2.5,true,42,null],"listDefs":{}}"#
-        guard let scalarData = scalarProbe.data(using: .utf8) else {
-            throw InkDecodeError.malformedJSON
-        }
-        let scalarRoot = try decode(scalarData)
-        guard scalarRoot.children.count >= 3,
-              case .floatValue = scalarRoot.children[0],
-              case .boolValue = scalarRoot.children[1],
-              case .intValue = scalarRoot.children[2] else {
+        // Earned Trust (ADR-013 DD-4, ADR-023): exercise the number/bool
+        // classification, the part of decoding that has gone wrong before —
+        // CoreFoundation type identity on Linux, then JSONDecoder typing `2.0` as
+        // an int (issue #37). A drift fails HERE, surfaced as
+        // StoryError.decoderProbeFailure at Story.init, rather than shipping a
+        // silently wrong story ("2.5" -> "2", "true" -> "1", "1.0 / 3" -> "0").
+        try probeScalarTyping(of: Self.scalarProbeFixture)
+        try probePathPayloads()
+    }
+
+    /// The scalar fixture: a fraction, a bool, an int, and the whole-number
+    /// float tokens inklecate writes (`2.0`, `1e2`), which must stay floats.
+    static let scalarProbeFixture = #"{"inkVersion":21,"root":[2.5,true,42,2.0,1e2,null],"listDefs":{}}"#
+
+    /// Decode `fixture` and check that its five scalars are typed float, bool,
+    /// int, float, float, or throw `probeClassificationDrift`.
+    func probeScalarTyping(of fixture: String) throws {
+        let scalars = try decode(Data(fixture.utf8)).children
+        guard scalars.count == 5,
+              case .floatValue = scalars[0],
+              case .boolValue = scalars[1],
+              case .intValue = scalars[2],
+              case .floatValue = scalars[3],
+              case .floatValue = scalars[4] else {
             throw InkDecodeError.probeClassificationDrift
         }
-        try probePathPayloads()
     }
 
     /// Earned Trust (typed-runtime-paths): path payloads are parsed once, here, so a
@@ -311,15 +311,10 @@ struct InkDecoder {
 
 // MARK: - Portable Ink JSON value model
 
-/// A platform-stable, `Decodable` representation of the heterogeneous Ink JSON
-/// tree. Scalar typing is driven by decode-success ORDER — Bool → Int → Double —
-/// never by CoreFoundation type identity (`CFGetTypeID`/`CFNumberGetType`), which
-/// is unavailable under swift-corelibs-foundation on Linux (ADR-013 / DD-1).
-///
-/// The ordering is load-bearing: a JSON `true`/`false` decodes as `.bool` before
-/// `Int` is attempted; a whole number `42` decodes as `.int` before `Double` is
-/// attempted; a fractional `2.5` fails `Int` and lands on `.double`.
-private indirect enum InkJSONValue: Decodable {
+/// The heterogeneous ink JSON tree, as `InkJSONReader` reads it. Scalar
+/// typing follows the token text — `2.0` is a `.double`, `2` an `.int` —
+/// never a platform's runtime type identity (ADR-013, ADR-023).
+indirect enum InkJSONValue: Equatable {
     case bool(Bool)
     case int(Int)
     case double(Double)
@@ -327,48 +322,6 @@ private indirect enum InkJSONValue: Decodable {
     case array([InkJSONValue])
     case object([String: InkJSONValue])
     case null
-
-    init(from decoder: Decoder) throws {
-        // Keyed/unkeyed containers first so structural JSON (objects, arrays) is
-        // modelled directly; scalars fall through to the single-value container.
-        if let keyed = try? decoder.container(keyedBy: DynamicKey.self) {
-            var object: [String: InkJSONValue] = [:]
-            for key in keyed.allKeys {
-                object[key.stringValue] = try keyed.decode(InkJSONValue.self, forKey: key)
-            }
-            self = .object(object)
-            return
-        }
-        if var unkeyed = try? decoder.unkeyedContainer() {
-            var array: [InkJSONValue] = []
-            if let count = unkeyed.count {
-                array.reserveCapacity(count)
-            }
-            while !unkeyed.isAtEnd {
-                array.append(try unkeyed.decode(InkJSONValue.self))
-            }
-            self = .array(array)
-            return
-        }
-
-        let single = try decoder.singleValueContainer()
-        if single.decodeNil() {
-            self = .null
-        } else if let value = try? single.decode(Bool.self) {
-            self = .bool(value)
-        } else if let value = try? single.decode(Int.self) {
-            self = .int(value)
-        } else if let value = try? single.decode(Double.self) {
-            self = .double(value)
-        } else if let value = try? single.decode(String.self) {
-            self = .string(value)
-        } else {
-            throw DecodingError.dataCorruptedError(
-                in: single,
-                debugDescription: "Unsupported Ink JSON scalar"
-            )
-        }
-    }
 
     var stringValue: String? {
         if case .string(let value) = self { return value }
@@ -384,27 +337,11 @@ private indirect enum InkJSONValue: Decodable {
         if case .bool(let value) = self { return value }
         return nil
     }
-
-    /// Coding key that accepts any JSON object key (Ink dictionaries are open-keyed).
-    private struct DynamicKey: CodingKey {
-        let stringValue: String
-        let intValue: Int?
-
-        init(stringValue: String) {
-            self.stringValue = stringValue
-            self.intValue = nil
-        }
-
-        init?(intValue: Int) {
-            self.stringValue = String(intValue)
-            self.intValue = intValue
-        }
-    }
 }
 
 // MARK: - Errors
 
-enum InkDecodeError: Error {
+enum InkDecodeError: Error, Equatable {
     case malformedJSON
     /// Valid ink the runtime does not support yet (issue #32).
     case unsupportedFeatures([UnsupportedFeature])

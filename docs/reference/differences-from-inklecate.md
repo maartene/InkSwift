@@ -195,9 +195,6 @@ Known places where the same compiled story plays differently on InkSwift's runti
   ([#28](https://github.com/maartene/InkSwift/issues/28)).
 - **`-> END` does not discard pending choices**, so a choice generated before the story
   ends can still be offered (see [Native compiler known gaps](native-compiler-known-gaps.md)).
-- **Whole-number floats in inklecate JSON** are read as integers, so float division
-  can lose its fraction (`1.0 / 3` gives `0`;
-  [#37](https://github.com/maartene/InkSwift/issues/37)).
 - **Float arithmetic is 64-bit.** ink floats are 32-bit; InkSwift computes and stores
   them as `Double` (ADR-024) and only *prints* the 32-bit value. Printed floats match
   inklecate (`2`, `0.33333334`, `0.3`, `1E+20`, `1E-05`, `Infinity`, `NaN`), but

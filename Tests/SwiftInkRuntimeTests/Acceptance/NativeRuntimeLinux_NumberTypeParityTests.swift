@@ -97,4 +97,23 @@ import Testing
         #expect(intValue == 42)
         #expect(floatValue == 2.5)
     }
+
+    // GIVEN: whole-number float tokens as inklecate writes them (`2.0`, `1e2`)
+    // WHEN: InkDecoder classifies them
+    // THEN: each is .floatValue — the token's `.` or exponent decides, never
+    //       whether the value happens to be whole (issue #37, ADR-023)
+
+    @Test(arguments: [("2.0", 2.0), ("1e2", 100.0), ("-1.0", -1.0), ("1E2", 100.0)])
+    func `decoder classifies a whole-number float token as floatValue on every platform`(
+        token: String, expected: Double
+    ) throws {
+        let json = #"{"inkVersion":21,"root":["# + token + #",null],"listDefs":{}}"#
+        let data = try #require(json.data(using: .utf8))
+        let root = try InkDecoder().decode(data)
+        guard case .floatValue(let value) = root.children.first else {
+            Issue.record("Expected first child to be .floatValue, got \(String(describing: root.children.first))")
+            return
+        }
+        #expect(value == expected)
+    }
 }
