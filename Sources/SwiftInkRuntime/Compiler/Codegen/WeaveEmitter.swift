@@ -91,6 +91,16 @@ enum WeaveEmitter {
                 return []
             }
         }
+
+        /// What follows a weave's choice points, where flow falls out of the weave
+        /// when no choice was generated. Only the top-level flow has a `done` there
+        /// (inklecate's `Story.cs:193`, ADR-021). A knot, stitch or nested weave
+        /// gets nothing, so a knot whose choices are all used up runs out, as in
+        /// inklecate's JSON, instead of stopping safely.
+        var weaveTerminator: [NodeKind] {
+            guard case .done = self else { return [] }
+            return [.controlCommand("done")]
+        }
     }
 
     /// Does this body contain at least one weave choice (and so must lower
@@ -898,7 +908,7 @@ private final class WeaveResolver {
                 gatherOrdinal += 1
             }
         }
-        children.append(.controlCommand("done"))
+        children.append(contentsOf: fallThrough.weaveTerminator)
         return (children, named)
     }
 
@@ -1214,8 +1224,9 @@ private final class WeaveResolver {
         prefix + [key]
     }
 
-    /// Drop the trailing `done` a nested resolve appends so the nested choice
-    /// cluster splices cleanly into the parent outcome container.
+    /// Drop the trailing `done` a nested resolve appends when it inherits the
+    /// root's `.done` loose end, so the nested choice cluster splices cleanly into
+    /// the parent outcome container (inklecate has no `done` there either).
     private func stripDone(_ nodes: [NodeKind]) -> [NodeKind] {
         guard case .controlCommand("done")? = nodes.last else { return nodes }
         return Array(nodes.dropLast())

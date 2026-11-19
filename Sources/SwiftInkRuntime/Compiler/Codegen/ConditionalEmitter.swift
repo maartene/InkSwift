@@ -165,12 +165,12 @@ enum ConditionalEmitter {
         // line tail) must append the enclosing fall-through here so flow rejoins the
         // gather instead of dead-ending in the rejoin container.
         //
-        // NOTE the asymmetry with `terminateArm`, which swaps a weave-bearing body's
-        // terminating `done` for its rejoin: a REJOIN's weave sits at the ENCLOSING
-        // knot's weave level, so that `done` is the knot's own terminator and is
-        // correct. An ARM's weave is a sub-weave that must hand control back. Swapping
-        // it here re-enters content that has already played (TheIntercept's
-        // `sipping at my tea` line emits twice).
+        // NOTE the asymmetry with `terminateArm`, which always rejoins a weave-bearing
+        // arm: a REJOIN's weave sits at the ENCLOSING knot's weave level, so where it
+        // runs out the knot runs out (ADR-021: only the root weave ends in `done`). An
+        // ARM's weave is a sub-weave that must hand control back. Diverting a rejoin's
+        // weave onward re-enters content that has already played (TheIntercept's
+        // `sipping at my tea` line emits twice; pinned by Compiler_LooseEndTests).
         if containsWeaveItem(continuation) == false, endsWithControlFlow(continuation) == false {
             endChildren.append(contentsOf: fallThrough.nodes)
         }
@@ -198,10 +198,8 @@ enum ConditionalEmitter {
 
     /// Terminate a lowered ARM body so flow leaves it the way Ink says it should.
     ///
-    /// A weave-bearing arm ends with the `done` `WeaveEmitter.lower` appends to every
-    /// weave, and that `done` HALTS the flow. For the enclosing knot's own weave that
-    /// is exactly right — it presents the choices accumulated so far. For an ARM it is
-    /// wrong, and this is settled upstream — inkle/ink#978, answered by joningold:
+    /// A choice inside a conditional does not stop the flow. This is settled
+    /// upstream — inkle/ink#978, answered by joningold:
     ///
     ///   "a choice inside a conditional doesn't stop the flow in the same way that a
     ///    choice outside a conditional — ie. a weave — does"
@@ -211,24 +209,21 @@ enum ConditionalEmitter {
     /// prose after the block BEFORE presenting the arm's choice. The reference gets
     /// this by appending the rejoin unconditionally
     /// (`ConditionalSingleBranch.GenerateRuntimeObject`, target set in
-    /// `Conditional.cs`); it has no notion of suppressing it for a weave-bearing arm.
+    /// `Conditional.cs`).
     ///
-    /// This does NOT generalise to the `-end` rejoin — see `registerContinuation`.
-    /// An arm body that already diverts away threads its own loose end and is left
-    /// alone.
+    /// A weave-bearing arm's lowered stream ends at its choice points (only the
+    /// root weave ends in `done`, ADR-021), never in control flow, so it always
+    /// rejoins — even when its last statement is a choice body's divert, which
+    /// belongs to that choice's outcome container, not to the arm. A flat arm
+    /// rejoins unless it already diverts away (or ends with `-> DONE` / `-> END`).
+    ///
+    /// The `-end` rejoin is different — see `registerContinuation`.
     private static func terminateArm(
         _ children: inout [NodeKind],
         body: [InkStatement],
         rejoiningAt endPath: [String]
     ) {
-        // Only a WEAVE's `done` is swapped: an arm ending in `-> DONE` keeps its own
-        // `done`, which inklecate emits too (`Divert.cs`, `isDone`).
-        if WeaveEmitter.containsWeave(body), case .controlCommand("done")? = children.last {
-            children.removeLast()
-            children.append(unconditionalDivert(to: endPath))
-            return
-        }
-        guard endsWithControlFlow(body) == false else { return }
+        guard WeaveEmitter.containsWeave(body) || endsWithControlFlow(body) == false else { return }
         children.append(unconditionalDivert(to: endPath))
     }
 
@@ -319,7 +314,7 @@ enum ConditionalEmitter {
             endNamed = [:]
         }
         // Symmetric with `lowerInline` — and deliberately NOT the arm's `terminateArm`:
-        // a rejoin's weave belongs to the enclosing knot, so its `done` stays.
+        // a rejoin's weave belongs to the enclosing knot and ends where the knot does.
         if containsWeaveItem(continuation) == false, endsWithControlFlow(continuation) == false {
             children.append(contentsOf: fallThrough.nodes)
         }

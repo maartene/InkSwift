@@ -132,6 +132,9 @@ cases, inklecate's JSON plays correctly on the native runtime.
 - The native compiler **stops at the first error**. inklecate reports all of them.
 - Its **messages differ** from inklecate's.
 - It reports **no warnings** (inklecate warns about, for example, an apparent loose end).
+  A loose end still behaves the same on both paths: like inklecate, the native compiler
+  ends only the top-level flow with `-> DONE`, so a knot or stitch whose flow runs out
+  (including one whose choices are all used up) runs out of content on both paths.
 - It **accepts some stories inklecate rejects**. Examples: a name used twice for
   different things, an unresolved variable, a string constant containing `#`.
 

@@ -45,7 +45,7 @@ These constructs compile to a playable blueprint. (Matrix rows 1–27, 29–35.)
 | 9 | Once-only suppression | `* Open the door` | A picked once-only choice is suppressed on revisit. |
 | 10 | Invisible defaults | `* ->` | Auto-divert taken when no visible choice remains. |
 | 11 | Conditional choices (`* {cond}`) | `* {hasKey} Unlock` | Choice shown only when the guard evaluates true. |
-| 12 | Gathers (`-`) | `- They met again.` | Re-converges branching flow; nesting supported. |
+| 12 | Gathers (`-`) | `- They met again.` | Re-converges branching flow; nesting supported. As in inklecate, only the top-level weave ends with an implicit `-> DONE`; a knot or stitch weave whose flow runs out runs out of content. |
 | 13 | Labeled gathers / options `(label)` | `- (reunion)` | Named gather usable as a relative divert target. |
 | 14 | Read counts | `{forest}` | Knot/stitch visit counters readable in expressions. |
 | 15 | Glue (`<>`) | `Hello <> world` | Suppresses the surrounding newline to join lines. |
