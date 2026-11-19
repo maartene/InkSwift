@@ -38,6 +38,20 @@ Every commit must pass the same gate CI enforces, so the trunk stays releasable:
 - **Activation** — the hook is versioned under `.githooks/` and activated per-clone via `git config core.hooksPath .githooks`. Run `.githooks/install.sh` after cloning.
 - **Bypass** — emergencies only: `git commit --no-verify` (or `INKSWIFT_SKIP_HOOK=1 git commit …`). Do not bypass to land red code on the trunk.
 
+## Versioning and releases
+
+Versions are bare semver tags (`2.1.1`, no `v`). The major versions follow the JS-bridge retirement schedule in [ADR-019](docs/product/architecture/adr-019-release-schedule-js-bridge-retirement.md): **2.x** ships `SwiftInkRuntime` alongside a fully supported `InkStory`; **3.0.0** makes the native runtime the `InkSwift` product and deprecates the JS-bridge; **4.0.0** removes the JS-bridge.
+
+- **Every fixed issue that is not a breaking change gets a patch release** (`x.y.z` → `x.y.z+1`). Cut the release once the fix is on `main`. Don't let fixes pile up unreleased.
+- **Docs-only and test-only commits** (no change to what a user's code or story does) don't need a release of their own. They ship with the next one.
+
+**Cutting a release:**
+
+1. Update the SwiftPM snippets in `README.md` (`from: "…"`) when the minor or major version changes.
+2. Tag on `main`: `git tag -a <version> -m "<version>: <summary>"`, then push `main` and the tag to `origin` (Forgejo).
+3. Sync the GitHub mirror now instead of waiting hours: `tea api --login git.embersescape.party -X POST /repos/maartene/InkSwift/push_mirrors-sync`, then wait until `gh api repos/maartene/InkSwift/git/ref/tags/<version>` finds the tag.
+4. Publish the release **on GitHub** (Forgejo has none): `gh release create <version> -R maartene/InkSwift --verify-tag --title "…" --notes-file …`. Say what changed for users, link the fixed issues, and call out anything that changes how a story plays.
+
 ## Acceptance tests, DISTILL, and the pre-commit gate
 
 Outside-In TDD has DISTILL author acceptance tests (ATs) up front, before the DELIVER steps that make them pass. Because the pre-commit gate runs the **full** `swift test`, an AT that is *enabled but unimplemented* is red — it fails the suite, fails the hook, and blocks **every** commit until the whole feature lands. That defeats per-step trunk commits.
