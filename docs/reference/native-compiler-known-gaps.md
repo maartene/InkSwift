@@ -92,59 +92,6 @@ Fixtures for the fixed engine case are committed as
 The G1/G2 sources above reproduce directly through
 `InkCompiler.compile(source:)` versus `Story(json:)` on the same source.
 
-## Deferred — `-> END` does not discard pending choices (engine)
-
-Found 2026-08-26 while closing issues #18 and #21. Affects pre-compiled
-inklecate/Inky json too, so it is an **engine** gap, not a compiler one.
-
-Ink distinguishes its two terminators. `DONE` means "this thread has no more
-content"; `END` means the story is over, and inkle's runtime implements that as
-`StoryState.ForceEnd()`, which clears `currentChoices` (see joethephish on
-inkle/ink#129 — *"`END` ensures the story really does come to an end! So, it
-cancels/removes any choices that exist"*). `Engine/TreeWalker.swift` collapses
-both into one case that only sets `isEnded`, so choices generated before the
-story ends are still presented.
-
-### Reproducing
-
-These two sources differ only in the last line. inklecate plays them
-differently; InkSwift plays them identically.
-
-```ink
-VAR x = 1
--> start
-=== start ===
-* First
-    Chose first.
-    { x == 1:
-        * Nested in arm
-            -> after
-    }
-* Second
-    -> after
--
--> after
-=== after ===
-Done.
--> END     ← swap for `-> DONE` for the contrasting case
-```
-
-| last line | inklecate 1.2.1 | InkSwift |
-|---|---|---|
-| `-> END` | `Chose first.` / `Done.`, no choice offered | offers `Nested in arm` |
-| `-> DONE` | `Chose first.` / `Done.`, offers `Nested in arm` | same — matches |
-
-It surfaces only when flow continues *past* generated choices before ending,
-which in practice means a choice written inside a conditional arm or a thread.
-
-### Why deferred
-
-The fix is in `Engine/`, which the compiler work treats as REUSE-AS-IS (CLAUDE.md;
-SwiftLint R1/R3/R5). Giving `end` its own `ForceEnd`-equivalent is a small change
-but a runtime behaviour change affecting every story, including pre-compiled ones,
-so it wants its own decision and its own regression fixtures rather than riding
-along with a compiler fix.
-
 ## Deferred — a conditional *before* a choice in the same arm strands the rejoin (compiler)
 
 Found 2026-08-26 alongside #21. A **compiler** gap.
