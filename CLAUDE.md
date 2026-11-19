@@ -37,6 +37,7 @@ Every commit must pass the same gate CI enforces, so the trunk stays releasable:
 - **Pre-commit gate** — `.githooks/pre-commit` blocks the commit on (1) SwiftLint architecture-boundary rules (`swiftlint lint --strict --no-cache --config .swiftlint.yml`) and (2) `swift test`. It mirrors `.forgejo/workflows/tests.yml`, so a commit that passes locally passes CI.
 - **Activation** — the hook is versioned under `.githooks/` and activated per-clone via `git config core.hooksPath .githooks`. Run `.githooks/install.sh` after cloning.
 - **Bypass** — emergencies only: `git commit --no-verify` (or `INKSWIFT_SKIP_HOOK=1 git commit …`). Do not bypass to land red code on the trunk.
+- **`des-commit` skips the hook.** nWave's `des-commit` always commits with `--no-verify`, so the gate never runs on a DELIVER step commit made through it. Before every `des-commit`, run `.githooks/pre-commit` yourself and see it pass with the step's changes in the tree. (Commit 5af7220 landed a red test on `main` this way; 8c27771 fixed it.)
 
 ## Versioning and releases
 

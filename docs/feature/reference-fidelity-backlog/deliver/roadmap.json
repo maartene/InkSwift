@@ -328,7 +328,8 @@
             "Save with a pending lookahead tag (hand-written expectation): saving after continue() returned a line whose lookahead already collected the next line's leading tag writes `outputStreamTags` as [{\"at\": k, \"text\": \"t2\"}] with k the outputStream index before which the tag sat; restoring and continuing returns the next line with currentTags [\"t2\"]",
             "A save with nothing pending omits the outputStreamTags key; an old save without the key (the TypedPaths goldens) restores and continues identically; the currentTags save key keeps its meaning (tags of the last returned line)",
             "Conformance [P], re-enable those that pass: 'tags in sequences' (05Tests:466); 'tags in choices' (05Tests:484, 489). TestTags is expected to stay blocked by TagsForContentAtPath; report whether any glue backlog entry moved",
-            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained; changed production files' Code Health not below their main baseline"
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained; changed production files' Code Health not below their main baseline",
+            "PROBE (found in 01-01): on the native-compiled issue34-space-before-tag fixture, currentChoices was empty right after the last line before the choice ('Next.') was returned and only filled on a further continue(); compare with the same story from inklecate JSON and with C# (choices available once Continue returns the last line before a choice point). If it is the continue-boundary lookahead, fix it here with a test; if it is native emission, record it and report"
           ],
           "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Engine_PerLineTagsTests.swift",
           "scenario_name": "#30 currentTags belong to the line continue() returned",
@@ -820,7 +821,8 @@
             "The `{\\…}` handling in modeAndContent matches inklecate per the 05-01 probe (oracle test), or the difference is recorded in docs/reference/differences-from-inklecate.md and reported",
             "UnsupportedConstructDetector and the content parser agree on what is escaped: a story using `\\{`, `\\#` is accepted (Compiler_S6 rejection tests for escapes unchanged)",
             "Conformance [P]: 'escaped characters in alternatives' (02Tests:113); re-enable it if it passes",
-            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained; changed production files' Code Health not below their main baseline"
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained; changed production files' Code Health not below their main baseline",
+            "Glue before a tag on the native path (found in 01-01): `Text <> # t` followed by `glued.` prints 'Text <>' / 'glued.' natively, while inklecate gives 'Text glued.'. The escape-aware scanner treats `<>` before `#` as glue; pinned by an oracle test with content after it; the row in docs/reference/differences-from-inklecate.md is removed (maintainer: tracked in the roadmap, no GitHub issue)"
           ],
           "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_EscapeTests.swift",
           "scenario_name": "#35 backslash escapes print literally in prose, tags and strings",
