@@ -47,9 +47,11 @@ struct InkParserOutcomeTagTests {
 
     // T3 — an outcome containing a `{…}` already took the segment path before the
     // fix; kept as a guard that routing more outcomes there changed nothing here.
+    // The space between `{n}` and `#` stays a literal " ", as inklecate emits it
+    // (`"out","/ev","^ ","#"`): the text before a tag is not trimmed (5af7220, #34).
     @Test func `an outcome with an expression and a tag still splits`() throws {
         #expect(try segments(of: "{n} # sidequest")
-            == [.expression(.variableReference("n")), .tag("sidequest")])
+            == [.expression(.variableReference("n")), .literal(" "), .tag("sidequest")])
     }
 
     // T4 — an outcome with neither `{` nor `#` stays a plain text statement, so
