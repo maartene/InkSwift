@@ -1,6 +1,8 @@
 # ADR-018: Save-Format Compatibility for Typed Paths and Call Stack
 
-**Status**: Accepted (maintainer confirmed Option A — existing saves must keep restoring, 2026-11-17)
+**Status**: Accepted (maintainer confirmed Option A — existing saves must keep restoring, 2026-11-17). **Amended 2026-11-19**:
+- [ADR-022](./adr-022-canonical-container-identity-visit-counts.md): `visitCounts` keys become canonical and are converted on restore. Compatibility is forward-only, so a new save is not supported on an older build.
+- [ADR-020](./adr-020-continue-boundary-typed-output-stream.md): one new optional key for lookahead tags.
 **Date**: 2026-11-17
 **Deciders**: Maarten Engels (project owner), Morgan (solution architect)
 **Feature**: typed-runtime-paths (issue #25)

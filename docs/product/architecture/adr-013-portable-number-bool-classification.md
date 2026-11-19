@@ -1,6 +1,6 @@
 # ADR-013: Portable JSON Number/Bool Classification — JSONDecoder + Custom Decodable
 
-**Status**: Accepted (guided-discovery decision locked 2026-07-15)
+**Status**: Accepted (guided-discovery decision locked 2026-07-15). **Mechanism superseded by [ADR-023](./adr-023-json-number-typing-by-token-text.md) (2026-11-19)**: `JSONDecoder` types `2.0` as `Int`, so typing now comes from the token text in a hand-written reader. This ADR's goal (platform-identical typing) and its probe still stand.
 **Date**: 2026-07-15
 **Deciders**: Maarten Engels (project owner), Morgan (nw-solution-architect)
 **Feature**: native-runtime-linux (DD-1)

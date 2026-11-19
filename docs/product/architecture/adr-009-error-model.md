@@ -1,6 +1,8 @@
 # ADR-009: Error Model — Single-Error-Then-Stop, Located, with Construct-Named Rejections
 
-**Status**: Accepted (user-confirmed 2026-06-14)
+**Status**: Accepted (user-confirmed 2026-06-14). **Amended 2026-11-19**:
+- [ADR-025](./adr-025-native-function-catalog.md): the reject-list names for built-ins come from the shared native-function catalog, and `.unresolvedReference` is produced for undefined functions.
+- [ADR-021](./adr-021-loose-end-emission.md): there is no warning channel, so inklecate's loose-end warning is not surfaced.
 **Date**: 2026-06-14
 **Deciders**: Maarten Engels (project owner), Morgan (nw-solution-architect)
 **Feature**: native-ink-compiler

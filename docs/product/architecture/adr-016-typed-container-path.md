@@ -1,6 +1,6 @@
 # ADR-016: Typed Container Paths and Function-Call Diverts
 
-**Status**: Accepted (maintainer confirmed Option A + function-call case + `DivertTarget`, 2026-11-17)
+**Status**: Accepted (maintainer confirmed Option A + function-call case + `DivertTarget`, 2026-11-17). **Amended by [ADR-022](./adr-022-canonical-container-identity-visit-counts.md) (2026-11-19)**: visit counts are now keyed by a container's canonical path, not by the spelling it was entered by.
 **Date**: 2026-11-17
 **Deciders**: Maarten Engels (project owner), Morgan (solution architect)
 **Feature**: typed-runtime-paths (issue #25)

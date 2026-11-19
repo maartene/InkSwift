@@ -686,13 +686,27 @@ The component responsibility annotations are updated:
 | [ADR-003](./adr-003-state-serialization.md) | State Serialization: Codable Format, No inkjs Compatibility | Accepted |
 | [ADR-004](./adr-004-callreturn-mechanism.md) | Call/Return Mechanism: Return Address Stack in StoryState | Accepted |
 | [ADR-005](./adr-005-moveto-knot-jump-strategy.md) | moveToKnot Jump Strategy: Reset and Stack Installation | Accepted |
+| [ADR-006](./adr-006-compiler-output-contract-and-module-placement.md) | Compiler Output Contract and Module Placement | Accepted |
+| [ADR-007](./adr-007-parser-strategy.md) | Parser Strategy: Hand-Rolled Recursive-Descent / Combinator Port | Accepted |
+| [ADR-008](./adr-008-weave-resolution-spike-gate.md) | Weave-Resolution Spike Gate | Accepted |
+| [ADR-009](./adr-009-error-model.md) | Error Model: Single-Error-Then-Stop, Located, with Construct-Named Rejections | Accepted; amended by ADR-021, ADR-025 |
 | [ADR-010](./adr-010-variable-text-lowering.md) | Variable-Text Lowering (sequence / cycle / once-only) | Accepted |
-| [ADR-013](./adr-013-portable-number-bool-classification.md) | Portable JSON Number/Bool Classification (JSONDecoder + custom Decodable) | Accepted |
+| [ADR-011](./adr-011-weave-label-read-count-addressing.md) | Weave-Label Read-Count Addressing | Accepted; scope superseded by ADR-012 |
+| [ADR-012](./adr-012-native-inklecate-emission-alignment.md) | Native Compiler ↔ inklecate Emission Alignment for Execution-Equivalence | Delivered |
+| [ADR-013](./adr-013-portable-number-bool-classification.md) | Portable JSON Number/Bool Classification (JSONDecoder + custom Decodable) | Accepted; mechanism superseded by ADR-023 |
 | [ADR-014](./adr-014-cross-platform-equivalence-oracle.md) | Cross-Platform Equivalence Oracle (inklecate-generated committed fixtures) | Accepted |
-| [ADR-016](./adr-016-typed-container-path.md) | Typed Container Paths and Function-Call Diverts | Accepted |
+| [ADR-015](./adr-015-inkstory-deprecation-mechanics.md) | `InkStory` Deprecation Mechanics | Accepted; timing superseded by ADR-019 |
+| [ADR-016](./adr-016-typed-container-path.md) | Typed Container Paths and Function-Call Diverts | Accepted; amended by ADR-022 |
 | [ADR-017](./adr-017-typed-call-stack-and-pop-check.md) | Typed Call-Stack Elements and Type-Checked Tunnel/Function Pops | Accepted |
-| [ADR-018](./adr-018-save-format-compat-typed-paths.md) | Save-Format Compatibility for Typed Paths and Call Stack | Accepted |
+| [ADR-018](./adr-018-save-format-compat-typed-paths.md) | Save-Format Compatibility for Typed Paths and Call Stack | Accepted; amended by ADR-020, ADR-022 |
 | [ADR-019](./adr-019-release-schedule-js-bridge-retirement.md) | Release Schedule for Retiring the JS-Bridge (2.1 introduces, 3.0 switches, 4.0 removes) | Accepted; supersedes ADR-015's timing |
+| [ADR-020](./adr-020-continue-boundary-typed-output-stream.md) | Continue Boundary: Typed Output Stream, Per-Line Tags, Flow-End Reason | Accepted |
+| [ADR-021](./adr-021-loose-end-emission.md) | Loose Ends: Emit `done` Only Where inklecate Does | Accepted |
+| [ADR-022](./adr-022-canonical-container-identity-visit-counts.md) | One Canonical Path per Container for Visit Counts; Forward-Only Save Compatibility | Accepted |
+| [ADR-023](./adr-023-json-number-typing-by-token-text.md) | JSON Number Typing by Token Text (hand-written Ink JSON reader) | Accepted; supersedes ADR-013's mechanism |
+| [ADR-024](./adr-024-numeric-semantics-double-with-float-printing.md) | Numeric Semantics: Double Arithmetic, 32-bit Float Printing, C#-Style Coercion | Accepted |
+| [ADR-025](./adr-025-native-function-catalog.md) | One Native-Function Catalog Shared by Compiler and Runtime | Accepted |
+| [ADR-026](./adr-026-content-text-scanner.md) | One Escape-Aware Content-Text Scanner in the Native Compiler | Accepted |
 
 ---
 
@@ -1832,4 +1846,84 @@ divert-target values in `InkValue` (wire change).
 |-----|-------|--------|
 | [ADR-016](./adr-016-typed-container-path.md) | Typed Container Paths and Function-Call Diverts | Accepted |
 | [ADR-017](./adr-017-typed-call-stack-and-pop-check.md) | Typed Call-Stack Elements and Type-Checked Tunnel/Function Pops | Accepted |
-| [ADR-018](./adr-018-save-format-compat-typed-paths.md) | Save-Format Compatibility for Typed Paths and Call Stack | Accepted |
+| [ADR-018](./adr-018-save-format-compat-typed-paths.md) | Save-Format Compatibility for Typed Paths and Call Stack | Accepted; amended by ADR-020, ADR-022 |
+
+---
+
+### reference-fidelity-backlog (Feature Addition)
+
+Issues #28, #30, #33, #34, #35, #36 and #37; #27 is context only, decided and scheduled for
+3.0.0. One DESIGN pass over the open reference-fidelity issues found four root causes rather
+than eight edge cases. **Status: DESIGN complete (2026-11-19), decisions accepted by the
+maintainer.** The full analysis is in `docs/feature/reference-fidelity-backlog/feature-delta.md`
+(root causes with file:line, options, reuse table, sequencing, probes). No breaking change:
+everything ships in 2.x patch and minor releases.
+
+#### Quality Attributes (ranked)
+
+1. **Correctness**: agreement with the inklecate oracle and the upstream conformance suite,
+   with nine-plus conformance backlog entries expected to move.
+2. **Reliability**: nothing silent. A story that runs out of content reports it, and a call
+   to an undefined function does not compile.
+3. **Maintainability**: one definition per concept (container identity, built-in names,
+   "escaped", end of a line).
+
+#### Clusters and Decisions
+
+| Cluster | Issues | Root cause | Decision | ADR |
+|---|---|---|---|---|
+| A — Continue boundary | #30, #28 | No per-`continue()` prologue or epilogue; tags kept beside an untyped output stream; `done` / `end` / ran-out indistinguishable | Typed output stream (text, newline, tag) with pure line extraction. Prologue resets line tags and the transient `safeExit` and stop reason (`isEnded` keeps its save key). One `forceEnd()` shared by `end` and `refusePop`. Epilogue for ran-out stops only, including choice-continuation exhaustion, appends the C# end-of-content message. Optional `outputStreamTags` save key. The snapshot/rewind loop rewrite (A2) is deferred to its own feature | ADR-020 |
+| A′ — Loose ends | #28 parity | The native compiler appends `done` to every **weave** (`WeaveEmitter.swift:880`) and to the root's flat body; flat knot and stitch bodies already get none. inklecate adds it only at the top level | Emit `done` only for the root weave. Re-derive `ConditionalEmitter`'s arm and rejoin termination (`terminateArm`), protecting TheIntercept's "sipping at my tea" arm. No warning channel exists, so the loose-end warning is not surfaced (future feature, #38/#39) | ADR-021 |
+| B — Visit identity | #33 | Visit counts keyed by the spelling of the path a container was entered by (index vs name) | Canonical path per container from `ContainerPathResolver`. One engine-owned visit counter over all sites: `recordVisit`, `.readCount`, `visit`, and `visitCount(forKnot:)` / `setVisitCount`. Legacy keys converted on restore; forward-only saves | ADR-022 |
+| C — Values and built-ins | #37, #36 | Number typing by decode success; `String(Double)` printing; FLOOR/CEILING return int; no operand coercion (`1 == 1.0` false, `"a" + 1` = `1`); built-in names in three places; calls never resolved | Hand-written token-typed JSON reader. Double arithmetic with 32-bit shortest printing (a documented divergence). One C#-ordered coercion point (bool < int < float < string). `Decoder/NativeFunctionCatalog` shared by decoder, `TreeWalker` (exhaustive switch) and compiler call resolution (`throws` ripple). `construct` strings renamed to the runtime's names. SEED_RANDOM accepted; POW and string `?`/`!?` added | ADR-023, ADR-024, ADR-025 |
+| D — Content text | #35 (#34 isolated) | No shared escape-aware text scan; seven raw scanners; both-sides trim before `#` | #34 trailing-only trim first. Then `Compiler/Parser/ContentTextScanner` (counterpart of `ContentTextAllowingEcapeChar`): introduced escape-agnostic (behaviour-neutral), then switched to escape-aware | ADR-026 |
+
+#### Component Delta
+
+L1 and L2 are **unchanged**. The L3 additions are `Decoder/NativeFunctionCatalog.swift` and
+`Compiler/Parser/ContentTextScanner.swift`, plus engine-internal roles inside existing files:
+the typed output stream with line extraction, the flow-end diagnosis (a pure function) and the
+visit counter. `NodeKind.nativeFunction` carries the catalog enum. The C4 component diagrams
+for Engine and Compiler are in the feature-delta.
+
+#### Boundary and Enforcement
+
+All changes respect R1, R3 and R5: the catalog sits in `Decoder/`, the lowest layer, which the
+Compiler and Engine may both use, and Ink JSON parsing stays in `Decoder/`. New SwiftLint
+`custom_rules`:
+
+- `visitCounts[` only in the visit counter;
+- `.nativeFunction("` string construction only in `Decoder/`;
+- output-stream appends only through the walker's output helpers.
+
+`TreeWalker`'s native switch is exhaustive, with no `default:`, so the compiler is the probe.
+
+#### Earned Trust
+
+| Substrate | Probe |
+|---|---|
+| Ink JSON number tokens | `InkDecoder.probe()` fixture adds `2.0` and `1e2` (both float) next to `2.5`, `true`, `42`. On drift, startup is refused |
+| Saves from earlier builds | Golden legacy saves (ADR-018) restore with their visit-count keys converted to canonical form; split counts are summed |
+| Behavioural truth | Oracle and conformance suites per step. The [P] probes listed in the feature-delta are inputs to DISTILL/DELIVER |
+
+#### Release Notes Callouts
+
+Per step; release types are in the feature-delta. Every step is a patch except 9b, which is
+minor.
+
+- **Running out of content** now reports an error, on both compile paths. Natively compiled
+  stories with a loose end used to stop silently.
+- **`-> END`** now discards pending choices.
+- **`currentTags`** holds only the tags of the line just returned.
+- **Multi-line sequences and labelled-gather loops** play correctly.
+- **Saves from the new build are not supported on older builds.** Restored there, some visit
+  counts read as 0, so sequence items and once-only content replay and loops run extra
+  passes.
+- **Floats** print as inklecate prints them. `"a" + 1` concatenates. `1 == 1.0` is true.
+- **Natively compiled text** changes: the space before a tag after an inline conditional is
+  kept (#34), and escapes print literally (#35).
+- **Undefined functions** no longer compile (patch). `CompileError.construct` strings change
+  to the runtime's names (`"RANDOM()"`, `"LIST"`, `"threads (<-)"`, `"EXTERNAL functions"`,
+  `"INCLUDE"`). That is not API-breaking, but hosts that match on these strings must update.
+  SEED_RANDOM now compiles natively.
+- **POW and string `?`/`!?`** work natively (minor release).
