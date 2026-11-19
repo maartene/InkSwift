@@ -692,6 +692,7 @@ The component responsibility annotations are updated:
 | [ADR-016](./adr-016-typed-container-path.md) | Typed Container Paths and Function-Call Diverts | Accepted |
 | [ADR-017](./adr-017-typed-call-stack-and-pop-check.md) | Typed Call-Stack Elements and Type-Checked Tunnel/Function Pops | Accepted |
 | [ADR-018](./adr-018-save-format-compat-typed-paths.md) | Save-Format Compatibility for Typed Paths and Call Stack | Accepted |
+| [ADR-019](./adr-019-release-schedule-js-bridge-retirement.md) | Release Schedule for Retiring the JS-Bridge (2.1 introduces, 3.0 switches, 4.0 removes) | Accepted; supersedes ADR-015's timing |
 
 ---
 

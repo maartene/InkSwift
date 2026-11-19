@@ -1,6 +1,6 @@
 # ADR-015: `InkStory` Deprecation Mechanics — Type-Level `@available` with `message:`, no `renamed:`
 
-**Status**: Accepted (Option 1, confirmed 2026-07-16)
+**Status**: Accepted (Option 1, confirmed 2026-07-16); **timing superseded by [ADR-019](./adr-019-release-schedule-js-bridge-retirement.md)** (2026-11-19): the deprecation moves to v3.0.0 and the removal to v4.0.0. The mechanics below still apply to the 3.0.0 deprecation.
 **Date**: 2026-07-16
 **Deciders**: Morgan (nw-solution-architect); Maarten Engels (project owner) — confirmed **Option 1**, 2026-07-16
 **Feature**: native-runtime-migration

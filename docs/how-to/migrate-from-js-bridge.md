@@ -5,8 +5,8 @@
 > `InkCompiler`), so you can rewrite your code call-by-call. It flags the shape
 > differences and the one capability that has **no native equivalent**.
 
-The JS-bridge is **legacy** and scheduled for removal in **v3.0.0**. It remains fully
-functional until then. Before migrating, check the
+The JS-bridge is fully supported in 2.x. It will be **deprecated in v3.0.0**, when the
+native runtime becomes the `InkSwift` product, and **removed in v4.0.0**. Before migrating, check the
 [supported-parity / known-gaps statement](../reference/js-bridge-vs-native-parity.md) to
 confirm the native runtime supports your story's features.
 
@@ -62,12 +62,17 @@ to register, deregister, or publish. If you rely on Combine variable observation
 - **stay on the JS-bridge** until (or unless) native observation lands — this gap is
   tracked in the [parity statement's living backlog](../reference/js-bridge-vs-native-parity.md).
 
-## Suppressing the deprecation warning (if you must stay)
+## When the JS-bridge is retired
 
-Compiling against `InkStory` now emits a deprecation warning naming the v3.0.0 removal.
-It is a **warning, not an error** — your build still succeeds. If you have opted into
-warnings-as-errors and need to stay on the bridge for a gap above, scope the suppression
-narrowly to the `InkStory` call sites rather than disabling the setting globally.
+| Version | What changes for `InkStory` users |
+|---|---|
+| 2.1.x | Nothing: `InkStory` is supported. (2.1.0 emitted a deprecation warning; 2.1.1 removes it.) |
+| 3.0.0 | `InkStory` moves to its own product and is **deprecated**: compiling against it emits a warning, not an error. The `InkSwift` product becomes the native runtime. |
+| 4.0.0 | `InkStory` is **removed**. |
+
+If you have opted into warnings-as-errors and need to stay on the bridge in 3.x for a gap
+above, scope the suppression narrowly to the `InkStory` call sites rather than disabling
+the setting globally.
 
 ## See also
 

@@ -10,9 +10,10 @@ Swift with its own native Ink compiler, needs **no JavaScriptCore or JXKit**, ex
 [The Intercept](https://github.com/inkle/the-intercept) fully, and runs on both Apple
 platforms and Linux.
 
-The original `InkStory` runtime (the JavaScriptCore/inkjs **JS-bridge**) is now the
-**legacy** path. It remains fully functional and is scheduled for removal in **v3.0.0**.
-See the [migration guide](docs/how-to/migrate-from-js-bridge.md) to move an existing
+The original `InkStory` runtime (the JavaScriptCore/inkjs **JS-bridge**) is still fully
+supported in 2.x. It will be **deprecated in v3.0.0**, when the native runtime becomes the
+`InkSwift` product, and **removed in v4.0.0**. See the
+[migration guide](docs/how-to/migrate-from-js-bridge.md) to move an existing
 `InkStory`-based app to the native runtime.
 
 ### Getting started with SwiftInkRuntime
@@ -70,9 +71,9 @@ is a workaround.
 
 ## Legacy: the JavaScriptCore JS-bridge (`InkStory`)
 
-> The sections below document the **legacy** `InkStory` JS-bridge. It is deprecated and
-> will be removed in **v3.0.0**. New projects should use `SwiftInkRuntime` (see above);
-> existing projects should follow the
+> The sections below document the `InkStory` JS-bridge. It will be deprecated in
+> **v3.0.0** and removed in **v4.0.0**. New projects should use `SwiftInkRuntime` (see
+> above); existing projects can follow the
 > [migration guide](docs/how-to/migrate-from-js-bridge.md).
 
 ### Supported features

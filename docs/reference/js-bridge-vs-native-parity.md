@@ -15,9 +15,10 @@ This is **not** a claim of complete parity. The JS-bridge (`InkStory`, backed by
 still supports a handful of Ink constructs and one API capability the native runtime does
 not yet have. Those gaps are listed below. **Stay on the JS-bridge if you need any of them.**
 
-The JS-bridge is now **legacy** and is scheduled for removal in **v3.0.0**. It remains
-fully functional and supported until then. To migrate, follow the
-[migration guide](../how-to/migrate-from-js-bridge.md).
+The JS-bridge is fully supported in 2.x. It will be **deprecated in v3.0.0**, when the
+native runtime becomes the `InkSwift` product, and **removed in v4.0.0**
+([ADR-019](../product/architecture/adr-019-release-schedule-js-bridge-retirement.md)).
+To migrate, follow the [migration guide](../how-to/migrate-from-js-bridge.md).
 
 ## Known gaps vs the JS-bridge
 
@@ -93,7 +94,7 @@ Stay on the JS-bridge if any of these block you; otherwise migrate with the
 ## This list is a living backlog
 
 **Maintenance convention.** This gaps list is the native runtime's *to-do list toward
-v3.0.0*, not a one-time snapshot. Each later feature that **closes a gap** — moving a
+v4.0.0*, when the JS-bridge is removed, not a one-time snapshot. Each later feature that **closes a gap** — moving a
 construct from MUST-REJECT to MUST-COMPILE in `ink-feature-reference.md`, or landing a
 missing API-parity capability such as Combine observation — MUST revisit this statement
 and **prune the closed item as part of its GREEN/finalize step**. A closed gap left

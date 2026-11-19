@@ -5,7 +5,8 @@
 // Doc-accuracy guard: the parity statement at
 // docs/reference/js-bridge-vs-native-parity.md must recommend the native runtime,
 // reference (not duplicate) the construct-gap SSOT, name the three API gaps, name
-// the v3.0.0 runway, and make no "full parity" over-claim.
+// the retirement schedule (deprecated in v3.0.0, removed in v4.0.0, ADR-019), and make
+// no "full parity" over-claim.
 //
 // PLATFORM-NEUTRAL by design: NO `import InkSwift`. This suite therefore runs on
 // Linux CI as well as macOS. It reads the repository's markdown as plain text,
@@ -105,9 +106,10 @@ struct DocAccuracy_ParityStatementConsistencyTests {
         #expect(parity.lowercased().contains("error handling"), "API gap: error handling must be listed")
     }
 
-    @Test func `the parity statement names the v3.0.0 removal runway`() throws {
+    @Test func `the parity statement names the JS-bridge retirement schedule`() throws {
         let parity = try DocAccuracySupport.contents(of: Self.parityStatementPath)
-        #expect(parity.contains("v3.0.0"), "parity statement must name the v3.0.0 removal runway")
+        #expect(parity.contains("deprecated in v3.0.0"), "parity statement must say the JS-bridge is deprecated in v3.0.0 (ADR-019)")
+        #expect(parity.contains("removed in v4.0.0"), "parity statement must say the JS-bridge is removed in v4.0.0 (ADR-019)")
     }
 
     @Test func `the parity statement makes no full-parity over-claim`() throws {
