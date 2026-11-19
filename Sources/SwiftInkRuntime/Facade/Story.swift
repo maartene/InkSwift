@@ -13,6 +13,10 @@ public enum StoryError: Error, Equatable {
     case invalidChoiceIndex(Int)
     case invalidStateData
     case knotNotFound(String)
+    /// The story uses ink features the runtime does not support yet. Thrown by
+    /// `Story(json:)` for the whole story, so nothing unsupported is ever played
+    /// silently (issue #32). Each feature lists where the story uses it.
+    case unsupportedFeatures([UnsupportedFeature])
 }
 
 public final class Story {

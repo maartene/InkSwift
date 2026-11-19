@@ -1,0 +1,1 @@
+{"inkVersion":21,"root":[[{"->":"k"},["done",{"#n":"g-0"}],null],"done",{"k":["ev","str","^hello","/str","str","^xyz","/str","!?","/ev",[{"->":".^.b","c":true},{"b":["^ yes",{"->":"k.11"},null]}],[{"->":".^.b"},{"b":["^no",{"->":"k.11"},null]}],"nop","\n","^After the test.","\n","end",null]}],"listDefs":{}}

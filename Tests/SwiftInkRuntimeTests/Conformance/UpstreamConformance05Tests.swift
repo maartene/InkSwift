@@ -426,7 +426,7 @@ struct UpstreamConformance05Tests {
         Conformance.run("TestReadCountVariableTarget", .native, Self.testReadCountVariableTarget)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: read counts through a variable divert target"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: unsupported READ_COUNT() of a divert-target variable"))
     func `TestReadCountVariableTarget — inklecate JSON on the runtime`() {
         Conformance.run("TestReadCountVariableTarget", .runtime, Self.testReadCountVariableTarget)
     }
@@ -522,7 +522,7 @@ struct UpstreamConformance05Tests {
         Conformance.run("TestStringContains", .native, Self.testStringContains)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: string contains operator (?)"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: unsupported ? (contains)"))
     func `TestStringContains — inklecate JSON on the runtime`() {
         Conformance.run("TestStringContains", .runtime, Self.testStringContains)
     }

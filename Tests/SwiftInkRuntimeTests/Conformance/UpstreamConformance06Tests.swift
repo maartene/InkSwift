@@ -260,7 +260,7 @@ struct UpstreamConformance06Tests {
         Conformance.run("TestTurns", .native, Self.testTurns)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: TURNS()"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: unsupported TURNS()"))
     func `TestTurns — inklecate JSON on the runtime`() {
         Conformance.run("TestTurns", .runtime, Self.testTurns)
     }
@@ -294,7 +294,7 @@ struct UpstreamConformance06Tests {
         Conformance.run("TestFloorCeilingAndCasts", .native, Self.testFloorCeilingAndCasts)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: FLOOR, INT, CEILING and casts"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: float division result truncated"))
     func `TestFloorCeilingAndCasts — inklecate JSON on the runtime`() {
         Conformance.run("TestFloorCeilingAndCasts", .runtime, Self.testFloorCeilingAndCasts)
     }

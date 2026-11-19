@@ -55,7 +55,7 @@ ported as `Tests/SwiftInkRuntimeTests/Conformance/`) shows places where a story 
 runtime accepts plays differently from the reference. Each failing upstream test is
 recorded as a disabled backlog item naming the gap. Examples: `TURNS()` and `TURNS_SINCE`,
 some glue placements, default (fallback) choices, tunnel onwards with a divert
-(`->-> target`), `FLOOR` / `INT` / `CEILING`, and some newline handling. For the current list, run:
+(`->-> target`), float formatting and division, and some newline handling. For the current list, run:
 
 ```
 grep -rho 'conformance: [^"]*' Tests/SwiftInkRuntimeTests/Conformance | sort | uniq -c | sort -rn

@@ -1,0 +1,1 @@
+{"inkVersion":21,"root":[[{"->":"k"},["done",{"#n":"g-0"}],null],"done",{"k":["^Colour: ","ev",{"VAR?":"c"},"out","/ev","^.","\n","^After the list.","\n","end",null],"global decl":["ev",{"list":{},"origins":["colours"]},{"VAR=":"colours"},{"VAR?":"red"},{"VAR=":"c"},"/ev","end",null]}],"listDefs":{"colours":{"red":1,"green":2}}}

@@ -1,0 +1,1 @@
+{"inkVersion":21,"root":[[{"->":"k"},["done",{"#n":"g-0"}],null],"done",{"k":["^Before.","\n","ev",1,{"x()":"beep","exArgs":1},"pop","/ev","\n","^After the call.","\n","end",null],"beep":[{"temp=":"x"},"ev","void","/ev","~ret",null]}],"listDefs":{}}

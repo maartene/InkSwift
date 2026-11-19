@@ -1,0 +1,1 @@
+{"inkVersion":21,"root":[[{"->":"k"},["done",{"#n":"g-0"}],null],"done",{"k":["^Floor: ","ev",1.5,"FLOOR","out","/ev","^ Int: ","ev",1.7,"INT","out","/ev","^ Ceil: ","ev",1.2,"CEILING","out","/ev","^ Float: ","ev",1,"FLOAT",2,"/","out","/ev","^.","\n","ev",5,"srnd","pop","/ev","\n","^After the numbers.","\n","end",null]}],"listDefs":{}}

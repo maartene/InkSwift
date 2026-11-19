@@ -44,7 +44,7 @@
  },
  "TestChoiceCount": {
   "native": "unsupported threads",
-  "runtime": "unsupported threads"
+  "runtime": "unsupported CHOICE_COUNT(), threads"
  },
  "TestChoiceDivertsToDone": {
   "native": "a divert to DONE on a choice line is kept as text",
@@ -159,7 +159,7 @@
  },
  "TestFloorCeilingAndCasts": {
   "native": "FLOOR, INT, CEILING and casts",
-  "runtime": "FLOOR, INT, CEILING and casts"
+  "runtime": "float division result truncated"
  },
  "TestFunctionCallRestrictions": {
   "native": "native accepts a story inklecate rejects (function call restrictions)"
@@ -305,7 +305,7 @@
  },
  "TestReadCountVariableTarget": {
   "native": "read counts through a variable divert target",
-  "runtime": "read counts through a variable divert target"
+  "runtime": "unsupported READ_COUNT() of a divert-target variable"
  },
  "TestRequireVariableTargetsTyped": {
   "native": "native accepts a story inklecate rejects ('it should be marked as: ->')"
@@ -329,7 +329,7 @@
  },
  "TestStringContains": {
   "native": "string contains operator (?)",
-  "runtime": "string contains operator (?)"
+  "runtime": "unsupported ? (contains)"
  },
  "TestStringParserA": {
   "native": "not applicable \u2014 unit-tests inklecate's StringParser internals",
@@ -390,7 +390,8 @@
   "runtime": "unsupported threads"
  },
  "TestThreadInLogic": {
-  "native": "unsupported threads"
+  "native": "unsupported threads",
+  "runtime": "unsupported threads"
  },
  "TestTopFlowTerminatorShouldntKillThreadChoices": {
   "native": "unsupported threads",
@@ -421,19 +422,19 @@
  },
  "TestTurns": {
   "native": "TURNS()",
-  "runtime": "TURNS()"
+  "runtime": "unsupported TURNS()"
  },
  "TestTurnsSince": {
   "native": "TURNS_SINCE",
-  "runtime": "TURNS_SINCE"
+  "runtime": "unsupported TURNS_SINCE()"
  },
  "TestTurnsSinceNested": {
   "native": "TURNS_SINCE",
-  "runtime": "TURNS_SINCE"
+  "runtime": "unsupported TURNS_SINCE()"
  },
  "TestTurnsSinceWithVariableTarget": {
   "native": "TURNS_SINCE",
-  "runtime": "TURNS_SINCE"
+  "runtime": "unsupported TURNS_SINCE()"
  },
  "TestUnbalancedWeaveIndentation": {
   "native": "unbalanced weave indentation"

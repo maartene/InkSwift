@@ -100,7 +100,7 @@ struct UpstreamConformance04Tests {
         Conformance.run("TestTurnsSince", .native, Self.testTurnsSince)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: TURNS_SINCE"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: unsupported TURNS_SINCE()"))
     func `TestTurnsSince — inklecate JSON on the runtime`() {
         Conformance.run("TestTurnsSince", .runtime, Self.testTurnsSince)
     }
@@ -123,7 +123,7 @@ struct UpstreamConformance04Tests {
         Conformance.run("TestTurnsSinceNested", .native, Self.testTurnsSinceNested)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: TURNS_SINCE"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: unsupported TURNS_SINCE()"))
     func `TestTurnsSinceNested — inklecate JSON on the runtime`() {
         Conformance.run("TestTurnsSinceNested", .runtime, Self.testTurnsSinceNested)
     }
@@ -142,7 +142,7 @@ struct UpstreamConformance04Tests {
         Conformance.run("TestTurnsSinceWithVariableTarget", .native, Self.testTurnsSinceWithVariableTarget)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: TURNS_SINCE"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: unsupported TURNS_SINCE()"))
     func `TestTurnsSinceWithVariableTarget — inklecate JSON on the runtime`() {
         Conformance.run("TestTurnsSinceWithVariableTarget", .runtime, Self.testTurnsSinceWithVariableTarget)
     }
@@ -492,7 +492,7 @@ struct UpstreamConformance04Tests {
         Conformance.run("TestThreadInLogic", .native, Self.testThreadInLogic)
     }
 
-    @Test
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: unsupported threads"))
     func `TestThreadInLogic — inklecate JSON on the runtime`() {
         Conformance.run("TestThreadInLogic", .runtime, Self.testThreadInLogic)
     }

@@ -114,7 +114,10 @@ the reasons are not uniform:
   variable-text form still rejected.
 
 - **Threads, LIST, RANDOM/SEED_RANDOM, EXTERNAL (rows 36–39)** are
-  **runtime-unsupported**: the engine has no execution model for them today. These
+  **runtime-unsupported**: the engine has no execution model for them today, and
+  `Story(json:)` refuses a story that uses them, at load, with
+  `StoryError.unsupportedFeatures` (#32); `SEED_RANDOM` on its own is accepted, as a
+  seed has no visible effect without RANDOM. These
   are lower priority (the BEYOND tier) and out of scope for the current ceiling.
 
 - **Multi-line sequences and `INCLUDE` (rows 40–41)** are **compiler-unsupported**.

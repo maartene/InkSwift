@@ -4,20 +4,50 @@ struct InkDecoder {
 
     // MARK: - Control command and native function classification sets
 
+    // The reference vocabulary (`JsonSerialisation.cs` `_controlCommandNames`,
+    // `NativeFunctionCall.cs`) splits three ways: tokens the engine executes, tokens
+    // it does not support yet (see `unsupportedTokens`), and anything else, which
+    // is not ink JSON at all and makes the story malformed — as the reference's
+    // "Failed to convert token to runtime object".
+
     private static let controlCommands: Set<String> = [
         "ev", "/ev", "out", "pop", "->->", "~ret", "du", "str", "/str",
-        "nop", "choiceCnt", "turn", "turns", "visit", "seq", "thread", "done", "end",
-        "<>"
+        "nop", "visit", "done", "end", "<>"
     ]
 
+    /// `srnd` (SEED_RANDOM) is accepted: without the RNG tokens, which are
+    /// rejected, a seed has no observable effect, so ignoring it plays exactly as
+    /// the reference does.
     private static let nativeFunctions: Set<String> = [
         "+", "-", "/", "*", "%", "_", "==", ">", "<", ">=", "<=", "!=",
-        "!", "&&", "||", "MIN", "MAX",
-        "floor", "ceiling", "int", "float", "sqrt", "pow",
-        "has", "hasnt", "intersect", "listMin", "listMax",
-        "all", "count", "valueOfList", "invert",
-        "srnd", "CHOICE_COUNT", "TURNS", "TURNS_SINCE", "RANDOM", "READ_COUNT"
+        "!", "&&", "||", "MIN", "MAX", "FLOOR", "CEILING", "INT", "FLOAT",
+        "srnd"
     ]
+
+    /// Valid ink tokens the runtime does not support yet, by the name an author
+    /// knows the feature by. A story holding any of them is refused at load
+    /// (issue #32): playing on would silently print or skip them.
+    private static let unsupportedTokens: [String: String] = {
+        var tokens: [String: String] = [
+            "choiceCnt": "CHOICE_COUNT()",
+            "turn": "TURNS()",
+            "turns": "TURNS_SINCE()",
+            "readc": "READ_COUNT() of a divert-target variable",
+            "rnd": "RANDOM()",
+            "seq": "shuffle {~a|b}",
+            "thread": "threads (<-)",
+            "POW": "POW()",
+            "?": "? (contains)",
+            "!?": "!? (does not contain)",
+        ]
+        for listToken in ["listInt", "range", "lrnd", "L^", "LIST_MIN", "LIST_MAX",
+                          "LIST_ALL", "LIST_COUNT", "LIST_VALUE", "LIST_INVERT"] {
+            tokens[listToken] = listFeature
+        }
+        return tokens
+    }()
+
+    private static let listFeature = "LIST"
 
     // MARK: - Public API
 
@@ -37,7 +67,18 @@ struct InkDecoder {
         guard case .array(let rootArray)? = topLevel["root"] else {
             throw InkDecodeError.malformedJSON
         }
-        return parseContainer(rootArray)
+        return try parseStory(rootArray)
+    }
+
+    /// Parse the root container, refusing the story if any part of it, visited or
+    /// not, uses a feature the runtime does not support (issue #32).
+    private func parseStory(_ rootArray: [InkJSONValue]) throws -> ContainerNode {
+        var log = UnsupportedFeatureLog()
+        let root = try parseContainer(rootArray, at: [], log: &log)
+        guard log.isEmpty else {
+            throw InkDecodeError.unsupportedFeatures(log.features)
+        }
+        return root
     }
 
     func probe() throws {
@@ -93,7 +134,14 @@ struct InkDecoder {
 
     // MARK: - Container parsing
 
-    private func parseContainer(_ array: [InkJSONValue]) -> ContainerNode {
+    /// Parse a container found at `location`: the author-visible names (knots,
+    /// stitches, labels) of the containers around it. Unsupported tokens inside
+    /// it are recorded in `log` with that location.
+    private func parseContainer(
+        _ array: [InkJSONValue],
+        at location: [String],
+        log: inout UnsupportedFeatureLog
+    ) throws -> ContainerNode {
         guard case .object(let metaDict)? = array.last else {
             // Last element is absent, null, or not a dict — treat all elements as content
             let contentItems: [InkJSONValue]
@@ -102,7 +150,7 @@ struct InkDecoder {
             } else {
                 contentItems = array
             }
-            let children = contentItems.compactMap { classify($0) }
+            let children = try contentItems.compactMap { try classify($0, at: location, log: &log) }
             // Named sequential children are accessible by name (mirrors C# TryAddNamedContent).
             var namedContent: [String: ContainerNode] = [:]
             for child in children {
@@ -116,8 +164,9 @@ struct InkDecoder {
         let contentItems = Array(array.dropLast())
         let flags = metaDict["#f"]?.intValue ?? 0
         let name = metaDict["#n"]?.stringValue
-        var namedContent = parseNamedContent(from: metaDict)
-        let children = contentItems.compactMap { classify($0) }
+        let here = UnsupportedFeatureLog.location(location, entering: name)
+        var namedContent = try parseNamedContent(from: metaDict, at: here, log: &log)
+        let children = try contentItems.compactMap { try classify($0, at: here, log: &log) }
         // Named sequential children are accessible by name (mirrors C# TryAddNamedContent).
         // Named-only content from the metadata dict takes precedence if keys collide.
         for child in children {
@@ -129,11 +178,16 @@ struct InkDecoder {
         return ContainerNode(children: children, namedContent: namedContent, flags: flags, name: name)
     }
 
-    private func parseNamedContent(from metaDict: [String: InkJSONValue]) -> [String: ContainerNode] {
+    private func parseNamedContent(
+        from metaDict: [String: InkJSONValue],
+        at location: [String],
+        log: inout UnsupportedFeatureLog
+    ) throws -> [String: ContainerNode] {
         var named: [String: ContainerNode] = [:]
         for (key, value) in metaDict where key != "#f" && key != "#n" {
             if case .array(let subArray) = value {
-                named[key] = parseContainer(subArray)
+                let keyLocation = UnsupportedFeatureLog.location(location, entering: key)
+                named[key] = try parseContainer(subArray, at: keyLocation, log: &log)
             }
         }
         return named
@@ -141,12 +195,30 @@ struct InkDecoder {
 
     // MARK: - Node classification
 
-    private func classify(_ element: InkJSONValue) -> NodeKind? {
+    /// Classify `element`, or record it in `log` at `location` and leave it out
+    /// when it is a feature the runtime does not support.
+    private func classify(
+        _ element: InkJSONValue,
+        at location: [String],
+        log: inout UnsupportedFeatureLog
+    ) throws -> NodeKind? {
+        guard let feature = Self.unsupportedFeature(of: element) else {
+            return try classify(element, at: location, recordingIn: &log)
+        }
+        log.record(feature, at: location)
+        return nil
+    }
+
+    private func classify(
+        _ element: InkJSONValue,
+        at location: [String],
+        recordingIn log: inout UnsupportedFeatureLog
+    ) throws -> NodeKind? {
         switch element {
         case .null:
             return nil
         case .string(let string):
-            return classifyString(string)
+            return try classifyString(string)
         case .bool(let value):
             return .boolValue(value)
         case .int(let value):
@@ -154,40 +226,39 @@ struct InkDecoder {
         case .double(let value):
             return .floatValue(value)
         case .array(let array):
-            return .container(parseContainer(array))
+            return .container(try parseContainer(array, at: location, log: &log))
         case .object(let dict):
-            return classifyDict(dict)
+            return try classifyDict(dict)
         }
     }
 
-    private func classifyString(_ string: String) -> NodeKind {
-        if string == "\n"   { return .newline }
-        if string == "#"    { return .tagOpen }
-        if string == "/#"   { return .tagClose }
-        if string == "void" { return .voidValue }
+    /// The unsupported feature a token stands for, or `nil`: one of
+    /// `unsupportedTokens`, a list value, an external function call, or a tag in
+    /// the inkVersion 20 format (`{"#": "text"}`, replaced by `"#"`…`"/#"` in 21).
+    private static func unsupportedFeature(of element: InkJSONValue) -> String? {
+        if case .string(let string) = element { return unsupportedTokens[string] }
+        guard case .object(let dict) = element else { return nil }
+        if dict["list"] != nil { return listFeature }
+        if dict["x()"] != nil { return "EXTERNAL functions" }
+        if dict["#"] != nil { return "tags in the inkVersion 20 format (recompile with a current inklecate)" }
+        return nil
+    }
+
+    private static let fixedTokens: [String: NodeKind] = [
+        "\n": .newline, "#": .tagOpen, "/#": .tagClose, "void": .voidValue,
+    ]
+
+    private func classifyString(_ string: String) throws -> NodeKind {
+        if let node = Self.fixedTokens[string] { return node }
         if string.hasPrefix("^") { return .text(String(string.dropFirst())) }
         if Self.controlCommands.contains(string) { return .controlCommand(string) }
         if Self.nativeFunctions.contains(string) { return .nativeFunction(string) }
-        // Unknown string token — surface as plain text
-        return .text(string)
+        throw InkDecodeError.malformedJSON
     }
 
-    private func classifyDict(_ dict: [String: InkJSONValue]) -> NodeKind {
-        if let path = dict["^->"]?.stringValue {
-            return .pushDivertTarget(PathReference(parsing: path))
-        }
-        if let target = dict["->t->"]?.stringValue {
-            return .tunnelDivert(target: PathReference(parsing: target))
-        }
-        if let target = dict["->"]?.stringValue {
-            let isConditional = dict["c"]?.boolValue ?? false
-            let divertTarget: DivertTarget = dict["var"] != nil
-                ? .variable(name: target)
-                : .path(PathReference(parsing: target))
-            return .divert(target: divertTarget, isConditional: isConditional)
-        }
-        if let target = dict["f()"]?.stringValue {
-            return .functionCall(target: PathReference(parsing: target))
+    private func classifyDict(_ dict: [String: InkJSONValue]) throws -> NodeKind {
+        if let divert = classifyDivert(dict) {
+            return divert
         }
         if let target = dict["*"]?.stringValue {
             let rawFlags = dict["flg"]?.intValue ?? 0
@@ -212,8 +283,29 @@ struct InkDecoder {
         if let name = dict["^var"]?.stringValue, let contextIndex = dict["ci"]?.intValue {
             return .variablePointer(name: name, contextIndex: contextIndex)
         }
-        // Unknown dict node — surface the first key for diagnostics
-        return .controlCommand(dict.keys.first ?? "?")
+        throw InkDecodeError.malformedJSON
+    }
+
+    /// A divert-shaped object (a divert-target value, a tunnel divert, a divert
+    /// or a function call), or `nil` for any other object.
+    private func classifyDivert(_ dict: [String: InkJSONValue]) -> NodeKind? {
+        if let path = dict["^->"]?.stringValue {
+            return .pushDivertTarget(PathReference(parsing: path))
+        }
+        if let target = dict["->t->"]?.stringValue {
+            return .tunnelDivert(target: PathReference(parsing: target))
+        }
+        if let target = dict["->"]?.stringValue {
+            let isConditional = dict["c"]?.boolValue ?? false
+            let divertTarget: DivertTarget = dict["var"] != nil
+                ? .variable(name: target)
+                : .path(PathReference(parsing: target))
+            return .divert(target: divertTarget, isConditional: isConditional)
+        }
+        if let target = dict["f()"]?.stringValue {
+            return .functionCall(target: PathReference(parsing: target))
+        }
+        return nil
     }
 }
 
@@ -314,6 +406,8 @@ private indirect enum InkJSONValue: Decodable {
 
 enum InkDecodeError: Error {
     case malformedJSON
+    /// Valid ink the runtime does not support yet (issue #32).
+    case unsupportedFeatures([UnsupportedFeature])
     case unsupportedInkVersion(Int)
     // DD-4: the startup probe found a JSON scalar mis-typed on this platform
     // (a float/bool/int did not classify to the expected NodeKind) — the story

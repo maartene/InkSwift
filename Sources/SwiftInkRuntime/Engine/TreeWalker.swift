@@ -352,11 +352,11 @@ struct TreeWalker {
         case "MIN":     applyBinaryOp(state: &state) { $0.asDouble <= $1.asDouble ? $0 : $1 }
         case "MAX":     applyBinaryOp(state: &state) { $0.asDouble >= $1.asDouble ? $0 : $1 }
         case "srnd":    _ = state.evalStack.popLast()  // pop seed; result is implementation-defined
-        case "floor":   applyUnaryOp(state: &state) { $0.floored }
-        case "ceiling": applyUnaryOp(state: &state) { $0.ceiled }
-        case "int":     applyUnaryOp(state: &state) { $0.toInt }
-        case "float":   applyUnaryOp(state: &state) { $0.toFloat }
-        default:    break  // unsupported native functions are no-ops
+        case "FLOOR":   applyUnaryOp(state: &state) { $0.floored }
+        case "CEILING": applyUnaryOp(state: &state) { $0.ceiled }
+        case "INT":     applyUnaryOp(state: &state) { $0.toInt }
+        case "FLOAT":   applyUnaryOp(state: &state) { $0.toFloat }
+        default:    break  // unreachable: InkDecoder refuses any other native function
         }
     }
 

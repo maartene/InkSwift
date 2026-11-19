@@ -51,9 +51,8 @@ that story (see [JS-bridge vs native parity](js-bridge-vs-native-parity.md)).
 
 ## At a glance
 
-Each row but the last was checked against inklecate 1.2.1: once compiled natively, and
-once by playing inklecate's `.ink.json` on the native runtime. The last row comes from
-the feature reference.
+Each row was checked against inklecate 1.2.1: once compiled natively, and once by
+playing inklecate's `.ink.json` on the native runtime.
 
 | Construct | Native compiler | Native runtime, inklecate JSON | What to do |
 |---|---|---|---|
@@ -62,13 +61,19 @@ the feature reference.
 | Tag with inline logic: `Line. # pic{n}.jpg` | Rejected | ✅ Works¹ | Compile with inklecate |
 | Tag inside inline logic: `{met: Hi # greeting}`, `{A # t\|B}` | Rejected | ✅ Works¹ | Compile with inklecate |
 | A conditional inside a function body | Compiles, **plays wrong** | ✅ Works | Compile with inklecate |
+| `FLOOR()`, `INT()`, `CEILING()`, `FLOAT()` | Compile, **play wrong**² | ✅ Works | Compile with inklecate |
 | Multi-line sequences: `{stopping:` … `}`, `{cycle:` … `}` | Rejected | ❌ **Plays wrong** (repeats an item) | Use the inline forms (`{a\|b}`, `{&a\|b}`, `{!a\|b}`), or the JS-bridge |
-| Shuffle: `{~a\|b}` | Rejected | ❌ Plays nothing, no error | JS-bridge |
-| `LIST`, `RANDOM` / `SEED_RANDOM`, threads (`<-`), `EXTERNAL` | Rejected | ❌ Not supported | JS-bridge |
+| Shuffle: `{~a\|b}` | Rejected | ❌ Refused at load | JS-bridge |
+| `LIST`, `RANDOM()`, threads (`<-`), `EXTERNAL` | Rejected | ❌ Refused at load | JS-bridge |
+| `TURNS()`, `TURNS_SINCE()`, `CHOICE_COUNT()`, `POW()`, `?` / `!?`, `READ_COUNT()` of a variable | Compile and **play wrong**, or a cryptic error² | ❌ Refused at load | JS-bridge, or avoid the function |
 
 ¹ A line's tags currently stay in `currentTags` for later lines until the next choice,
 for every tag ([#30](https://github.com/maartene/InkSwift/issues/30), a runtime
 difference).
+
+² The native compiler does not reject these yet: `{POW(2, 3)}` prints `3`, `{TURNS()}`
+prints nothing, and `"hello" ? "xyz"` is true. Until it does, don't use them in a natively
+compiled story.
 
 The authoritative construct list, including everything that *is* supported, is the
 [Ink feature reference](../product/ink-feature-reference.md).
@@ -140,17 +145,43 @@ ship with the native compiler.
 
 These affect both paths. Compiling with inklecate does not avoid them.
 
-### Not supported
+### Not supported: refused at load
 
-| Feature | What happens |
+`Story(json:)` checks the whole story when it loads, including knots no playthrough
+reaches. If the story uses a feature the runtime does not support, it throws
+`StoryError.unsupportedFeatures`, listing every such feature and where the story uses it,
+so you find out during development, not from a player:
+
+```swift
+do {
+    let story = try Story(json: json)
+} catch StoryError.unsupportedFeatures(let features) {
+    for feature in features {
+        print("\(feature.name) in \(feature.locations)")
+        // e.g. "RANDOM() in [\"never_visited\", \"shop.haggle\"]"; "" is the top level
+    }
+}
+```
+
+| Feature | Reported as |
 |---|---|
-| `LIST` | Not supported |
-| Threads (`<-`) | Not supported |
-| `RANDOM`, `SEED_RANDOM`, shuffle `{~a\|b}` | Not supported; a shuffle plays nothing, with no error |
-| `EXTERNAL` functions | No host binding API |
-| Multi-line sequences | Play the wrong item: `{stopping:` gives *First, First, Second* where inklecate gives *First, Second, Second* |
+| `LIST` (values, list functions, `LIST_RANDOM`) | `LIST` |
+| Threads | `threads (<-)` |
+| `RANDOM()` | `RANDOM()` |
+| Shuffle | `shuffle {~a\|b}` |
+| `EXTERNAL` function calls (there is no host binding API) | `EXTERNAL functions` |
+| `TURNS()`, `TURNS_SINCE()`, `CHOICE_COUNT()`, `POW()` | the function's name |
+| `READ_COUNT()` of a divert-target variable (a literal `READ_COUNT(-> knot)` works) | `READ_COUNT() of a divert-target variable` |
+| `?` and `!?` (contains, does not contain) | `? (contains)`, `!? (does not contain)` |
+| Tags in the old inkVersion 20 format | asks you to recompile with a current inklecate |
 
-The inline sequence forms (`{a|b}`, `{&a|b}`, `{!a|b}`) are supported by both halves.
+`SEED_RANDOM()` is accepted. With every random feature refused, a seed changes nothing
+a player can see.
+
+Multi-line sequences are not refused, but they **play the wrong item**: `{stopping:`
+gives *First, First, Second* where inklecate gives *First, Second, Second*
+([#33](https://github.com/maartene/InkSwift/issues/33)). The inline forms (`{a|b}`,
+`{&a|b}`, `{!a|b}`) are supported by both halves.
 
 ### Behaviour that differs
 
@@ -163,8 +194,10 @@ Known places where the same compiled story plays differently on InkSwift's runti
   ([#28](https://github.com/maartene/InkSwift/issues/28)).
 - **`-> END` does not discard pending choices**, so a choice generated before the story
   ends can still be offered (see [Native compiler known gaps](native-compiler-known-gaps.md)).
-- **Default (fallback) choices**, `TURNS()` and `TURNS_SINCE`, a tunnel onwards with a
-  divert (`->-> target`), and `FLOOR` / `INT` / `CEILING` differ in some cases.
+- A **whole-number float** prints as `2.0`; inklecate prints `2`. Float division can
+  also lose its fraction.
+- **Default (fallback) choices** and a tunnel onwards with a divert (`->-> target`)
+  differ in some cases.
 
 For the complete, current list, run this from a checkout of InkSwift. Reasons naming
 the runtime show up for both paths:

@@ -154,7 +154,7 @@ struct UpstreamConformance01Tests {
         Conformance.run("TestChoiceCount", .native, Self.testChoiceCount)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: unsupported threads"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: unsupported CHOICE_COUNT(), threads"))
     func `TestChoiceCount — inklecate JSON on the runtime`() {
         Conformance.run("TestChoiceCount", .runtime, Self.testChoiceCount)
     }
