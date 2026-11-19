@@ -81,7 +81,7 @@ These constructs are rejected by the compiler with a located
 | 37 | LIST declarations | `LIST colors = red, green` | List value type and operators are unimplemented. |
 | 38 | RANDOM / SEED_RANDOM | `~ r = RANDOM(1, 6)` | No deterministic RNG support in the runtime. |
 | 39 | External functions | `EXTERNAL beep()` | No host-binding mechanism for external calls. |
-| 40 | Multi-line sequences | `{stopping:` / `- Halt!` / `- I said halt!` / `}` (also `{cycle:`, `{once:`, `{shuffle:`, `{&`) | The compiler has no lowering for the block form; only the inline `{a\|b}` forms (rows 25–27) are supported. |
+| 40 | Multi-line sequences | `{stopping:` / `- Halt!` / `- I said halt!` / `}` (also `{cycle:`, `{once:`, `{shuffle:`, `{&`) | The compiler has no lowering for the block form; only the inline `{a\|b}` forms (rows 25–27) are supported. A story using one plays correctly from its inklecate/Inky `.ink.json`. |
 | 41 | `INCLUDE` | `INCLUDE chapter_two.ink` | The compiler reads a single source string and has no file resolution. |
 | 42 | String with inline logic | `~ return "value {n}"` (also in `~ temp`, function arguments and conditions) | The compiler has no lowering that builds a string at runtime (`str` … `out` … `/str`). Quotes in prose (`She said "hi {n}".`) are text and are supported. |
 | 43 | Tag with inline logic | `A line. # pic{n}.jpg` (also `{a\|b}` in a tag, on content, choice and gather lines) | The compiler emits the tag text verbatim and does not lower the logic inside it. Static tags are supported. |
@@ -121,10 +121,11 @@ the reasons are not uniform:
   are lower priority (the BEYOND tier) and out of scope for the current ceiling.
 
 - **Multi-line sequences and `INCLUDE` (rows 40–41)** are **compiler-unsupported**.
-  A story using `INCLUDE` plays correctly from its inklecate/Inky `.ink.json`. A
-  multi-line sequence does **not**: the runtime plays the wrong item from inklecate's
-  JSON too (`{stopping:` gives First, First, Second instead of First, Second, Second),
-  so it is a runtime gap as well. Both used to compile
+  A story using either plays correctly from its inklecate/Inky `.ink.json`, so
+  compiling with inklecate is the workaround. (Until #33 was fixed the runtime also
+  played a multi-line sequence wrong from inklecate's JSON: `{stopping:` gave First,
+  First, Second instead of First, Second, Second, because a labelled gather's visit
+  count was split between its index and its name.) Both used to compile
   silently into the wrong story (a multi-line sequence became a conditional on a
   variable named `stopping`, `once` and so on; an `INCLUDE` line played as text), until
   the upstream conformance suite exposed it. They are rejected with a located error

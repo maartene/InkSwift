@@ -458,7 +458,7 @@ struct UpstreamConformance04Tests {
         Conformance.run("TestVisitCountBugDueToNestedContainers", .native, Self.testVisitCountBugDueToNestedContainers)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: visit counts in nested containers"))
+    @Test
     func `TestVisitCountBugDueToNestedContainers — inklecate JSON on the runtime`() {
         Conformance.run("TestVisitCountBugDueToNestedContainers", .runtime, Self.testVisitCountBugDueToNestedContainers)
     }

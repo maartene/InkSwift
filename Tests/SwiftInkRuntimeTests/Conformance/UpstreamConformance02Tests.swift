@@ -343,7 +343,7 @@ struct UpstreamConformance02Tests {
         Conformance.run("TestGatherReadCountWithInitialSequence", .native, Self.testGatherReadCountWithInitialSequence)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: read count of a gather after a sequence"))
+    @Test
     func `TestGatherReadCountWithInitialSequence — inklecate JSON on the runtime`() {
         Conformance.run("TestGatherReadCountWithInitialSequence", .runtime, Self.testGatherReadCountWithInitialSequence)
     }

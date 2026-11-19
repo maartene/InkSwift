@@ -5,7 +5,7 @@ final class InkEngine {
     var state: StoryState
     let root: ContainerNode
     private let resolver: ContainerPathResolver
-    private let visitCounter = VisitCounter()
+    private let visitCounter: VisitCounter
     private var lastCompletedLine: String = ""
 
     // Container execution stack. Each frame tracks a container, its execution
@@ -30,6 +30,7 @@ final class InkEngine {
     init(root: ContainerNode) {
         self.root = root
         self.resolver = ContainerPathResolver(root: root)
+        self.visitCounter = VisitCounter(resolver: resolver)
         self.state = StoryState()
         containerStack = [ContainerFrame(container: root, index: 0, pathFromRoot: .root)]
         initializeGlobalVariables()

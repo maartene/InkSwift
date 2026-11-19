@@ -174,8 +174,7 @@
   "native": "a gather and a choice on the same line"
  },
  "TestGatherReadCountWithInitialSequence": {
-  "native": "read count of a gather after a sequence",
-  "runtime": "read count of a gather after a sequence"
+  "native": "read count of a gather after a sequence"
  },
  "TestIdentifersCanStartWithNumbers": {
   "native": "native compiler rejects a valid story: `512x2` is not a valid assignment target."
@@ -463,8 +462,7 @@
   "runtime": "default (fallback) choices"
  },
  "TestVisitCountBugDueToNestedContainers": {
-  "native": "visit counts in nested containers",
-  "runtime": "visit counts in nested containers"
+  "native": "visit counts in nested containers"
  },
  "TestVisitCountsWhenChoosing": {
   "native": "visit counts when choosing a path or a choice",

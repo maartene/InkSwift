@@ -63,7 +63,7 @@ playing inklecate's `.ink.json` on the native runtime.
 | Glue before a tag: `Text <> # t` | Compiles, **plays wrong** (prints `<>` and breaks the line) | ✅ Works | Put the tag on the glued line, or compile with inklecate |
 | A conditional inside a function body | Compiles, **plays wrong** | ✅ Works | Compile with inklecate |
 | `FLOOR()`, `INT()`, `CEILING()`, `FLOAT()` | Compile, **play wrong**² | ✅ Works | Compile with inklecate |
-| Multi-line sequences: `{stopping:` … `}`, `{cycle:` … `}` | Rejected | ❌ **Plays wrong** (repeats an item) | Use the inline forms (`{a\|b}`, `{&a\|b}`, `{!a\|b}`), or the JS-bridge |
+| Multi-line sequences: `{stopping:` … `}`, `{cycle:` … `}` | Rejected | ✅ Works | Compile with inklecate, or use the inline forms (`{a\|b}`, `{&a\|b}`, `{!a\|b}`) |
 | Shuffle: `{~a\|b}` | Rejected | ❌ Refused at load | JS-bridge |
 | `LIST`, `RANDOM()`, threads (`<-`), `EXTERNAL` | Rejected | ❌ Refused at load | JS-bridge |
 | `TURNS()`, `TURNS_SINCE()`, `CHOICE_COUNT()`, `POW()`, `?` / `!?`, `READ_COUNT()` of a variable | Compile and **play wrong**, or a cryptic error² | ❌ Refused at load | JS-bridge, or avoid the function |
@@ -104,7 +104,7 @@ do {
 | String with inline logic | `~ temp label = "value {n}"`, `{f("a{n}")}` | Yes |
 | Tag with inline logic | `Line. # pic{n}.jpg`, `# {a\|b}` | Yes¹ |
 | Tag inside inline logic | `{met: Hi # greeting}`, `{A # t\|B}` | Yes¹ |
-| Multi-line sequence | `{stopping:` / `- Halt!` / `- I said halt!` / `}` | No, see [Runtime differences](#runtime-differences) |
+| Multi-line sequence | `{stopping:` / `- Halt!` / `- I said halt!` / `}` | Yes |
 | Shuffle | `{~heads\|tails}` | No |
 | `LIST`, `RANDOM`, threads, `EXTERNAL` | `LIST colours = red, green` | No |
 
@@ -178,11 +178,6 @@ do {
 
 `SEED_RANDOM()` is accepted. With every random feature refused, a seed changes nothing
 a player can see.
-
-Multi-line sequences are not refused, but they **play the wrong item**: `{stopping:`
-gives *First, First, Second* where inklecate gives *First, Second, Second*
-([#33](https://github.com/maartene/InkSwift/issues/33)). The inline forms (`{a|b}`,
-`{&a|b}`, `{!a|b}`) are supported by both halves.
 
 ### Behaviour that differs
 

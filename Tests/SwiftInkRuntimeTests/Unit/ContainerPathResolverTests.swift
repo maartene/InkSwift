@@ -5,6 +5,9 @@
 // Fixture shapes relied on (see the .ink.json files):
 // - slice03-read-counts: knot `café` keeps its content in the anonymous `café.0`,
 //   with `c-0`/`c-1` named there and the conditional's `b` at `café.0.5.b`.
+// - issue33-loop-with-choice: labelled gather `loop` is child 0 of `0` and also
+//   named there, so it is both `0.0` and `0.loop`; its first child is an unnamed
+//   sequence container; `g-0` is named-only content of `0`.
 // - slice-bug-glue-after-choice: `$r1` / `$r2` anchors at `waited.0.g-0.15.$r1`
 //   (child 5) and `waited.0.g-0.c-2.$r2` (child 5); gather `g-1` in `waited.0`.
 
@@ -21,7 +24,8 @@ struct ContainerPathResolverTests {
     // Behavior 3: $-anchor paths resolve to the anchor's parent and the index past it
     // Behavior 4: read-count keys resolve like targets, falling back to concatenation
     // Behavior 5: the ancestor chain gives each ancestor's resume index
-    // Budget = 5 behaviors × 2 = 10 unit tests max
+    // Behavior 6: every spelling of a container has one canonical path (name where named)
+    // Budget = 6 behaviors × 2 = 12 unit tests max
 
     private static func resolver(for fixture: String) throws -> ContainerPathResolver {
         let url = try #require(Bundle.module.url(forResource: fixture, withExtension: "ink.json"))
@@ -59,6 +63,7 @@ struct ContainerPathResolverTests {
 
     private static let cafe = "slice03-read-counts"
     private static let waited = "slice-bug-glue-after-choice"
+    private static let labelledLoop = "issue33-loop-with-choice"
 
     @Test(arguments: [
         // first caret leaves the object for its container: no component dropped
@@ -136,5 +141,28 @@ struct ContainerPathResolverTests {
             try #require(resolver.node(at: Self.path(""))).children.count, 1, 1, 16,
         ])
         #expect(resolver.ancestors(along: Self.path("waited.nowhere.0")).map(\.path) == [Self.path("")])
+    }
+
+    // MARK: - Behavior 6: canonical path
+
+    // C# Object.path names a child wherever it has a name and indexes it otherwise
+    // (Object.cs:86-89), so the index and the name spelling of one labelled gather
+    // are one container with one path.
+    @Test(arguments: [
+        ("0.0", "0.loop"), ("0.loop", "0.loop"),
+        ("0.0.0", "0.loop.0"), ("0.loop.0", "0.loop.0"),
+        ("0.0.c-0", "0.loop.c-0"), ("0.g-0", "0.g-0"), ("0", "0"), ("", ""),
+    ])
+    func `every spelling of a container has the same canonical path`(dotted: String, canonical: String) throws {
+        let resolver = try Self.resolver(for: Self.labelledLoop)
+
+        #expect(resolver.canonicalPath(of: Self.path(dotted)) == Self.path(canonical))
+    }
+
+    @Test(arguments: ["nowhere", "0.7", "0.loop.nowhere"])
+    func `a path that names no container has no canonical path`(dotted: String) throws {
+        let resolver = try Self.resolver(for: Self.labelledLoop)
+
+        #expect(resolver.canonicalPath(of: Self.path(dotted)) == nil)
     }
 }

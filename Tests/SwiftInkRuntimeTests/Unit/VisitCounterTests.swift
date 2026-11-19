@@ -13,7 +13,10 @@ import Testing
 @Suite("VisitCounter")
 struct VisitCounterTests {
 
-    private let counter = VisitCounter()
+    // An empty story tree: no key resolves, so every key keeps its spelling.
+    private let counter = VisitCounter(
+        resolver: ContainerPathResolver(root: ContainerNode(children: [], namedContent: [:], flags: 0, name: nil))
+    )
     private let knot = ContainerPath(components: [.name("knot")])
 
     private func container(flags: Int) -> ContainerNode {

@@ -58,6 +58,23 @@ struct ContainerPathResolver {
         return chain
     }
 
+    /// The one path every spelling of a container shares, for keying its visit
+    /// count (ADR-022 §1). inklecate gives a named child of a content array both
+    /// an index and a name (a labelled gather is `0.0` and `0.loop`); like C#
+    /// `Object.path` (Object.cs:86-89), each component is the child's name
+    /// wherever it has one and its index otherwise. Nil when `path` names no
+    /// container.
+    func canonicalPath(of path: ContainerPath) -> ContainerPath? {
+        var current = root
+        var canonical: [PathComponent] = []
+        for component in path.components {
+            guard let (child, _) = descend(from: current, through: component) else { return nil }
+            canonical.append(canonicalComponent(of: child, reachedThrough: component))
+            current = child
+        }
+        return ContainerPath(components: canonical)
+    }
+
     // MARK: - Relative resolution
 
     /// The anchor a relative path's carets reach from `current`. Nil when the
@@ -150,6 +167,13 @@ struct ContainerPathResolver {
     }
 
     // MARK: - Private
+
+    /// The child's name when it has one, else the index it was reached through.
+    /// The decoder registers every named child under its name, so the name
+    /// always leads back to it.
+    private func canonicalComponent(of child: ContainerNode, reachedThrough component: PathComponent) -> PathComponent {
+        child.name.map(PathComponent.name) ?? component
+    }
 
     /// Navigate `components` down from `container`, following indices into
     /// `.children` and names into `.namedContent`.
