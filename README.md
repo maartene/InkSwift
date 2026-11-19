@@ -15,12 +15,48 @@ The original `InkStory` runtime (the JavaScriptCore/inkjs **JS-bridge**) is now 
 See the [migration guide](docs/how-to/migrate-from-js-bridge.md) to move an existing
 `InkStory`-based app to the native runtime.
 
+### Getting started with SwiftInkRuntime
+
+Add the package to `Package.swift` (the native runtime needs 2.1.0 or later):
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/maartene/InkSwift.git", from: "2.1.0")
+],
+targets: [
+    .target(
+        name: "MyGame",
+        dependencies: [.product(name: "SwiftInkRuntime", package: "InkSwift")]),
+]
+```
+
+Load a story, either compiled by InkSwift's own compiler or exported as JSON by
+inklecate or Inky, and play it:
+
+```swift
+import SwiftInkRuntime
+
+let story = Story(blueprint: try InkCompiler.compile(source: inkSource))
+// or: let story = try Story(json: inkJSON)
+
+while story.canContinue {
+    print(story.continue(), story.currentTags)
+}
+for choice in story.currentChoices {
+    print("\(choice.index): \(choice.text)")
+}
+try story.chooseChoice(at: 0)
+```
+
 ### Known gaps vs the JS-bridge
 
 The native runtime does not yet cover every JS-bridge capability, so this is not a claim
-of complete parity. Known gaps include `LIST`, `RANDOM` / `SEED_RANDOM`, threads,
+of complete parity. Known gaps include `LIST`, `RANDOM`, threads,
 `EXTERNAL` functions, shuffle variable-text (`{~a|b}`), multi-line sequences,
-`INCLUDE`, and strings or tags with inline logic in the native compiler, and Combine-based variable observation. If your story needs one of these, stay on the JS-bridge for now. The
+`INCLUDE`, and strings or tags with inline logic in the native compiler, and Combine-based variable observation. If your story needs one of these, stay on the JS-bridge for now.
+Nothing unsupported plays silently: the native compiler rejects such a story with a located
+`CompileError`, and `Story(json:)` refuses it at load with `StoryError.unsupportedFeatures`,
+listing every unsupported feature and where it is used. The
 complete, maintained list is the
 [supported-parity / known-gaps statement](docs/reference/js-bridge-vs-native-parity.md).
 
@@ -78,7 +114,7 @@ let package = Package(
     dependencies: [
         // Dependencies declare other packages that this package depends on.
         // .package(url: /* package url */, from: "1.0.0"),
-        .package(url: "https://github.com/maartene/InkSwift.git", from: "2.0.0")
+        .package(url: "https://github.com/maartene/InkSwift.git", from: "2.1.0")
     ],
     targets: [
         // Targets are the basic building blocks of a package. A target can define a module or a test suite.
