@@ -803,6 +803,7 @@
             "Unsupported built-ins are located .unsupportedConstruct errors under the runtime's names: `TURNS()`, `CHOICE_COUNT()`, `RANDOM()`, `READ_COUNT() of a divert-target variable` (names checked against InkDecoder/the catalog before asserting)",
             "TURNS_SINCE: `{TURNS_SINCE(-> k)}` is rejected at the call site, before argument parsing, with a located `.unsupportedConstruct` whose construct is \"TURNS_SINCE()\" (never an unlocated unexpectedToken)",
             "CompileError.construct strings are the runtime's names: \"RANDOM()\", \"LIST\", \"threads (<-)\", \"EXTERNAL functions\", \"INCLUDE\"; Compiler_S6_UnsupportedRejectionTests.swift:24-29 updated; a consistency test asserts that for every unsupported catalog entry the compiler's construct equals the runtime's UnsupportedFeature.name",
+            "Found in 04-02: calling a knot as a function (`~ k()` where `k` is a knot, not a `function`) now fails with \"Function call target not found: '-> k'\", while inklecate says \"k hasn't been marked as a function…\". Probe inklecate's verbatim text and report the same, located, so the two compile paths agree",
             "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained; changed production files' Code Health not below their main baseline"
           ],
           "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_UnsupportedBuiltinRejectionTests.swift",
