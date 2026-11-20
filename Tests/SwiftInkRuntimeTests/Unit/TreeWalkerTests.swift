@@ -17,15 +17,15 @@ import Testing
 struct TreeWalkerTests {
 
     // B1: Container exhaustion returns nil
-    @Test func `step returns nil when container is exhausted`() {
+    @Test func `step returns nil when container is exhausted`() throws {
         let container = ContainerNode(children: [], namedContent: [:], flags: 0, name: nil)
         let walker = TreeWalker()
         var state = StoryState()
-        let result = walker.step(in: container, state: &state)
+        let result = try walker.step(in: container, state: &state)
         #expect(result == nil)
     }
 
-    @Test func `step returns nil when pointer index equals children count`() {
+    @Test func `step returns nil when pointer index equals children count`() throws {
         let container = ContainerNode(
             children: [.text("hello")],
             namedContent: [:], flags: 0, name: nil
@@ -33,45 +33,45 @@ struct TreeWalkerTests {
         let walker = TreeWalker()
         var state = StoryState()
         state.pointer.index = 1  // already past the single child
-        let result = walker.step(in: container, state: &state)
+        let result = try walker.step(in: container, state: &state)
         #expect(result == nil)
     }
 
     // B2: .text node appends to outputStream
-    @Test func `step appends text node content to outputStream`() {
+    @Test func `step appends text node content to outputStream`() throws {
         let container = ContainerNode(
             children: [.text("Hello, world!")],
             namedContent: [:], flags: 0, name: nil
         )
         let walker = TreeWalker()
         var state = StoryState()
-        _ = walker.step(in: container, state: &state)
+        _ = try walker.step(in: container, state: &state)
         #expect(state.outputStream == ["Hello, world!"])
         #expect(state.pointer.index == 1)
     }
 
-    @Test func `step appends multiple text nodes in order`() {
+    @Test func `step appends multiple text nodes in order`() throws {
         let container = ContainerNode(
             children: [.text("Line "), .text("one")],
             namedContent: [:], flags: 0, name: nil
         )
         let walker = TreeWalker()
         var state = StoryState()
-        _ = walker.step(in: container, state: &state)
-        _ = walker.step(in: container, state: &state)
+        _ = try walker.step(in: container, state: &state)
+        _ = try walker.step(in: container, state: &state)
         #expect(state.outputStream == ["Line ", "one"])
     }
 
     // B3: .newline appends "\n" to outputStream
-    @Test func `step appends newline sentinel to outputStream for newline node`() {
+    @Test func `step appends newline sentinel to outputStream for newline node`() throws {
         let container = ContainerNode(
             children: [.text("Line"), .newline],
             namedContent: [:], flags: 0, name: nil
         )
         let walker = TreeWalker()
         var state = StoryState()
-        _ = walker.step(in: container, state: &state)
-        _ = walker.step(in: container, state: &state)
+        _ = try walker.step(in: container, state: &state)
+        _ = try walker.step(in: container, state: &state)
         #expect(state.outputStream == ["Line", "\n"])
     }
 
@@ -85,51 +85,51 @@ struct TreeWalkerTests {
     ])
     func `newline is dropped when the output is empty or already ends in a newline`(
         children: [NodeKind], expected: [OutputItem]
-    ) {
+    ) throws {
         let container = ContainerNode(children: children, namedContent: [:], flags: 0, name: nil)
         let walker = TreeWalker()
         var state = StoryState()
-        while walker.step(in: container, state: &state) != nil {}
+        while try walker.step(in: container, state: &state) != nil {}
         #expect(state.outputStream == expected)
     }
 
     // B4: controlCommand "done"/"end" sets isEnded = true
     @Test(arguments: ["done", "end"])
-    func `step sets isEnded to true for done or end control command`(command: String) {
+    func `step sets isEnded to true for done or end control command`(command: String) throws {
         let container = ContainerNode(
             children: [.controlCommand(command)],
             namedContent: [:], flags: 0, name: nil
         )
         let walker = TreeWalker()
         var state = StoryState()
-        _ = walker.step(in: container, state: &state)
+        _ = try walker.step(in: container, state: &state)
         #expect(state.isEnded == true)
     }
 
     // B6: "out" suppresses void sentinel — does not emit "void" text to output stream
-    @Test func `out control command suppresses void sentinel and does not emit void to output`() {
+    @Test func `out control command suppresses void sentinel and does not emit void to output`() throws {
         let walker = TreeWalker()
         var state = StoryState()
         // Push the void sentinel (string "void") onto the eval stack
         state.evalStack.append(.string("void"))
-        walker.dispatchNode(.controlCommand("out"), state: &state)
+        try walker.dispatchNode(.controlCommand("out"), state: &state)
         #expect(state.outputStream.isEmpty, "out must not emit the void sentinel to outputStream")
         #expect(state.evalStack.isEmpty, "void sentinel must be consumed from evalStack by out")
     }
 
-    @Test func `out control command emits non-void value to output stream`() {
+    @Test func `out control command emits non-void value to output stream`() throws {
         let walker = TreeWalker()
         var state = StoryState()
         state.evalStack.append(.int(42))
-        walker.dispatchNode(.controlCommand("out"), state: &state)
+        try walker.dispatchNode(.controlCommand("out"), state: &state)
         #expect(state.outputStream == ["42"])
     }
 
     // B7: .variablePointer node pushes a pointer value onto evalStack
-    @Test func `variablePointer node pushes pointer value with correct name onto evalStack`() {
+    @Test func `variablePointer node pushes pointer value with correct name onto evalStack`() throws {
         let walker = TreeWalker()
         var state = StoryState()
-        walker.dispatchNode(.variablePointer(name: "score", contextIndex: -1), state: &state)
+        try walker.dispatchNode(.variablePointer(name: "score", contextIndex: -1), state: &state)
         if case .variablePointer(let name, let contextIndex) = state.evalStack.last {
             #expect(name == "score")
             #expect(contextIndex == -1)
@@ -138,15 +138,15 @@ struct TreeWalkerTests {
         }
     }
 
-    @Test func `variablePointer node pushes exactly one item onto evalStack`() {
+    @Test func `variablePointer node pushes exactly one item onto evalStack`() throws {
         let walker = TreeWalker()
         var state = StoryState()
-        walker.dispatchNode(.variablePointer(name: "x", contextIndex: -1), state: &state)
+        try walker.dispatchNode(.variablePointer(name: "x", contextIndex: -1), state: &state)
         #expect(state.evalStack.count == 1)
     }
 
     // B8: variable assignment where stored value is a pointer mutates the pointed-to global
-    @Test func `variableAssignment to pointer-holding variable mutates the pointed-to global`() {
+    @Test func `variableAssignment to pointer-holding variable mutates the pointed-to global`() throws {
         let walker = TreeWalker()
         var state = StoryState()
         // Set up: global "score" = 0, temp "total" holds a pointer to "score"
@@ -155,18 +155,18 @@ struct TreeWalkerTests {
         // Push 10 to evalStack (the value to assign via the pointer)
         state.evalStack.append(.int(10))
         // Non-global assignment to "total" (re-assignment, isGlobal: false)
-        walker.dispatchNode(.variableAssignment(name: "total", isGlobal: false), state: &state)
+        try walker.dispatchNode(.variableAssignment(name: "total", isGlobal: false), state: &state)
         // "score" global must be updated to 10
         #expect(state.variablesState["score"] == .int(10))
     }
 
-    @Test func `variableAssignment to pointer-holding variable does not overwrite the pointer itself`() {
+    @Test func `variableAssignment to pointer-holding variable does not overwrite the pointer itself`() throws {
         let walker = TreeWalker()
         var state = StoryState()
         state.variablesState["score"] = .int(0)
         state.variablesState["total"] = .variablePointer(name: "score", contextIndex: -1)
         state.evalStack.append(.int(10))
-        walker.dispatchNode(.variableAssignment(name: "total", isGlobal: false), state: &state)
+        try walker.dispatchNode(.variableAssignment(name: "total", isGlobal: false), state: &state)
         // "total" must still hold the pointer (not be replaced with 10)
         if case .variablePointer(let name, _) = state.variablesState["total"] {
             #expect(name == "score")

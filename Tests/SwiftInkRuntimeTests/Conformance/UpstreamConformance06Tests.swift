@@ -294,7 +294,7 @@ struct UpstreamConformance06Tests {
         Conformance.run("TestFloorCeilingAndCasts", .native, Self.testFloorCeilingAndCasts)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: float division result truncated"))
+    @Test
     func `TestFloorCeilingAndCasts — inklecate JSON on the runtime`() {
         Conformance.run("TestFloorCeilingAndCasts", .runtime, Self.testFloorCeilingAndCasts)
     }

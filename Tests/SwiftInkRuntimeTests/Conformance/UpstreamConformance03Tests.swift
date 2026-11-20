@@ -567,12 +567,12 @@ struct UpstreamConformance03Tests {
         c.equal("same\ndifferent\n", story.continueMaximally())
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: string and number comparison coercion"))
+    @Test
     func `TestStringTypeCoersion — native compiler and runtime`() {
         Conformance.run("TestStringTypeCoersion", .native, Self.testStringTypeCoersion)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: string and number comparison coercion"))
+    @Test
     func `TestStringTypeCoersion — inklecate JSON on the runtime`() {
         Conformance.run("TestStringTypeCoersion", .runtime, Self.testStringTypeCoersion)
     }

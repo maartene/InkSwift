@@ -4,23 +4,25 @@ struct TreeWalker {
 
     /// Advance execution by one node, updating `state` in place.
     /// Returns the NodeKind that was processed, or nil when the container is exhausted.
-    func step(in container: ContainerNode, state: inout StoryState) -> NodeKind? {
+    func step(in container: ContainerNode, state: inout StoryState) throws(InkRuntimeError) -> NodeKind? {
         guard state.pointer.index < container.children.count else { return nil }
         let child = container.children[state.pointer.index]
         state.pointer.index += 1
-        dispatch(child, state: &state)
+        try dispatch(child, state: &state)
         return child
     }
 
     // MARK: - Dispatch (internal entry point for InkEngine)
 
-    func dispatchNode(_ node: NodeKind, state: inout StoryState) {
-        dispatch(node, state: &state)
+    /// Throws the runtime error a native function raises (ADR-017); the
+    /// engine reports it and ends the flow.
+    func dispatchNode(_ node: NodeKind, state: inout StoryState) throws(InkRuntimeError) {
+        try dispatch(node, state: &state)
     }
 
     // MARK: - Private dispatch
 
-    private func dispatch(_ node: NodeKind, state: inout StoryState) {
+    private func dispatch(_ node: NodeKind, state: inout StoryState) throws(InkRuntimeError) {
         switch node {
         case .text(let string):
             handleText(string, state: &state)
@@ -106,7 +108,7 @@ struct TreeWalker {
             state.tagAccumulator = ""
 
         case .nativeFunction(let fn):
-            handleNativeFunction(fn, state: &state)
+            try handleNativeFunction(fn, state: &state)
 
         case .voidValue:
             break  // no-op
@@ -266,19 +268,14 @@ struct TreeWalker {
 
     // MARK: - Native function handling
 
-    private func handleNativeFunction(_ fn: String, state: inout StoryState) {
+    /// Binary natives coerce their operands to one type first (C#
+    /// `CoerceValuesToSingleType`), see `BinaryNativeFunction`; one with no
+    /// string form throws the reference's error on string operands.
+    private func handleNativeFunction(_ fn: String, state: inout StoryState) throws(InkRuntimeError) {
+        if let binary = BinaryNativeFunction.byName[fn] {
+            return try applyBinaryOp(state: &state, op: binary.callAsFunction)
+        }
         switch fn {
-        case "+":   applyBinaryOp(state: &state) { $0.adding($1) }
-        case "-":   applyBinaryOp(state: &state) { $0.subtracting($1) }
-        case "*":   applyBinaryOp(state: &state) { $0.multiplying($1) }
-        case "/":   applyBinaryOp(state: &state) { $0.dividing(by: $1) }
-        case "%":   applyBinaryOp(state: &state) { $0.modulo($1) }
-        case "==":  applyBinaryOp(state: &state) { .bool($0 == $1) }
-        case "!=":  applyBinaryOp(state: &state) { .bool($0 != $1) }
-        case ">":   applyBinaryOp(state: &state) { $0.comparing(to: $1, using: >) }
-        case "<":   applyBinaryOp(state: &state) { $0.comparing(to: $1, using: <) }
-        case ">=":  applyBinaryOp(state: &state) { $0.comparing(to: $1, using: >=) }
-        case "<=":  applyBinaryOp(state: &state) { $0.comparing(to: $1, using: <=) }
         case "!":
             applyUnaryOp(state: &state) { value in
                 return .bool(!value.asBool)
@@ -296,10 +293,6 @@ struct TreeWalker {
                 default: return value
                 }
             }
-        case "&&":  applyBinaryOp(state: &state) { .bool($0.asBool && $1.asBool) }
-        case "||":  applyBinaryOp(state: &state) { .bool($0.asBool || $1.asBool) }
-        case "MIN":     applyBinaryOp(state: &state) { $0.asDouble <= $1.asDouble ? $0 : $1 }
-        case "MAX":     applyBinaryOp(state: &state) { $0.asDouble >= $1.asDouble ? $0 : $1 }
         case "srnd":    _ = state.evalStack.popLast()  // pop seed; result is implementation-defined
         case "FLOOR":   applyUnaryOp(state: &state) { $0.floored }
         case "CEILING": applyUnaryOp(state: &state) { $0.ceiled }
@@ -318,11 +311,11 @@ struct TreeWalker {
 
     private func applyBinaryOp(
         state: inout StoryState,
-        op: (InkValue, InkValue) -> InkValue
-    ) {
+        op: (InkValue, InkValue) throws(InkRuntimeError) -> InkValue
+    ) throws(InkRuntimeError) {
         guard state.evalStack.count >= 2 else { return }
         let rhs = state.evalStack.removeLast()
         let lhs = state.evalStack.removeLast()
-        state.evalStack.append(op(lhs, rhs))
+        state.evalStack.append(try op(lhs, rhs))
     }
 }

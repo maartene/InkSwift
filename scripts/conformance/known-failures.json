@@ -149,8 +149,7 @@
   "runtime": "unsupported threads"
  },
  "TestFloorCeilingAndCasts": {
-  "native": "FLOOR, INT, CEILING and casts",
-  "runtime": "float division result truncated"
+  "native": "FLOOR, INT, CEILING and casts"
  },
  "TestFunctionCallRestrictions": {
   "native": "native accepts a story inklecate rejects (function call restrictions)"
@@ -339,10 +338,6 @@
  "TestStringParserB": {
   "native": "not applicable \u2014 unit-tests inklecate's StringParser internals",
   "runtime": "not applicable \u2014 unit-tests inklecate's StringParser internals"
- },
- "TestStringTypeCoersion": {
-  "native": "string and number comparison coercion",
-  "runtime": "string and number comparison coercion"
  },
  "TestStringsInChoices": {
   "native": "string literals in choice text",

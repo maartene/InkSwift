@@ -95,62 +95,19 @@ extension InkValue {
         }
     }
 
-    func adding(_ rhs: InkValue) -> InkValue {
-        switch (self, rhs) {
-        case (.int(let a), .int(let b)): return .int(a + b)
-        case (.string(let a), .string(let b)): return .string(a + b)
-        default: return .float(asDouble + rhs.asDouble)
-        }
-    }
-
-    func subtracting(_ rhs: InkValue) -> InkValue {
-        switch (self, rhs) {
-        case (.int(let a), .int(let b)): return .int(a - b)
-        default: return .float(asDouble - rhs.asDouble)
-        }
-    }
-
-    func multiplying(_ rhs: InkValue) -> InkValue {
-        switch (self, rhs) {
-        case (.int(let a), .int(let b)): return .int(a * b)
-        default: return .float(asDouble * rhs.asDouble)
-        }
-    }
-
-    func dividing(by rhs: InkValue) -> InkValue {
-        switch (self, rhs) {
-        case (.int(let a), .int(let b)) where b != 0: return .int(a / b)
-        default:
-            let divisor = rhs.asDouble
-            guard divisor != 0.0 else { return .float(0.0) }
-            return .float(asDouble / divisor)
-        }
-    }
-
-    func modulo(_ rhs: InkValue) -> InkValue {
-        switch (self, rhs) {
-        case (.int(let a), .int(let b)) where b != 0: return .int(a % b)
-        default:
-            let divisor = rhs.asDouble
-            guard divisor != 0.0 else { return .float(0.0) }
-            return .float(asDouble.truncatingRemainder(dividingBy: divisor))
-        }
-    }
-
-    func comparing(to rhs: InkValue, using op: (Double, Double) -> Bool) -> InkValue {
-        return .bool(op(asDouble, rhs.asDouble))
-    }
-
+    /// FLOOR of a float stays a float, as in C# (`AddFloatUnaryOp(Floor, x =>
+    /// (float)Math.Floor(x))`); on an int it is the identity.
     var floored: InkValue {
         switch self {
-        case .float(let f): return .int(Int(Foundation.floor(f)))
+        case .float(let f): return .float(Foundation.floor(f))
         default: return self
         }
     }
 
+    /// CEILING of a float stays a float, as in C#; on an int it is the identity.
     var ceiled: InkValue {
         switch self {
-        case .float(let f): return .int(Int(Foundation.ceil(f)))
+        case .float(let f): return .float(Foundation.ceil(f))
         default: return self
         }
     }
@@ -174,6 +131,138 @@ extension InkValue {
         case .variablePointer: return .float(0.0)
         }
     }
+}
+
+// MARK: - Operand coercion
+
+/// A runtime error the reference raises as a `StoryException`: the engine
+/// reports `message` bare in `currentErrors` (ADR-017) and ends the flow.
+struct InkRuntimeError: Error, Equatable {
+    let message: String
+}
+
+/// Two operands coerced to one type: what every binary native operates on.
+enum CoercedOperands: Equatable {
+    case ints(Int, Int)
+    case floats(Double, Double)
+    case strings(String, String)
+}
+
+extension InkValue {
+
+    /// The C# `ValueType` order used for coercion (Value.cs): bool < int <
+    /// float < string. The higher type of two operands "infects" the other.
+    enum CoercionType: Int, Comparable {
+        case bool, int, float, string
+
+        static func < (lhs: CoercionType, rhs: CoercionType) -> Bool {
+            lhs.rawValue < rhs.rawValue
+        }
+    }
+
+    var coercionType: CoercionType {
+        switch self {
+        case .bool: return .bool
+        case .int: return .int
+        case .float: return .float
+        // A pointer is dereferenced before it reaches an operator; should one
+        // get here, it takes part by its name, as text.
+        case .string, .variablePointer: return .string
+        }
+    }
+
+    /// C# `CoerceValuesToSingleType` (NativeFunctionCall.cs ~231-250): both
+    /// operands cast to the higher of their types, and never below int, so two
+    /// bools operate as ints. Host values from `setVariable` already have
+    /// their own type (ADR-024 §5); this is the one coercion point.
+    static func coerced(_ lhs: InkValue, _ rhs: InkValue) -> CoercedOperands {
+        switch max(lhs.coercionType, rhs.coercionType, .int) {
+        case .bool, .int: return .ints(lhs.asIntOperand, rhs.asIntOperand)
+        case .float: return .floats(lhs.asDouble, rhs.asDouble)
+        case .string: return .strings(lhs.asString, rhs.asString)
+        }
+    }
+
+    /// An int or bool operand as an int (C# `BoolValue.Cast(Int)`).
+    private var asIntOperand: Int {
+        switch self {
+        case .int(let n): return n
+        default: return asBool ? 1 : 0
+        }
+    }
+}
+
+/// A binary native function per coerced operand type, as C# registers one
+/// operation per `ValueType` (NativeFunctionCall.cs GenerateNativeFunctions).
+/// An operation without a string form raises the reference's error when the
+/// operands coerce to strings.
+struct BinaryNativeFunction {
+    let name: String
+    let int: (Int, Int) -> InkValue
+    let float: (Double, Double) -> InkValue
+    var string: ((String, String) -> InkValue)?
+
+    func callAsFunction(_ lhs: InkValue, _ rhs: InkValue) throws(InkRuntimeError) -> InkValue {
+        switch InkValue.coerced(lhs, rhs) {
+        case .ints(let a, let b): return int(a, b)
+        case .floats(let a, let b): return float(a, b)
+        case .strings(let a, let b):
+            guard let string else {
+                throw InkRuntimeError(message: "Cannot perform operation '\(name)' on String")
+            }
+            return string(a, b)
+        }
+    }
+
+    /// A comparison or logic operation: the same Bool-valued test for ints and floats.
+    static func test(
+        _ name: String,
+        int: @escaping (Int, Int) -> Bool,
+        float: @escaping (Double, Double) -> Bool,
+        string: ((String, String) -> Bool)? = nil
+    ) -> BinaryNativeFunction {
+        BinaryNativeFunction(
+            name: name,
+            int: { .bool(int($0, $1)) },
+            float: { .bool(float($0, $1)) },
+            string: string.map { test in { .bool(test($0, $1)) } })
+    }
+
+    static let add = BinaryNativeFunction(
+        name: "+", int: { .int($0 + $1) }, float: { .float($0 + $1) }, string: { .string($0 + $1) })
+    static let subtract = BinaryNativeFunction(
+        name: "-", int: { .int($0 - $1) }, float: { .float($0 - $1) })
+    static let multiply = BinaryNativeFunction(
+        name: "*", int: { .int($0 * $1) }, float: { .float($0 * $1) })
+    // Division and modulo by zero yield 0.0 rather than trapping; C# throws a
+    // non-story DivideByZeroException for ints and returns Infinity/NaN for floats.
+    static let divide = BinaryNativeFunction(
+        name: "/",
+        int: { $1 == 0 ? .float(0.0) : .int($0 / $1) },
+        float: { $1 == 0.0 ? .float(0.0) : .float($0 / $1) })
+    static let modulo = BinaryNativeFunction(
+        name: "%",
+        int: { $1 == 0 ? .float(0.0) : .int($0 % $1) },
+        float: { $1 == 0.0 ? .float(0.0) : .float($0.truncatingRemainder(dividingBy: $1)) })
+    static let equal = test("==", int: ==, float: ==, string: ==)
+    static let notEqual = test("!=", int: !=, float: !=, string: !=)
+    static let greater = test(">", int: >, float: >)
+    static let less = test("<", int: <, float: <)
+    static let greaterOrEqual = test(">=", int: >=, float: >=)
+    static let lessOrEqual = test("<=", int: <=, float: <=)
+    static let and = test("&&", int: { $0 != 0 && $1 != 0 }, float: { $0 != 0 && $1 != 0 })
+    static let or = test("||", int: { $0 != 0 || $1 != 0 }, float: { $0 != 0 || $1 != 0 })
+    static let min = BinaryNativeFunction(
+        name: "MIN", int: { .int(Swift.min($0, $1)) }, float: { .float(Swift.min($0, $1)) })
+    static let max = BinaryNativeFunction(
+        name: "MAX", int: { .int(Swift.max($0, $1)) }, float: { .float(Swift.max($0, $1)) })
+
+    /// The binary natives by their ink name.
+    static let byName: [String: BinaryNativeFunction] = Dictionary(
+        uniqueKeysWithValues: [
+            add, subtract, multiply, divide, modulo, equal, notEqual, greater, less,
+            greaterOrEqual, lessOrEqual, and, or, min, max,
+        ].map { ($0.name, $0) })
 }
 
 // MARK: - ChoiceFlags

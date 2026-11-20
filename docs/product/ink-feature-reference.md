@@ -54,7 +54,7 @@ These constructs compile to a playable blueprint. (Matrix rows 1–27, 29–35.)
 | 18 | Temp variables (`~ temp`) | `~ temp x = 1` | Frame-scoped local variable. |
 | 19 | Variable assignment (`~ x =`) | `~ hp = hp - 1` | Mutates a declared variable. |
 | 20 | Variable read in output (`{x}`) | `You have {hp} HP.` | Interpolates a variable into output. A float prints as inklecate prints it: `2`, `0.3`, `1E+20` (its 32-bit value; see [differences](../reference/differences-from-inklecate.md)). |
-| 21 | Arithmetic / logic operators | `{hp > 0 && alive}` | `+ - * / % == != > < && \|\| !` all evaluate. |
+| 21 | Arithmetic / logic operators | `{hp > 0 && alive}` | `+ - * / % == != > < && \|\| !` all evaluate. Mixed operands are first coerced to the higher type, as in inklecate (bool < int < float < string): `1 == 1.0` is true and `"a" + 1` is `a1`. An operator with no string form (all but `+ == !=`) applied to a string reports inklecate's runtime error in `currentErrors` and ends the story. |
 | 22 | Inline conditionals (`{c: a\|b}`) | `{alive: alive\|dead}` | Inline branch on a boolean/numeric guard. |
 | 23 | Block conditionals (if / else if) | `{ hp > 0:\n  alive\n- else:\n  dead\n}` | Multi-line conditional block with else branch. |
 | 24 | Switch-style conditionals | `{ kind:\n- 1: red\n- 2: blue\n}` | Per-case dispatch via `==` + conditional diverts. |

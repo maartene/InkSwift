@@ -71,7 +71,11 @@ final class InkEngine {
             idx += 1
             // Dispatch the node to process control commands, values, and assignments.
             // We re-use the same state so VAR= nodes write directly into variablesState.
-            walker.dispatchNode(child, state: &state)
+            do {
+                try walker.dispatchNode(child, state: &state)
+            } catch {
+                return reportRuntimeError(error)
+            }
         }
         // Reset the eval stack after global initialization — the decl block may leave
         // interim values pushed by ev/value//ev sequences that were consumed by VAR=.
@@ -364,7 +368,12 @@ final class InkEngine {
             return .proceed
         }
 
-        walker.dispatchNode(currentChild, state: &state)
+        do {
+            try walker.dispatchNode(currentChild, state: &state)
+        } catch {
+            reportRuntimeError(error)
+            return .stop
+        }
 
         switch currentChild {
         case .divert(let target, let isConditional):
@@ -446,6 +455,14 @@ final class InkEngine {
     /// (Story.cs ~2838-2857) resets the call stack and drops the choices.
     private func refusePop(_ kind: CallKind) {
         errors.append(state.returnStack.popRefusal(kind))
+        forceEnd()
+    }
+
+    /// A native function's runtime error: C# `AddError` → `ForceEnd`, as for
+    /// a refused pop. The forced end is a safe exit, so no end-of-content
+    /// error follows it.
+    private func reportRuntimeError(_ error: InkRuntimeError) {
+        errors.append(error.message)
         forceEnd()
     }
 
