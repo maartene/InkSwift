@@ -1,6 +1,6 @@
 # ADR-022: One Canonical Path per Container for Visit Counts; Forward-Only Save Compatibility
 
-**Status**: Accepted (maintainer, 2026-11-19 — option B1; forward-only save compatibility)
+**Status**: Accepted (maintainer, 2026-11-19 — option B1; forward-only save compatibility). **Implemented in 2.1.3** (steps 01-04 to 01-07; ancestor counting on divert adopted, see *Implementation Notes*).
 **Date**: 2026-11-19
 **Deciders**: Maarten Engels (project owner), Morgan (solution architect)
 **Feature**: reference-fidelity-backlog (issue #33)
@@ -95,3 +95,19 @@ one (`Object.cs:86-89`). Counting happens in `VisitContainer` and
   older build anyway, visit counts recorded under a canonical spelling are read as 0 there.
   The story then replays sequence items and once-only content, and loops run extra passes.
 - Older saves restore on the new build, with their split counts merged.
+
+## Implementation Notes (finalize, 2026-11-20)
+
+Shipped in **2.1.3** (steps 01-04 to 01-07).
+
+- **§3 probe resolved: ancestor counting adopted** (01-07, U11). A relative divert recorded
+  no visit, so `TestKnotStitchGatherCounts` (runtime) stayed red. `VisitCounter.recordDivert`
+  now walks up from a divert's landing point as C# `VisitChangedContainersDueToDivert` does.
+  Count-start-only containers (`#f` 0x4) are counted only when entered at their start. A
+  variable divert counts only its target.
+- **A knot that diverts to itself does not count a new visit**, matching inklecate
+  (maintainer decision; inkle/ink#164 and #297). Hand-written `slice03` tests that asserted
+  InkSwift's old count were corrected to the oracle.
+- Legacy split keys are summed on restore (`VisitCounter.canonicaliseKeys`); a key naming
+  no container is kept. A golden split-key save captured before 01-05 pins it.
+- Enforcement: SwiftLint R6 bans `visitCounts[` outside `Engine/VisitCounter.swift`.

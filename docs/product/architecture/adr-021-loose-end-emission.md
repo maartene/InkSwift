@@ -1,6 +1,6 @@
 # ADR-021: Loose Ends — Emit `done` Only Where inklecate Does
 
-**Status**: Accepted (maintainer, 2026-11-19 — match inklecate). Revised after design review, 2026-11-19 (corrected emission sites).
+**Status**: Accepted (maintainer, 2026-11-19 — match inklecate). Revised after design review, 2026-11-19 (corrected emission sites). **Implemented in 2.1.5** (steps 02-03, 02-06, 02-05, 02-07; see *Implementation Notes*).
 **Date**: 2026-11-19
 **Deciders**: Maarten Engels (project owner), Morgan (solution architect)
 **Feature**: reference-fidelity-backlog (issue #28, finding F3)
@@ -90,3 +90,23 @@ kind. No source file mentions a warning.
   where it used to stop silently. Its flow is unchanged: the story ends at the same point.
 - `ConditionalEmitter`'s arm and rejoin termination is reworked. That is the riskiest part
   of the step; the oracle suite, the TheIntercept e2e and the pinned "sipping" AT gate it.
+
+## Implementation Notes (finalize, 2026-11-20)
+
+Shipped in **2.1.5** together with ADR-020's epilogue, as §3 requires. Turning the epilogue
+on exposed native layouts that ran out where inklecate's JSON ends safely, so the work grew
+from one step to four:
+
+- **02-03** (U12): a knot- or stitch-level loose end emitted `end`; once `end` discards
+  choices that dropped choices inklecate offers. It now emits nothing
+  (`WeaveEmitter.FallThrough.runOut`, renamed from `.end` in 06-01).
+- **02-06** (U13): `-> DONE` / `-> END` lower to `done` / `end` wherever they are written
+  (they used to divert to a nonexistent `DONE` path outside the root); the root's
+  conditional rejoins and final gathers reach the root's `done`.
+- **02-05**: only the root weave ends in `done`; `terminateArm` no longer swaps a trailing
+  `done`. TheIntercept's "sipping at my tea" line was pinned first (`77c2f49`).
+- **02-07** (U14): an auto-entered gather of the top-level weave (`- (top)` opening the
+  story) gets the root's `done` after its choice points, as C# `Weave.AddRuntimeForGather`
+  keeps it inline.
+
+The warning channel (§2) is not built; it is tracked as #38 (compile time) and #39 (runtime).

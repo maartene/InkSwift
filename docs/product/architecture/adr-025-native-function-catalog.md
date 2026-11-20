@@ -1,6 +1,6 @@
 # ADR-025: One Native-Function Catalog Shared by Compiler and Runtime; Compile-Time Call Resolution
 
-**Status**: Accepted (maintainer, 2026-11-19 — option C1(c); POW and string `?`/`!?` implemented now). Revised after design review, 2026-11-19.
+**Status**: Accepted (maintainer, 2026-11-19 — option C1(c); POW and string `?`/`!?` implemented now). Revised after design review, 2026-11-19. **Implemented in 2.2.0** (steps 04-01 to 04-04, one minor release; see *Implementation Notes*).
 **Date**: 2026-11-19
 **Deciders**: Maarten Engels (project owner), Morgan (solution architect)
 **Feature**: reference-fidelity-backlog (issue #36)
@@ -79,7 +79,7 @@ SEED_RANDOM is inconsistent between the two paths:
    2. A supported native → an arity check (a mismatch is a located `.syntaxError`: "X should
       take N parameter(s)"), then the argument nodes and `.nativeFunction`.
    3. A user function in `LoweringContext.functions` → `.functionCall`.
-   4. Anything else → a located `.unresolvedReference` ("Function call target not found: X").
+   4. Anything else → a located `.unresolvedReference` ("Function call target not found: X"; shipped with inklecate's verbatim wording, see Implementation Notes).
 
    **Throws ripple**: `lowerExpression` (`ExpressionLowering.swift:46-49`) and
    `lowerFunctionCall` (`:91-95`) are non-throwing today and become `throws`. Their callers
@@ -136,7 +136,26 @@ SEED_RANDOM is inconsistent between the two paths:
   same step.
 - **SEED_RANDOM now compiles natively.**
 
-**Release split**
+**Release split** (superseded by U4: all of it shipped in the 2.2.0 minor)
 - Call resolution and the rejections fix #36: **patch**.
 - POW and `?`/`!?`: **minor**.
 - Update the differences doc (footnote ², "At a glance") and the feature reference.
+
+## Implementation Notes (finalize, 2026-11-20)
+
+- **Release split superseded** (U4): 04-01 to 04-04 shipped as **one minor, 2.2.0**.
+- **Undefined-function message** (U9): inklecate's verbatim text,
+  "Function call target not found: '-> <name>'". Calling a knot as a function also reports
+  inklecate's message verbatim.
+- **srnd** (U5): it pushed nothing, so the discarded-call `pop` was unbalanced on the
+  inklecate-JSON path. It now pushes void, as C# does (a runtime behaviour change named in
+  `52fbdd2`).
+- **TURNS_SINCE( / READ_COUNT(** (U6) are refused at the call, before their divert-target
+  argument is parsed, as located `.unsupportedConstruct` errors. In 06-01 the catalog gained
+  `takesDivertTarget`, so the detector reads it instead of a second name list.
+- **§5 probe resolved**: `?` / `!?` on non-string operands raise C#'s
+  "Cannot perform operation '?' on Int". They search ordinal UTF-16, as `String.Contains`.
+  `has` / `hasnt` are accepted as word operators (InkSwift also accepts them without
+  following whitespace, as it does for `and` / `or`).
+- Enforcement: SwiftLint R8 bans `.nativeFunction("` outside `Decoder/`; `TreeWalker`
+  switches exhaustively over `NativeFunction`.

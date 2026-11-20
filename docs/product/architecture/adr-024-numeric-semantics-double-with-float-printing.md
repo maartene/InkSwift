@@ -1,6 +1,6 @@
 # ADR-024: Numeric Semantics — Double Arithmetic, 32-bit Float Printing, C#-Style Coercion
 
-**Status**: Accepted (maintainer, 2026-11-19 — overrides the proposed 32-bit rounding)
+**Status**: Accepted (maintainer, 2026-11-19 — overrides the proposed 32-bit rounding). **Implemented**: printing (§2) in **2.1.2** (step 01-02); coercion and casts (§3-4) in **2.1.6** (step 03-01).
 **Date**: 2026-11-19
 **Deciders**: Maarten Engels (project owner), Morgan (solution architect)
 **Feature**: reference-fidelity-backlog (issue #37 part 2, issue #36 casts, finding F1)
@@ -102,6 +102,19 @@ story shows, matches.
 - `1 == 1.0` is true;
 - string + number concatenates (`"a" + 1` is `a1`).
 
-**Open for DELIVER (not a blocker)**: the exponent spelling. Swift prints `1e+20`; .NET may
+**Resolved in DELIVER (01-02), see Implementation Notes** (was open, not a blocker): the exponent spelling. Swift prints `1e+20`; .NET may
 print `1E+20`. Probe against inklecate, and add the result to the differences doc if they
 diverge.
+
+## Implementation Notes (finalize, 2026-11-20)
+
+- **§2 printing** shipped in **2.1.2** (01-02), ahead of ADR-023 (U1). **Exponent spelling
+  probe resolved**: inklecate prints .NET "G" layout (`1E+20`, `1E-07`, `Infinity`,
+  `100000000`), and InkSwift now matches it. Locale (inkle/ink#916): InkSwift always prints
+  `.`; recorded in the differences doc.
+- **§3-4 coercion and casts** shipped in **2.1.6** (03-01). **§3 probe resolved** (U8): an
+  operator with no string form on a string operand appends C#'s
+  "Cannot perform operation '<op>' on String" to `currentErrors` and ends the flow through
+  `forceEnd()`.
+- The deliberate precision divergence (`{0.1 + 0.2 == 0.3}` is true on inklecate, false here)
+  is pinned by a test and listed in the differences doc.

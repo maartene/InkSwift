@@ -1,6 +1,6 @@
 # ADR-023: JSON Number Typing by Token Text — Hand-Written Ink JSON Reader
 
-**Status**: Accepted (maintainer, 2026-11-19 — option C1(a))
+**Status**: Accepted (maintainer, 2026-11-19 — option C1(a)). **Implemented in 2.1.2** (step 01-03).
 **Date**: 2026-11-19
 **Deciders**: Maarten Engels (project owner), Morgan (solution architect)
 **Feature**: reference-fidelity-backlog (issue #37, part 1)
@@ -67,3 +67,9 @@ or `E` is a float; anything else is an int (~225-245).
   fixtures (ADR-014), which assert int, float and bool typing on macOS and Linux.
 - A story whose output changes (it used to print integer results) needs a release-note
   callout.
+
+## Implementation Notes (finalize, 2026-11-20)
+
+Shipped in **2.1.2** (step 01-03) as `Decoder/InkJSONReader.swift`. It landed **after** the
+float-printing change (01-02, U1): once `2.0` decodes as a float, the old `String(Double)`
+would have printed `2.0`. `TestArithmetic` (runtime) was re-enabled.

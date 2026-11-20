@@ -1,6 +1,6 @@
 # ADR-026: One Escape-Aware Content-Text Scanner in the Native Compiler
 
-**Status**: Accepted (maintainer, 2026-11-19 — option D1, #34 fixed first on its own)
+**Status**: Accepted (maintainer, 2026-11-19 — option D1, #34 fixed first on its own). **Implemented**: #34 in **2.1.2** (step 01-01); the scanner and #35 in **2.2.1** (steps 05-01, 05-02).
 **Date**: 2026-11-19
 **Deciders**: Maarten Engels (project owner), Morgan (solution architect)
 **Feature**: reference-fidelity-backlog (issues #35, #34)
@@ -93,3 +93,19 @@ runtime cleans line-end whitespace.
   TheIntercept e2e gate it.
 
 **Release**: #34 and #35 are each a **patch**. The refactor step ships with #35.
+
+## Implementation Notes (finalize, 2026-11-20)
+
+- **#34** shipped in **2.1.2** (01-01): the literal before `#` is emitted untrimmed.
+- **Scanner** shipped in **2.2.1**: escape-agnostic introduction (05-01), escape-aware switch
+  fixing #35 (05-02). **§5's two modes no longer exist**: `Mode.escapeAgnostic` was removed in
+  06-01 (U15), because only its own tests used it. The scanner always reads `\x` as `x`.
+- **§5 probes resolved** (05-02): `\` no longer opens an alternative in `modeAndContent`;
+  `{\x}` and `{\!a}` are rejected as inklecate rejects them; `TestEscapeCharacter` (native)
+  passes.
+- **Unescape convention**: each piece is unescaped once, when it becomes output. Content-line
+  runs and tags are unescaped at scan time; text kept for splitting again (brace bodies, choice
+  labels) is unescaped at emit.
+- **Glue before a tag** (`Text <> # t`) now plays "Text glued." as on the runtime path.
+  `inklecate -p` also joins the following line; whether to follow that is #43
+  (inkle/ink#923), pending a maintainer decision.

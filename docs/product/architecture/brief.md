@@ -700,13 +700,13 @@ The component responsibility annotations are updated:
 | [ADR-017](./adr-017-typed-call-stack-and-pop-check.md) | Typed Call-Stack Elements and Type-Checked Tunnel/Function Pops | Accepted |
 | [ADR-018](./adr-018-save-format-compat-typed-paths.md) | Save-Format Compatibility for Typed Paths and Call Stack | Accepted; amended by ADR-020, ADR-022 |
 | [ADR-019](./adr-019-release-schedule-js-bridge-retirement.md) | Release Schedule for Retiring the JS-Bridge (2.1 introduces, 3.0 switches, 4.0 removes) | Accepted; supersedes ADR-015's timing |
-| [ADR-020](./adr-020-continue-boundary-typed-output-stream.md) | Continue Boundary: Typed Output Stream, Per-Line Tags, Flow-End Reason | Accepted |
-| [ADR-021](./adr-021-loose-end-emission.md) | Loose Ends: Emit `done` Only Where inklecate Does | Accepted |
-| [ADR-022](./adr-022-canonical-container-identity-visit-counts.md) | One Canonical Path per Container for Visit Counts; Forward-Only Save Compatibility | Accepted |
-| [ADR-023](./adr-023-json-number-typing-by-token-text.md) | JSON Number Typing by Token Text (hand-written Ink JSON reader) | Accepted; supersedes ADR-013's mechanism |
-| [ADR-024](./adr-024-numeric-semantics-double-with-float-printing.md) | Numeric Semantics: Double Arithmetic, 32-bit Float Printing, C#-Style Coercion | Accepted |
-| [ADR-025](./adr-025-native-function-catalog.md) | One Native-Function Catalog Shared by Compiler and Runtime | Accepted |
-| [ADR-026](./adr-026-content-text-scanner.md) | One Escape-Aware Content-Text Scanner in the Native Compiler | Accepted |
+| [ADR-020](./adr-020-continue-boundary-typed-output-stream.md) | Continue Boundary: Typed Output Stream, Per-Line Tags, Flow-End Reason | Accepted; implemented in 2.1.4 and 2.1.5 |
+| [ADR-021](./adr-021-loose-end-emission.md) | Loose Ends: Emit `done` Only Where inklecate Does | Accepted; implemented in 2.1.5 |
+| [ADR-022](./adr-022-canonical-container-identity-visit-counts.md) | One Canonical Path per Container for Visit Counts; Forward-Only Save Compatibility | Accepted; implemented in 2.1.3 |
+| [ADR-023](./adr-023-json-number-typing-by-token-text.md) | JSON Number Typing by Token Text (hand-written Ink JSON reader) | Accepted; supersedes ADR-013's mechanism; implemented in 2.1.2 |
+| [ADR-024](./adr-024-numeric-semantics-double-with-float-printing.md) | Numeric Semantics: Double Arithmetic, 32-bit Float Printing, C#-Style Coercion | Accepted; implemented in 2.1.2 and 2.1.6 |
+| [ADR-025](./adr-025-native-function-catalog.md) | One Native-Function Catalog Shared by Compiler and Runtime | Accepted; implemented in 2.2.0 |
+| [ADR-026](./adr-026-content-text-scanner.md) | One Escape-Aware Content-Text Scanner in the Native Compiler | Accepted; implemented in 2.1.2 (#34) and 2.2.1 |
 
 ---
 
@@ -1854,15 +1854,16 @@ divert-target values in `InkValue` (wire change).
 
 Issues #28, #30, #33, #34, #35, #36 and #37; #27 is context only, decided and scheduled for
 3.0.0. One DESIGN pass over the open reference-fidelity issues found four root causes rather
-than eight edge cases. **Status: DESIGN complete (2026-11-19), decisions accepted by the
-maintainer.** The full analysis is in `docs/feature/reference-fidelity-backlog/feature-delta.md`
+than eight edge cases. **Status: IMPLEMENTED (DELIVER complete 2026-11-20), shipped in
+2.1.2 to 2.2.1.** Evolution record: `docs/evolution/2026-11-20-reference-fidelity-backlog.md`.
+The full analysis is in `docs/feature/reference-fidelity-backlog/feature-delta.md`
 (root causes with file:line, options, reuse table, sequencing, probes). No breaking change:
 everything ships in 2.x patch and minor releases.
 
 #### Quality Attributes (ranked)
 
-1. **Correctness**: agreement with the inklecate oracle and the upstream conformance suite,
-   with nine-plus conformance backlog entries expected to move.
+1. **Correctness**: agreement with the inklecate oracle and the upstream conformance suite.
+   Delivered: 18 conformance test modes (13 upstream tests) left the backlog.
 2. **Reliability**: nothing silent. A story that runs out of content reports it, and a call
    to an undefined function does not compile.
 3. **Maintainability**: one definition per concept (container identity, built-in names,
@@ -1876,25 +1877,48 @@ everything ships in 2.x patch and minor releases.
 | A′ — Loose ends | #28 parity | The native compiler appends `done` to every **weave** (`WeaveEmitter.swift:880`) and to the root's flat body; flat knot and stitch bodies already get none. inklecate adds it only at the top level | Emit `done` only for the root weave. Re-derive `ConditionalEmitter`'s arm and rejoin termination (`terminateArm`), protecting TheIntercept's "sipping at my tea" arm. No warning channel exists, so the loose-end warning is not surfaced (future feature, #38/#39) | ADR-021 |
 | B — Visit identity | #33 | Visit counts keyed by the spelling of the path a container was entered by (index vs name) | Canonical path per container from `ContainerPathResolver`. One engine-owned visit counter over all sites: `recordVisit`, `.readCount`, `visit`, and `visitCount(forKnot:)` / `setVisitCount`. Legacy keys converted on restore; forward-only saves | ADR-022 |
 | C — Values and built-ins | #37, #36 | Number typing by decode success; `String(Double)` printing; FLOOR/CEILING return int; no operand coercion (`1 == 1.0` false, `"a" + 1` = `1`); built-in names in three places; calls never resolved | Hand-written token-typed JSON reader. Double arithmetic with 32-bit shortest printing (a documented divergence). One C#-ordered coercion point (bool < int < float < string). `Decoder/NativeFunctionCatalog` shared by decoder, `TreeWalker` (exhaustive switch) and compiler call resolution (`throws` ripple). `construct` strings renamed to the runtime's names. SEED_RANDOM accepted; POW and string `?`/`!?` added | ADR-023, ADR-024, ADR-025 |
-| D — Content text | #35 (#34 isolated) | No shared escape-aware text scan; seven raw scanners; both-sides trim before `#` | #34 trailing-only trim first. Then `Compiler/Parser/ContentTextScanner` (counterpart of `ContentTextAllowingEcapeChar`): introduced escape-agnostic (behaviour-neutral), then switched to escape-aware | ADR-026 |
+| D — Content text | #35 (#34 isolated) | No shared escape-aware text scan; seven raw scanners; both-sides trim before `#` | #34 first: the literal before `#` is emitted untrimmed, as inklecate does. Then `Compiler/Parser/ContentTextScanner` (counterpart of `ContentTextAllowingEcapeChar`): introduced escape-agnostic (behaviour-neutral), then switched to escape-aware; the escape-agnostic mode was removed afterwards (06-01) | ADR-026 |
 
-#### Component Delta
+#### Component Delta (IMPLEMENTED)
 
-L1 and L2 are **unchanged**. The L3 additions are `Decoder/NativeFunctionCatalog.swift` and
-`Compiler/Parser/ContentTextScanner.swift`, plus engine-internal roles inside existing files:
-the typed output stream with line extraction, the flow-end diagnosis (a pure function) and the
-visit counter. `NodeKind.nativeFunction` carries the catalog enum. The C4 component diagrams
-for Engine and Compiler are in the feature-delta.
+L1 and L2 are **unchanged**. The C4 component diagrams for Engine and Compiler are in the
+feature-delta; they match what shipped.
+
+| Component | Path | Role | Status |
+|---|---|---|---|
+| `InkJSONReader` | `Decoder/InkJSONReader.swift` | Hand-written, token-typed Ink JSON reader (ADR-023) | IMPLEMENTED, 2.1.2 |
+| `InkFloatText` (inside `InkValue`) | `Engine/StoryState.swift` | Shortest-`Float` printing in .NET "G" layout (ADR-024 §2) | IMPLEMENTED, 2.1.2 |
+| `VisitCounter` | `Engine/VisitCounter.swift` | Sole reader and writer of `visitCounts`, canonical keys, legacy-key merge, divert ancestor walk (ADR-022) | IMPLEMENTED, 2.1.3 |
+| Canonical path query, `enclosures` / `lineage` / `contentAncestors` | `Engine/ContainerPathResolver.swift` | C# `Object.path` spelling; frames a divert steps out into | IMPLEMENTED, 2.1.3 (canonical, divert walk); 2.1.5 (`contentAncestors`) |
+| `OutputItem`, `OutputLine` | `Engine/OutputStream.swift` | Typed output stream (text, newline, tag), pure line extraction (ADR-020 §1-2) | IMPLEMENTED, 2.1.4 |
+| Walker output helpers | `Engine/TreeWalker+Output.swift` | Only place that appends to the output stream | IMPLEMENTED, 2.1.4 |
+| `outputStreamTags` save key | `Engine/StoryState.swift` | Optional lookahead-tag key (ADR-020 §6) | IMPLEMENTED, 2.1.4 |
+| Stop state, `forceEnd()` | `Engine/InkEngine.swift` | Transient stop reason and safe exit; `end` and `refusePop` share `forceEnd()` (ADR-020 §4) | IMPLEMENTED, 2.1.5 |
+| `FlowEndDiagnosis` | `Engine/FlowEndDiagnosis.swift` | Pure end-of-content diagnosis, C# messages (ADR-020 §5) | IMPLEMENTED, 2.1.5 |
+| Loose-end emission | `Compiler/Codegen/WeaveEmitter.swift`, `ConditionalEmitter.swift`, `LoweringContext` | `done` only where inklecate emits it; `-> DONE`/`-> END` lower to `done`/`end` everywhere (ADR-021) | IMPLEMENTED, 2.1.5 |
+| `InkValue.coerced`, `BinaryNativeFunction` | `Engine/StoryState.swift` | One C#-ordered coercion point; FLOOR/CEILING return float; string-operand runtime error (ADR-024 §3-4) | IMPLEMENTED, 2.1.6 |
+| `NativeFunctionCatalog`, `NativeFunction` | `Decoder/NativeFunctionCatalog.swift` | One table of built-ins shared by decoder, `TreeWalker` (exhaustive switch) and compiler (ADR-025) | IMPLEMENTED, 2.2.0 |
+| Compile-time call resolution | `Compiler/Codegen/ExpressionLowering.swift` (`throws` ripple) | User function, supported built-in with arity check, unsupported, unresolved (ADR-025 §4) | IMPLEMENTED, 2.2.0 |
+| POW, `?`/`!?`, `has`/`hasnt`, `srnd` pushing void | Catalog, `TreeWalker`, `InkParserExpressions` | ADR-025 §5 | IMPLEMENTED, 2.2.0 |
+| `ContentTextScanner` | `Compiler/Parser/ContentTextScanner.swift` | One escape-aware content-text scan, stop set per context (ADR-026) | IMPLEMENTED, 2.2.1 |
+
+**Deferred (planned, not shipped):**
+
+- **A2**, the snapshot/rewind `ContinueInternal` loop (ADR-020): its own future feature, with
+  a spike first, opened only if the glue backlog proves loop-shaped.
+- **The warning channel** (ADR-021 §2): compile-time warnings #38, save-format and other
+  runtime warnings #39. A public API addition that needs its own DESIGN.
 
 #### Boundary and Enforcement
 
 All changes respect R1, R3 and R5: the catalog sits in `Decoder/`, the lowest layer, which the
 Compiler and Engine may both use, and Ink JSON parsing stays in `Decoder/`. New SwiftLint
-`custom_rules`:
+`custom_rules` in `.swiftlint.yml`, all IMPLEMENTED and enforced by the pre-commit gate and CI:
 
-- `visitCounts[` only in the visit counter;
-- `.nativeFunction("` string construction only in `Decoder/`;
-- output-stream appends only through the walker's output helpers.
+- **R6** `r6_visit_counts_through_counter`: `visitCounts[` only in `Engine/VisitCounter.swift` (2.1.3);
+- **R7** `r7_output_stream_through_walker_helpers`: `outputStream.append(` only in
+  `Engine/TreeWalker+Output.swift` (2.1.4);
+- **R8** `r8_native_functions_from_catalog`: `.nativeFunction("` only in `Decoder/` (2.2.0).
 
 `TreeWalker`'s native switch is exhaustive, with no `default:`, so the compiler is the probe.
 
@@ -1902,14 +1926,14 @@ Compiler and Engine may both use, and Ink JSON parsing stays in `Decoder/`. New 
 
 | Substrate | Probe |
 |---|---|
-| Ink JSON number tokens | `InkDecoder.probe()` fixture adds `2.0` and `1e2` (both float) next to `2.5`, `true`, `42`. On drift, startup is refused |
-| Saves from earlier builds | Golden legacy saves (ADR-018) restore with their visit-count keys converted to canonical form; split counts are summed |
-| Behavioural truth | Oracle and conformance suites per step. The [P] probes listed in the feature-delta are inputs to DISTILL/DELIVER |
+| Ink JSON number tokens | `InkDecoder.probe()` fixture adds `2.0` and `1e2` (both float) next to `2.5`, `true`, `42`. On drift, startup is refused (IMPLEMENTED, 2.1.2) |
+| Saves from earlier builds | Golden legacy saves (ADR-018) plus a split-key golden captured before 01-05 restore with their visit-count keys converted to canonical form; split counts are summed (IMPLEMENTED, 2.1.3) |
+| Behavioural truth | Oracle and conformance suites per step; the conformance backlog was diffed before and after every behaviour-neutral step. The feature-delta's [P] probes were all settled in DELIVER (see the evolution record) |
 
 #### Release Notes Callouts
 
-Per step; release types are in the feature-delta. Every step is a patch except 9b, which is
-minor.
+As shipped: 2.1.2 (#34, float printing, JSON number typing), 2.1.3 (#33), 2.1.4 (#30),
+2.1.5 (#28, `-> END`), 2.1.6 (#37 coercion), 2.2.0 minor (#36, POW, `?`/`!?`), 2.2.1 (#35).
 
 - **Running out of content** now reports an error, on both compile paths. Natively compiled
   stories with a loose end used to stop silently.
@@ -1922,8 +1946,10 @@ minor.
 - **Floats** print as inklecate prints them. `"a" + 1` concatenates. `1 == 1.0` is true.
 - **Natively compiled text** changes: the space before a tag after an inline conditional is
   kept (#34), and escapes print literally (#35).
-- **Undefined functions** no longer compile (patch). `CompileError.construct` strings change
+- **Undefined functions** no longer compile (2.2.0). `CompileError.construct` strings change
   to the runtime's names (`"RANDOM()"`, `"LIST"`, `"threads (<-)"`, `"EXTERNAL functions"`,
   `"INCLUDE"`). That is not API-breaking, but hosts that match on these strings must update.
   SEED_RANDOM now compiles natively.
-- **POW and string `?`/`!?`** work natively (minor release).
+- **POW and string `?`/`!?`** work natively and from inklecate's JSON (2.2.0).
+- **A knot that diverts to itself** no longer counts a new visit, matching inklecate (2.1.3).
+- **Glue before a tag** joins the line (2.2.1); see #43 for the remaining inklecate difference.

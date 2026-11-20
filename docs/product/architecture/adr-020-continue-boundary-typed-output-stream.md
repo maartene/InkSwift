@@ -1,6 +1,6 @@
 # ADR-020: Continue Boundary — Typed Output Stream, Per-Line Tags, Flow-End Reason
 
-**Status**: Accepted (maintainer, 2026-11-19 — option A1; A2 deferred to its own feature). Revised after design review, 2026-11-19.
+**Status**: Accepted (maintainer, 2026-11-19 — option A1; A2 deferred to its own feature). Revised after design review, 2026-11-19. **Implemented**: typed output stream and per-line tags (§1-3, §6) in **2.1.4** (steps 02-01, 02-02); stop state, `forceEnd()` and the end-of-content epilogue (§4-5) in **2.1.5** (02-03, 02-04). See *Implementation Notes* at the end.
 **Date**: 2026-11-19
 **Deciders**: Maarten Engels (project owner), Morgan (solution architect)
 **Feature**: reference-fidelity-backlog (issues #30, #28)
@@ -79,7 +79,9 @@ Option **A1**: keep the existing lookahead loop and add the C# boundary around i
      - a choice-continuation root exhausted (`InkEngine.swift:228-234`), the C#
        named-container null-pointer case.
 
-     Both set `isEnded`, with `safeExit` still false.
+     Neither sets `isEnded`, and `safeExit` stays false. (Implemented in 02-03, U12: setting
+     `isEnded` on a ran-out stop would persist `isEnded = true` at every ordinary choice
+     point. The deviation is recorded next to `FlowStop` in `InkEngine`.)
 5. **Epilogue.** It runs **only for a ran-out stop**, and fires when `currentChoices` is
    empty and `safeExit` is false. That is C#'s condition with
    `_temporaryEvaluationContainer == null` always true: InkSwift has no `EvaluateFunction`.
@@ -151,3 +153,21 @@ safe exit). Applying it is a bounded change to {errors}.
   is investigated before the classification is kept.
 - `-> END` with a pending choice.
 - The full oracle and conformance suites stay error-free.
+
+## Implementation Notes (finalize, 2026-11-20)
+
+- **Ran-out stops do not set `isEnded`** (02-03, U12). §4 now says so.
+- **Lookahead before a choice point** (02-02). The line before a choice point was flushed at
+  the `/ev` ending the choice's eval block, so it came back without its choices. The flush
+  is now deferred past a choice point, buffered lines are drained before choices are
+  offered, and no choice is offered while a buffered line is pending. This is A1's
+  approximation of C#'s rewind; A2 stays deferred.
+- **An absolute divert rebuilds the frames C# steps out into** (02-04,
+  `ContainerPathResolver.contentAncestors`). Without it, running out of a labelled root
+  gather emptied the stack instead of falling into the root's `done`.
+- **An unterminated last line is returned as is** (02-04), as C# does; it used to get a `"\n"`.
+- **The function-frame message** ("Do you need a '~ return'?") is reachable by no fixture,
+  because function frames pop when the body runs out (C# and InkSwift). A unit test on
+  `FlowEndDiagnosis` covers it.
+- Code: `Engine/OutputStream.swift` (`OutputItem`, `OutputLine`), `Engine/TreeWalker+Output.swift`
+  (sole appender, SwiftLint R7), `Engine/FlowEndDiagnosis.swift`.
