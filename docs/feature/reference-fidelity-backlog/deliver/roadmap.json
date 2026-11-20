@@ -2,7 +2,7 @@
   "roadmap": {
     "project_id": "reference-fidelity-backlog",
     "created_at": "2026-11-19T12:00:00Z",
-    "total_steps": 20,
+    "total_steps": 21,
     "implementation_notes": [
       "Expected values marked as predictions are verified with `inklecate -p` before RED; inklecate's output is authoritative.",
       "Releases (tag, push, GitHub release, README `from:` snippet) are cut by the orchestrator, never by the crafter. No tag between 02-04 and 02-05 (one patch). No tag between 04-02 and 04-04 (one minor)."
@@ -591,6 +591,42 @@
           ],
           "deps": [
             "02-05"
+          ]
+        },
+        {
+          "id": "02-07",
+          "name": "Native labelled root gather ends safely when its choices are used up",
+          "description": "Added 2026-11-20 (maintainer decision, feature-delta U14). Found in 02-04: a divert back to a labelled gather at the top of the story (e.g. `- (top)`) whose choices are all used up or hidden reports a false 'ran out of content' error on the native path; inklecate ends it cleanly and the inklecate-JSON path is correct since e4e013d. The native compiler emits that gather as a named-only root container with no `done` after its choice points, where inklecate's layout falls through to the root's trailing done. Fix the emission so the native stop matches inklecate's.",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "PROBE FIRST: compare the native emission of divert-to-labelled-root-gather (and loose-end-root-choices-hidden) with inklecate's JSON at the gather's choice points; record what inklecate's layout falls through to",
+            "The divert-to-labelled-root-gather fixture compiled natively ends with a safe exit and no errors, like its inklecate-JSON path; extend its existing runtime test to the native path (both paths, same lines, same stop)",
+            "Compiler_SafeExitEmissionTests, Compiler_LooseEndTests (a knot loose end still runs out), the sipping pin, TheIntercept e2e and every enabled conformance test stay green; no well-formed story reports an end-of-content error on either path (backlog run)",
+            "The native-only row added in e4e013d to docs/reference/differences-from-inklecate.md is removed",
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained; changed production files' Code Health not below their main baseline"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Engine_EndOfContentErrorTests.swift",
+          "scenario_name": "A labelled root gather with its choices used up ends safely on both paths",
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Compiler/Codegen/WeaveEmitter.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Engine_EndOfContentErrorTests.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Compiler_LooseEndTests.swift",
+            "docs/reference/differences-from-inklecate.md"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express invariant checks as parametrized tests over representative inputs.",
+            "MANUAL MUTATION CHECK (CLAUDE.md): 3-5 plausible-bug mutations (e.g. emit done for every weave again, never emit the rejoin divert, emit it even after a divert, drop the root done). Report each and its outcome in the commit message; never commit a mutation.",
+            "CODE HEALTH: CodeScene CLI self-check on every changed production file against the main baseline; >=9.5 approve, 9–9.5 report, <9 rework.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass.",
+            "DISTILL was skipped: write the RED tests from the criteria. New ATs are never committed .disabled.",
+            "Prefer the existing mechanism from 02-06/02-05 (FallThrough.done / weaveTerminator for the root's named containers) over a new one; check the C# compiler (Weave.cs, Story.cs:193) for the counterpart. If it needs a restructuring of the weave layout beyond that, STOP and report.",
+            "FIXTURES: inklecate-produced .ink.json only, never hand-edited.",
+            "RELEASE: the last commit of the #28 patch (02-03, 02-06, 02-05, 02-04, 02-07); the orchestrator tags after it.",
+            "COMMIT MESSAGE: `fix(compiler): …`, `Refs #28`, ends with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.",
+            "GATE: des-commit commits with --no-verify; run `.githooks/pre-commit` yourself before des-commit."
+          ],
+          "deps": [
+            "02-04"
           ]
         }
       ]
