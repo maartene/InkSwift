@@ -143,6 +143,27 @@ struct Bug_EvalStackValuesTests {
         }
     }
 
+    // Before 2.2.2 a function's void result was the string "void", and a
+    // variable holding it was saved as one. Such a save now restores the
+    // string itself, which prints: the old sentinel can't be told apart from
+    // a story string "void" (see docs/reference/differences-from-inklecate.md).
+    @Test func `a legacy save holding the string void restores it as text that prints`() throws {
+        let played = try Self.stories(Self.voidFunctionFixture)
+        let fresh = try Self.stories(Self.voidFunctionFixture)
+        for (story, restored) in zip(played, fresh) {
+            while story.canContinue { _ = story.`continue`() }
+            let save = String(decoding: try story.saveState(), as: UTF8.self)
+            let legacySave = save.replacingOccurrences(
+                of: #"{"type":"void"}"#, with: #"{"type":"string","stringValue":"void"}"#)
+            #expect(legacySave != save)
+
+            try restored.restoreState(Data(legacySave.utf8))
+            try restored.chooseChoice(at: 0)
+
+            #expect(try CompilerOracle.play(restored) == ["Go", "Gone void.", "I 5void J"])
+        }
+    }
+
     @Test func `the native compile plays void values as inklecate's JSON does`() throws {
         for fixture in [Self.voidStringFixture, Self.voidFunctionFixture] {
             let result = try CompilerOracle.compileAndPlay(fixture)
@@ -221,12 +242,18 @@ struct Bug_EvalStackValuesTests {
         return lines
     }
 
-    // No ink source leaves the evaluation stack short — every operator and
-    // assignment inklecate emits has its operands pushed first — so these
-    // stories are hand-written JSON, kept to one line each: a unary operator,
-    // a binary operator with one operand, and a temp assignment with nothing
-    // to assign. Malformed JSON must report an error, not crash the host.
-    @Test(arguments: [#""_""#, #"1,"+""#, #"{"temp=":"x"}"#])
+    // No ink source leaves the evaluation stack short — every instruction
+    // inklecate emits that pops has its value pushed first — so these stories
+    // are hand-written JSON, kept to one line each: a unary operator, a binary
+    // operator with one operand, a temp assignment with nothing to assign, a
+    // tunnel return (`->->` pops before it returns, so the empty return stack
+    // is never reached), a `pop`, a SEED_RANDOM with no seed, an `out` with
+    // nothing to print, a conditional divert and a conditional choice with no
+    // condition. Malformed JSON must report an error, not crash the host.
+    @Test(arguments: [
+        #""_""#, #"1,"+""#, #"{"temp=":"x"}"#, #""->->""#, #""pop""#, #""srnd""#, #""out""#,
+        #"{"->":"0","c":true}"#, #"{"*":"0","flg":1}"#,
+    ])
     func `an operation on a short evaluation stack reports an error and the prose after it does not play`(
         evaluation: String
     ) throws {
@@ -237,5 +264,6 @@ struct Bug_EvalStackValuesTests {
 
         #expect(lines.contains("After.") == false)
         #expect(story.currentErrors == ["Evaluation stack is empty"])
+        #expect(story.currentChoices.isEmpty)
     }
 }

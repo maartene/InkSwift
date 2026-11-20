@@ -232,14 +232,22 @@ Known places where the same compiled story plays differently on InkSwift's runti
   in `currentErrors` and ends the flow, like any other runtime error
   ([#41](https://github.com/maartene/InkSwift/issues/41)). Float division follows IEEE
   on both: `{1.0 / z}` with `VAR z = 0.0` prints `Infinity`, `{0.0 / z}` prints `NaN`.
-- **A short evaluation stack is a runtime error.** JSON in which an operator or an
-  assignment finds no value to work on (inklecate never writes such JSON) reports
-  `Evaluation stack is empty` in `currentErrors` and ends the flow, where inkle's runtime
-  fails with an internal exception. `Story(json:)` accepts JSON from any source, so a
+- **A short evaluation stack is a runtime error.** JSON in which an instruction finds no
+  value to pop (inklecate never writes such JSON) reports `Evaluation stack is empty` in
+  `currentErrors` and ends the flow, where inkle's runtime fails with an internal
+  exception. That holds for every instruction that pops: an operator, an assignment,
+  `out`, `pop`, `->->`, `SEED_RANDOM`, and the condition of a conditional divert or
+  choice. `Story(json:)` accepts JSON from any source, so a
   malformed story must not crash the app hosting it
   ([#41](https://github.com/maartene/InkSwift/issues/41)).
-- **Default (fallback) choices** and a tunnel onwards with a divert (`->-> target`)
-  differ in some cases.
+- **Default (fallback) choices** differ in some cases.
+- **A tunnel onwards override (`->-> target`) is not supported.** inklecate compiles
+  it to `ev {"^->": "target"} /ev ->->`: the target is pushed as a value for `->->` to
+  pop and follow. On the runtime path (path 2) InkSwift pops the target and ignores it,
+  so play resumes at the tunnel's call site instead of at `target`. The native compiler
+  doesn't recognise the form: the tunnel never returns, and the story stops with
+  `unexpectedly reached end of content. Do you need a '->->' to return from a tunnel?`
+  in `currentErrors`. Write a bare `->->` and divert from the call site instead.
 
 For the complete, current list, run this from a checkout of InkSwift. Reasons naming
 the runtime show up for both paths:
@@ -267,6 +275,11 @@ The native `Story` API is not a copy of inkle's C# API:
   stitch the story no longer has is kept as it is. A save from a newer build is **not
   supported on an older build**: restored there, some visit counts read as 0, so
   sequence items and once-only content replay and loops run extra passes (ADR-022 §4).
+  A save holding a void value (`"type":"void"`, a variable that stored the result of a
+  function that returns nothing) can't be read at all by builds before 2.2.2, which
+  saved that result as the string `"void"`. Such an older save restores on 2.2.2 and
+  later as the string itself, so the variable prints `void` where it printed nothing
+  ([#44](https://github.com/maartene/InkSwift/issues/44)).
 
 ## See also
 

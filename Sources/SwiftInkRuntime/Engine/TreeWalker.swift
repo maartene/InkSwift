@@ -31,7 +31,7 @@ struct TreeWalker {
             appendNewline(state: &state)
 
         case .controlCommand(let cmd):
-            handleControlCommand(cmd, state: &state)
+            try handleControlCommand(cmd, state: &state)
 
         case .divert, .functionCall:
             break  // resolved and followed by InkEngine, which owns the container stack
@@ -112,7 +112,7 @@ struct TreeWalker {
 
         // C# pushes a `Void` content object onto the evaluation stack like any
         // value (Story.cs ~950-956): `ev void /ev ~ret` returns it from a bare
-        // `~ return`, `ev void /ev ->->` hands it to the tunnel return.
+        // `~ return`; in `ev void /ev ->->` it is what `->->` pops and discards.
         case .voidValue:
             state.evalStack.append(.void)
 
@@ -141,7 +141,8 @@ struct TreeWalker {
 
     // MARK: - Control command handling
 
-    private func handleControlCommand(_ cmd: String, state: inout StoryState) {
+    /// A command that pops (`out`, `pop`) reports a short evaluation stack.
+    private func handleControlCommand(_ cmd: String, state: inout StoryState) throws(InkRuntimeError) {
         switch cmd {
         case "ev":
             break  // begin evaluation mode — stack frames managed externally for now
@@ -150,15 +151,14 @@ struct TreeWalker {
             break  // end evaluation mode
 
         case "out":
-            if let top = state.evalStack.popLast() {
-                // A function that returned nothing prints nothing (Story.cs
-                // ~1231: `out` skips only `Void`). A printed value is text like
-                // any other: inside a string or tag span it belongs to that span
-                // (Story.cs EndString/EndTag collect every StringValue back to
-                // the span's start).
-                if top != .void {
-                    handleText(top.asString, state: &state)
-                }
+            // A function that returned nothing prints nothing (Story.cs
+            // ~1231: `out` skips only `Void`). A printed value is text like
+            // any other: inside a string or tag span it belongs to that span
+            // (Story.cs EndString/EndTag collect every StringValue back to
+            // the span's start).
+            let top = try state.popEvaluationStack()
+            if top != .void {
+                handleText(top.asString, state: &state)
             }
 
         case "str":
@@ -182,7 +182,7 @@ struct TreeWalker {
             }
 
         case "pop":
-            _ = state.evalStack.popLast()
+            _ = try state.popEvaluationStack()
 
         // The step loop never reaches these: InkEngine.executeFlowNode handles
         // `done` and `end` itself, because `end` is the engine's forceEnd()
@@ -284,25 +284,19 @@ struct TreeWalker {
     /// Natives coerce their operands to one type first (C#
     /// `CoerceValuesToSingleType`), see `BinaryNativeFunction` and
     /// `UnaryNativeFunction`; a void operand, or a type the operation has no
-    /// form for, throws the reference's error. The switch is exhaustive over
-    /// the catalog, so a new native cannot be silently ignored.
+    /// form for, throws the reference's error. `NativeFunction.operation` is
+    /// total over the catalog, so a new native cannot be silently ignored.
     private func handleNativeFunction(_ fn: NativeFunction, state: inout StoryState) throws(InkRuntimeError) {
-        switch fn {
-        case .add, .subtract, .multiply, .divide, .modulo, .equal, .notEqual, .greater, .less,
-             .greaterOrEqual, .lessOrEqual, .and, .or, .min, .max, .pow, .has, .hasnt:
-            try applyBinaryOp(fn, state: &state)
-        // The reference names negation `_` to keep it distinct from binary `-`.
-        case .not:     try applyUnaryOp(.not, state: &state)
-        case .negate:  try applyUnaryOp(.negate, state: &state)
-        case .floor:   try applyUnaryOp(.floor, state: &state)
-        case .ceiling: try applyUnaryOp(.ceiling, state: &state)
-        case .int:     try applyUnaryOp(.int, state: &state)
-        case .float:   try applyUnaryOp(.float, state: &state)
+        switch fn.operation {
+        case .binary(let operation):
+            try applyBinaryOp(operation, state: &state)
+        case .unary(let operation):
+            try applyUnaryOp(operation, state: &state)
         // The seed is popped and void pushed, as C# `Story` does, so the `pop`
         // compiled for the discarded call removes the void and nothing below it.
         // With RANDOM refused, a seed has no observable effect.
         case .seedRandom:
-            _ = state.evalStack.popLast()
+            _ = try state.popEvaluationStack()
             state.evalStack.append(.void)
         }
     }
@@ -314,8 +308,7 @@ struct TreeWalker {
         state.evalStack.append(try operation(operand))
     }
 
-    private func applyBinaryOp(_ fn: NativeFunction, state: inout StoryState) throws(InkRuntimeError) {
-        guard let operation = BinaryNativeFunction.byFunction[fn] else { return }
+    private func applyBinaryOp(_ operation: BinaryNativeFunction, state: inout StoryState) throws(InkRuntimeError) {
         let rhs = try state.popEvaluationStack()
         let lhs = try state.popEvaluationStack()
         state.evalStack.append(try operation(lhs, rhs))

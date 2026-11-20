@@ -9,8 +9,9 @@ enum InkValue: Codable, Equatable {
     case bool(Bool)
     case variablePointer(name: String, contextIndex: Int)
     /// C# `Runtime.Void`: the no-value result of a function that returns
-    /// nothing (an implicit end of body or a bare `~ return`), of `->->` and of
-    /// `SEED_RANDOM`. Distinct from every story value — a story string "void"
+    /// nothing (an implicit end of body or a bare `~ return`) and of
+    /// `SEED_RANDOM`, and the value a tunnel's `ev void /ev ->->` pushes for
+    /// `->->` to pop. Distinct from every story value — a story string "void"
     /// is ordinary text — so `out` can skip exactly this and nothing else.
     case void
 
@@ -132,8 +133,9 @@ struct InkRuntimeError: Error, Equatable {
     /// flow (maintainer decision; docs/reference/differences-from-inklecate.md).
     static let divideByZero = InkRuntimeError(message: "Attempted to divide by zero.")
 
-    /// An operator or assignment found too few values on the evaluation stack.
-    /// inklecate's JSON never does this, but `Story(json:)` accepts any JSON
+    /// An instruction found too few values on the evaluation stack: an
+    /// operator, an assignment, `out`, `pop`, `->->`, SEED_RANDOM, or the
+    /// condition of a divert or choice. inklecate's JSON never does this, but `Story(json:)` accepts any JSON
     /// and must not crash the host on a malformed one (maintainer decision;
     /// docs/reference/differences-from-inklecate.md).
     static let emptyEvaluationStack = InkRuntimeError(message: "Evaluation stack is empty")
@@ -179,9 +181,8 @@ extension InkValue {
         switch self {
         case .bool: return .bool
         case .int: return .int
-        // Never consulted: every native refuses a void operand before
-        // coercing it (`NativeFunction.refuseVoid`).
-        case .void: return .int
+        case .void:
+            preconditionFailure("void reached coercion: operators refuse a void operand before coercing it")
         case .float: return .float
         // A pointer is dereferenced before it reaches an operator; should one
         // get here, it takes part by its name, as text.
@@ -229,9 +230,9 @@ struct BinaryNativeFunction {
     var int: ((Int, Int) -> InkValue)?
     var float: ((Double, Double) -> InkValue)?
     var string: ((String, String) -> InkValue)?
-    /// Integer division and modulo: a zero divisor is an error (see
-    /// `InkRuntimeError.divideByZero`). A flag rather than throwing closures,
-    /// which need macOS 15 runtime support for typed throws.
+    /// Integer division and modulo: see `InkRuntimeError.divideByZero`. A flag
+    /// rather than throwing closures, which need macOS 15 runtime support for
+    /// typed throws.
     var refusesZeroIntDivisor = false
 
     func callAsFunction(_ lhs: InkValue, _ rhs: InkValue) throws(InkRuntimeError) -> InkValue {
@@ -271,8 +272,7 @@ struct BinaryNativeFunction {
         function: .subtract, int: { .int($0 - $1) }, float: { .float($0 - $1) })
     static let multiply = BinaryNativeFunction(
         function: .multiply, int: { .int($0 * $1) }, float: { .float($0 * $1) })
-    // An int divisor of zero is an error (see `InkRuntimeError.divideByZero`);
-    // floats follow IEEE, as C#'s do: Infinity, -Infinity or NaN.
+    // Int: see `InkRuntimeError.divideByZero`. Floats follow IEEE, as C#'s do.
     static let divide = BinaryNativeFunction(
         function: .divide,
         int: { .int($0 / $1) },
@@ -318,12 +318,13 @@ struct BinaryNativeFunction {
         }
     }
 
-    /// The binary natives by the catalog native they implement.
+    /// The binary natives by the catalog native they implement, read from
+    /// `NativeFunction.operation`.
     static let byFunction: [NativeFunction: BinaryNativeFunction] = Dictionary(
-        uniqueKeysWithValues: [
-            add, subtract, multiply, divide, modulo, equal, notEqual, greater, less,
-            greaterOrEqual, lessOrEqual, and, or, min, max, pow, has, hasnt,
-        ].map { ($0.function, $0) })
+        uniqueKeysWithValues: NativeFunction.allCases.compactMap { native in
+            guard case .binary(let operation) = native.operation else { return nil }
+            return (native, operation)
+        })
 }
 
 /// A unary native function per coerced operand type. C# registers the unary
@@ -367,6 +368,49 @@ struct UnaryNativeFunction {
     private static func truncatedToInkInt(_ value: Double) -> Int {
         guard value.isNaN == false else { return 0 }
         return Int(Swift.min(Swift.max(value, Double(Int32.min)), Double(Int32.max)))
+    }
+}
+
+/// How the engine executes a native function.
+enum NativeOperation {
+    case binary(BinaryNativeFunction)
+    case unary(UnaryNativeFunction)
+    /// SEED_RANDOM: pops the seed and pushes void, as C# `Story` does.
+    case seedRandom
+}
+
+extension NativeFunction {
+
+    /// The operation for this native. The switch is exhaustive over the
+    /// catalog, so a new native cannot be dispatched to nothing.
+    var operation: NativeOperation {
+        switch self {
+        case .add: .binary(.add)
+        case .subtract: .binary(.subtract)
+        case .multiply: .binary(.multiply)
+        case .divide: .binary(.divide)
+        case .modulo: .binary(.modulo)
+        case .equal: .binary(.equal)
+        case .notEqual: .binary(.notEqual)
+        case .greater: .binary(.greater)
+        case .less: .binary(.less)
+        case .greaterOrEqual: .binary(.greaterOrEqual)
+        case .lessOrEqual: .binary(.lessOrEqual)
+        case .and: .binary(.and)
+        case .or: .binary(.or)
+        case .min: .binary(.min)
+        case .max: .binary(.max)
+        case .pow: .binary(.pow)
+        case .has: .binary(.has)
+        case .hasnt: .binary(.hasnt)
+        case .not: .unary(.not)
+        case .negate: .unary(.negate)
+        case .floor: .unary(.floor)
+        case .ceiling: .unary(.ceiling)
+        case .int: .unary(.int)
+        case .float: .unary(.float)
+        case .seedRandom: .seedRandom
+        }
     }
 }
 

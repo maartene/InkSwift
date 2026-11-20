@@ -444,10 +444,13 @@ final class InkEngine {
 
     /// ->->: pop the tunnel element and resume at its position. Any other
     /// element on top, or none, refuses the pop and ends the flow.
-    /// `->->` pops the void its `ev void /ev` pushed, as C# does before it
-    /// pops the call stack (Story.cs ~1263-1270).
+    /// First `->->` pops the evaluation stack, as C# does before it pops the
+    /// call stack (Story.cs ~1263-1270), and discards the value: the void of a
+    /// bare `->->`, or the target of a tunnel onwards override (`->-> target`),
+    /// which is unsupported, so play resumes at the call site (see
+    /// docs/reference/differences-from-inklecate.md).
     private func returnFromTunnel() {
-        _ = state.evalStack.popLast()
+        guard popEvaluationStackOrReport() != nil else { return }
         guard let element = state.returnStack.pop(.tunnel) else {
             return refusePop(.tunnel)
         }
@@ -462,7 +465,18 @@ final class InkEngine {
         forceEnd()
     }
 
-    /// A native function's runtime error: C# `AddError` → `ForceEnd`, as for
+    /// Pop the evaluation stack for an instruction the engine runs itself; a
+    /// short stack is reported as a runtime error, and nil returned.
+    private func popEvaluationStackOrReport() -> InkValue? {
+        do {
+            return try state.popEvaluationStack()
+        } catch {
+            reportRuntimeError(error)
+            return nil
+        }
+    }
+
+    /// A runtime error (`InkRuntimeError`): C# `AddError` → `ForceEnd`, as for
     /// a refused pop. The forced end is a safe exit, so no end-of-content
     /// error follows it.
     private func reportRuntimeError(_ error: InkRuntimeError) {
@@ -604,7 +618,7 @@ final class InkEngine {
     /// the suppression key so that identically-named relative paths in
     /// different containers do not incorrectly collide.
     private func isChoiceOffered(target: PathReference, flags: ChoiceFlags) -> Bool {
-        if flags.contains(.hasCondition), (state.evalStack.popLast() ?? .bool(false)).asBool == false {
+        if flags.contains(.hasCondition), popEvaluationStackOrReport()?.asBool != true {
             return false
         }
         guard flags.contains(.isOnceOnly), let absolutePath = resolveAbsoluteTargetPath(for: target) else {
@@ -665,8 +679,7 @@ final class InkEngine {
         // with the continuation text (e.g. "Awkward, I reply" + glue + ", sipping...").
         if isConditional {
             // Conditional diverts pop a bool from the eval stack; false = skip divert.
-            let condition = state.evalStack.popLast() ?? .bool(false)
-            guard condition.asBool else { return }
+            guard popEvaluationStackOrReport()?.asBool == true else { return }
         }
         // As in Story.cs (PerformLogicAndFlowControl): the condition gates the divert,
         // then the target resolves — a variable target too, conditional or not.
