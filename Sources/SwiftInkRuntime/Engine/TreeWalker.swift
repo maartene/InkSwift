@@ -275,7 +275,7 @@ struct TreeWalker {
     private func handleNativeFunction(_ fn: NativeFunction, state: inout StoryState) throws(InkRuntimeError) {
         switch fn {
         case .add, .subtract, .multiply, .divide, .modulo, .equal, .notEqual, .greater, .less,
-             .greaterOrEqual, .lessOrEqual, .and, .or, .min, .max:
+             .greaterOrEqual, .lessOrEqual, .and, .or, .min, .max, .pow, .has, .hasnt:
             try applyBinaryOp(fn, state: &state)
         case .not:
             applyUnaryOp(state: &state) { value in

@@ -65,8 +65,9 @@ playing inklecate's `.ink.json` on the native runtime.
 | Multi-line sequences: `{stopping:` … `}`, `{cycle:` … `}` | Rejected | ✅ Works | Compile with inklecate, or use the inline forms (`{a\|b}`, `{&a\|b}`, `{!a\|b}`) |
 | Shuffle: `{~a\|b}` | Rejected | ❌ Refused at load | JS-bridge |
 | `LIST`, `RANDOM()`, threads (`<-`), `EXTERNAL` | Rejected | ❌ Refused at load | JS-bridge |
-| `TURNS()`, `TURNS_SINCE()`, `CHOICE_COUNT()`, `POW()`, `?` / `!?`, `READ_COUNT()` | Rejected | ❌ Refused at load | JS-bridge, or avoid the function |
+| `TURNS()`, `TURNS_SINCE()`, `CHOICE_COUNT()`, `READ_COUNT()` | Rejected | ❌ Refused at load | JS-bridge, or avoid the function |
 | `SEED_RANDOM()` | ✅ Works (no observable effect) | ✅ Works (no observable effect) | — |
+| `POW()`, string `?` / `!?` (also `has` / `hasnt`) | ✅ Works | ✅ Works | — (on lists they need `LIST`, which is refused) |
 
 The authoritative construct list, including everything that *is* supported, is the
 [Ink feature reference](../product/ink-feature-reference.md).
@@ -99,8 +100,7 @@ do {
 | Multi-line sequence | `{stopping:` / `- Halt!` / `- I said halt!` / `}` | Yes |
 | Shuffle | `{~heads\|tails}` | No |
 | `LIST`, `RANDOM()`, threads, `EXTERNAL` | `LIST colours = red, green` | No |
-| `TURNS()`, `TURNS_SINCE()`, `CHOICE_COUNT()`, `POW()`, `READ_COUNT()` | `{TURNS_SINCE(-> shop)}` | No |
-| `?` and `!?` (contains, does not contain) | `{"hello" ? "ell"}` | No |
+| `TURNS()`, `TURNS_SINCE()`, `CHOICE_COUNT()`, `READ_COUNT()` | `{TURNS_SINCE(-> shop)}` | No |
 
 A construct the runtime also refuses is named exactly as the runtime names it when it
 refuses inklecate's JSON (see [Not supported: refused at
@@ -184,9 +184,8 @@ do {
 | `RANDOM()` | `RANDOM()` |
 | Shuffle | `shuffle {~a\|b}` |
 | `EXTERNAL` function calls (there is no host binding API) | `EXTERNAL functions` |
-| `TURNS()`, `TURNS_SINCE()`, `CHOICE_COUNT()`, `POW()` | the function's name |
+| `TURNS()`, `TURNS_SINCE()`, `CHOICE_COUNT()` | the function's name |
 | `READ_COUNT()`, of a divert-target variable or a literal `-> knot` (a bare `{knot}` read count works) | `READ_COUNT() of a divert-target variable` |
-| `?` and `!?` (contains, does not contain) | `? (contains)`, `!? (does not contain)` |
 | Tags in the old inkVersion 20 format | asks you to recompile with a current inklecate |
 
 `SEED_RANDOM()` is accepted, on this path and by the native compiler. With every random

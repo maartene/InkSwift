@@ -312,10 +312,6 @@
  "TestStitchNamingCollision": {
   "native": "native accepts a story inklecate rejects ('already been used for a var')"
  },
- "TestStringContains": {
-  "native": "string contains operator (?)",
-  "runtime": "unsupported ? (contains)"
- },
  "TestStringParserA": {
   "native": "not applicable \u2014 unit-tests inklecate's StringParser internals",
   "runtime": "not applicable \u2014 unit-tests inklecate's StringParser internals"

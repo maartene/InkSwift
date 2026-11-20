@@ -194,24 +194,29 @@ extension InkValue {
 
 /// A binary native function per coerced operand type, as C# registers one
 /// operation per `ValueType` (NativeFunctionCall.cs GenerateNativeFunctions).
-/// An operation without a string form raises the reference's error when the
-/// operands coerce to strings.
+/// An operation without a form for the coerced type raises the reference's
+/// error, named after that type (C# `ValueType`: Int, Float, String).
 struct BinaryNativeFunction {
     let function: NativeFunction
-    let int: (Int, Int) -> InkValue
-    let float: (Double, Double) -> InkValue
+    var int: ((Int, Int) -> InkValue)?
+    var float: ((Double, Double) -> InkValue)?
     var string: ((String, String) -> InkValue)?
 
     func callAsFunction(_ lhs: InkValue, _ rhs: InkValue) throws(InkRuntimeError) -> InkValue {
         switch InkValue.coerced(lhs, rhs) {
-        case .ints(let a, let b): return int(a, b)
-        case .floats(let a, let b): return float(a, b)
-        case .strings(let a, let b):
-            guard let string else {
-                throw InkRuntimeError(message: "Cannot perform operation '\(function.token)' on String")
-            }
-            return string(a, b)
+        case .ints(let a, let b): return try perform(int, a, b, on: "Int")
+        case .floats(let a, let b): return try perform(float, a, b, on: "Float")
+        case .strings(let a, let b): return try perform(string, a, b, on: "String")
         }
+    }
+
+    private func perform<Operand>(
+        _ operation: ((Operand, Operand) -> InkValue)?, _ lhs: Operand, _ rhs: Operand, on type: String
+    ) throws(InkRuntimeError) -> InkValue {
+        guard let operation else {
+            throw InkRuntimeError(message: "Cannot perform operation '\(function.token)' on \(type)")
+        }
+        return operation(lhs, rhs)
     }
 
     /// A comparison or logic operation: the same Bool-valued test for ints and floats.
@@ -257,11 +262,33 @@ struct BinaryNativeFunction {
     static let max = BinaryNativeFunction(
         function: .max, int: { .int(Swift.max($0, $1)) }, float: { .float(Swift.max($0, $1)) })
 
+    // `(float)Math.Pow` for ints and floats alike: POW(2, 3) is 8.0.
+    static let pow = BinaryNativeFunction(
+        function: .pow,
+        int: { .float(Foundation.pow(Double($0), Double($1))) },
+        float: { .float(Foundation.pow($0, $1)) })
+    // Defined for strings (and lists, refused) only: two numbers raise the
+    // reference's error, a string on either side casts the other to a string.
+    static let has = BinaryNativeFunction(function: .has, string: { .bool(ordinalContains($0, $1)) })
+    static let hasnt = BinaryNativeFunction(function: .hasnt, string: { .bool(!ordinalContains($0, $1)) })
+
+    /// C# `String.Contains(string)`: an ordinal search over UTF-16 code units,
+    /// so a decomposed "é" contains "e" and the empty string is in every string.
+    /// Swift's `String.contains` compares Characters and would disagree.
+    static func ordinalContains(_ haystack: String, _ needle: String) -> Bool {
+        let text = Array(haystack.utf16)
+        let pattern = Array(needle.utf16)
+        guard pattern.count <= text.count else { return false }
+        return (0...(text.count - pattern.count)).contains { start in
+            text[start..<start + pattern.count].elementsEqual(pattern)
+        }
+    }
+
     /// The binary natives by the catalog native they implement.
     static let byFunction: [NativeFunction: BinaryNativeFunction] = Dictionary(
         uniqueKeysWithValues: [
             add, subtract, multiply, divide, modulo, equal, notEqual, greater, less,
-            greaterOrEqual, lessOrEqual, and, or, min, max,
+            greaterOrEqual, lessOrEqual, and, or, min, max, pow, has, hasnt,
         ].map { ($0.function, $0) })
 }
 

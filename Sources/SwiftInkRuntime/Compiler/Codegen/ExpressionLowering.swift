@@ -71,7 +71,7 @@ enum ExpressionLowering {
     }
 
     /// The catalog native for an operator symbol. An operator the catalog
-    /// refuses (`?`, `!?`) is rejected under the name the runtime refuses it by;
+    /// refuses is rejected under the name the runtime refuses it by;
     /// any other miss is a compiler defect, still reported, never a crash.
     private static func nativeOperator(_ symbol: String) throws -> NativeFunction {
         if let native = NativeFunctionCatalog.supportedNative(forToken: symbol) {

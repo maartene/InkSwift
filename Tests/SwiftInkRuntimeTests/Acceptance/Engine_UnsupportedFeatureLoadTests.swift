@@ -31,13 +31,10 @@ struct Engine_UnsupportedFeatureLoadTests {
         Refusal(fixture: "random", feature: "RANDOM()", locations: ["k"]),
         Refusal(fixture: "shuffle", feature: "shuffle {~a|b}", locations: ["k"]),
         Refusal(fixture: "external", feature: "EXTERNAL functions", locations: ["k"]),
-        Refusal(fixture: "pow", feature: "POW()", locations: ["k"]),
         Refusal(fixture: "turns", feature: "TURNS()", locations: ["k"]),
         Refusal(fixture: "turns-since", feature: "TURNS_SINCE()", locations: ["k"]),
         Refusal(fixture: "choice-count", feature: "CHOICE_COUNT()", locations: ["k"]),
         Refusal(fixture: "read-count-variable", feature: "READ_COUNT() of a divert-target variable", locations: ["k"]),
-        Refusal(fixture: "contains", feature: "? (contains)", locations: ["k"]),
-        Refusal(fixture: "does-not-contain", feature: "!? (does not contain)", locations: ["k"]),
     ]
 
     private func load(_ fixture: String) throws -> Story {
@@ -58,12 +55,23 @@ struct Engine_UnsupportedFeatureLoadTests {
     @Test func `every unsupported feature in the story is reported at once, even in a knot never visited`() throws {
         #expect(throws: StoryError.unsupportedFeatures([
             UnsupportedFeature(name: "LIST", locations: [""]),
-            UnsupportedFeature(name: "POW()", locations: [""]),
             UnsupportedFeature(name: "RANDOM()", locations: ["never_visited", "shop.haggle"]),
             UnsupportedFeature(name: "threads (<-)", locations: ["never_visited"]),
         ])) {
             try load("runtime-unsupported-several")
         }
+    }
+
+    // POW, `?` and `!?` were refused at load until step 04-04 implemented them
+    // (ADR-025 §5); the fixtures that pinned the refusal now pin that they play.
+    // Expected texts from inklecate 1.2.1 `-p`.
+    @Test(arguments: [
+        ("runtime-unsupported-pow", ["Pow: 8.", "After the power."]),
+        ("runtime-unsupported-contains", ["yes", "After the test."]),
+        ("runtime-unsupported-does-not-contain", ["yes", "After the test."]),
+    ])
+    func `POW and the contains operators load and play as inklecate plays them`(fixture: String, expected: [String]) throws {
+        #expect(try CompilerOracle.play(try load(fixture)) == expected)
     }
 
     // FLOOR, INT, CEILING and FLOAT were implemented under names inklecate never

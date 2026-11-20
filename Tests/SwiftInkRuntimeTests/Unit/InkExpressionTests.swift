@@ -61,6 +61,31 @@ struct InkExpressionParserTests {
     }
 }
 
+@Suite("InkExpressionParser — contains operators ? and !?")
+struct InkExpressionParserContainsTests {
+
+    // C# precedence 3 (InkParser_Expressions.cs): `a == b ? c + d` is
+    // `a == (b ? (c + d))`, tighter than comparison, looser than addition.
+    @Test func `parses contains between comparison and addition`() throws {
+        let expression = try InkExpressionParser.parse("a == b ? c + d")
+        #expect(expression == .binary(
+            op: "==",
+            left: .variableReference("a"),
+            right: .binary(
+                op: "?",
+                left: .variableReference("b"),
+                right: .binary(op: "+", left: .variableReference("c"), right: .variableReference("d")))
+        ))
+    }
+
+    // The word forms lower to the same natives (Expression.cs `NativeNameForOp`).
+    @Test(arguments: [("has", "?"), ("hasnt", "!?")])
+    func `parses the word form of a contains operator as its symbol`(word: String, symbol: String) throws {
+        let expression = try InkExpressionParser.parse("a \(word) b")
+        #expect(expression == .binary(op: symbol, left: .variableReference("a"), right: .variableReference("b")))
+    }
+}
+
 @Suite("InkExpressionParser — logical operators && and ||")
 struct InkExpressionParserLogicalTests {
 

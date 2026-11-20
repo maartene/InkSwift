@@ -13,6 +13,11 @@ import Testing
         "srnd",
     ]
 
+    /// Tokens the decoder refused until step 04-04 implemented them (ADR-025 §5).
+    static let newlySupportedTokens = ["POW", "?", "!?"]
+
+    static let supportedTokens = previouslyAcceptedTokens + newlySupportedTokens
+
     static let previouslyRefusedTokens: [(token: String, feature: String)] = [
         ("choiceCnt", "CHOICE_COUNT()"),
         ("turn", "TURNS()"),
@@ -21,9 +26,6 @@ import Testing
         ("rnd", "RANDOM()"),
         ("seq", "shuffle {~a|b}"),
         ("thread", "threads (<-)"),
-        ("POW", "POW()"),
-        ("?", "? (contains)"),
-        ("!?", "!? (does not contain)"),
         ("listInt", "LIST"),
         ("range", "LIST"),
         ("lrnd", "LIST"),
@@ -36,14 +38,14 @@ import Testing
         ("LIST_INVERT", "LIST"),
     ]
 
-    @Test(arguments: previouslyAcceptedTokens)
+    @Test(arguments: supportedTokens)
     func `every token the decoder accepted maps to the supported native with that token`(token: String) {
         let native = NativeFunctionCatalog.supportedNative(forToken: token)
         #expect(native?.token == token)
     }
 
-    @Test func `the supported natives are exactly the tokens the decoder accepted`() {
-        #expect(Set(NativeFunction.allCases.map(\.token)) == Set(Self.previouslyAcceptedTokens))
+    @Test func `the supported natives are exactly the tokens the decoder accepted, plus POW and contains`() {
+        #expect(Set(NativeFunction.allCases.map(\.token)) == Set(Self.supportedTokens))
     }
 
     @Test(arguments: previouslyRefusedTokens)
@@ -56,7 +58,7 @@ import Testing
         #expect(Set(NativeFunctionCatalog.unsupportedFeatureByToken.keys) == refused)
     }
 
-    @Test(arguments: previouslyAcceptedTokens)
+    @Test(arguments: supportedTokens)
     func `no token is both supported and refused`(token: String) {
         #expect(NativeFunctionCatalog.unsupportedFeature(forToken: token) == nil)
     }
@@ -64,7 +66,7 @@ import Testing
     @Test(arguments: [
         (NativeFunction.add, 2), (.subtract, 2), (.min, 2), (.max, 2), (.equal, 2),
         (.not, 1), (.negate, 1), (.floor, 1), (.ceiling, 1), (.int, 1), (.float, 1),
-        (.seedRandom, 1),
+        (.seedRandom, 1), (.pow, 2), (.has, 2), (.hasnt, 2),
     ])
     func `each supported native carries the reference arity`(native: NativeFunction, arity: Int) {
         #expect(NativeFunctionCatalog.entry(for: native).arity == arity)
@@ -126,7 +128,7 @@ import Testing
 
     @Test func `every callable unsupported built-in is in the consistency check`() {
         #expect(Set(Self.callableUnsupportedEntries.map(\.sourceName)) == [
-            "CHOICE_COUNT", "TURNS", "TURNS_SINCE", "READ_COUNT", "RANDOM", "POW", "LIST_RANGE", "LIST_RANDOM",
+            "CHOICE_COUNT", "TURNS", "TURNS_SINCE", "READ_COUNT", "RANDOM", "LIST_RANGE", "LIST_RANDOM",
             "LIST_MIN", "LIST_MAX", "LIST_ALL", "LIST_COUNT", "LIST_VALUE", "LIST_INVERT",
         ])
     }

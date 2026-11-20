@@ -517,12 +517,12 @@ struct UpstreamConformance05Tests {
         c.equal("true\nfalse\ntrue\ntrue\n", result)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: string contains operator (?)"))
+    @Test
     func `TestStringContains — native compiler and runtime`() {
         Conformance.run("TestStringContains", .native, Self.testStringContains)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: unsupported ? (contains)"))
+    @Test
     func `TestStringContains — inklecate JSON on the runtime`() {
         Conformance.run("TestStringContains", .runtime, Self.testStringContains)
     }

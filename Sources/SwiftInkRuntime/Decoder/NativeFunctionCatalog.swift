@@ -28,6 +28,12 @@ enum NativeFunction: String, CaseIterable, CustomStringConvertible {
     case ceiling = "CEILING"
     case int = "INT"
     case float = "FLOAT"
+    /// C# `(float)Math.Pow`: a float even for two ints.
+    case pow = "POW"
+    /// String containment (C# `Has`/`Hasnt`, `String.Contains`); the reference
+    /// also defines them for lists, which are refused.
+    case has = "?"
+    case hasnt = "!?"
     /// SEED_RANDOM is accepted on both paths: without the RNG tokens, which are
     /// refused, a seed has no observable effect, so ignoring it plays exactly as
     /// the reference does. Like C#, it pops the seed and pushes void.
@@ -106,7 +112,7 @@ enum NativeFunctionCatalog {
 
     private static let supportedEntries: [NativeFunctionEntry] =
         [NativeFunction.add, .subtract, .divide, .multiply, .modulo, .equal, .greater, .less,
-         .greaterOrEqual, .lessOrEqual, .notEqual, .and, .or, .min, .max]
+         .greaterOrEqual, .lessOrEqual, .notEqual, .and, .or, .min, .max, .pow, .has, .hasnt]
             .map { .supported($0, arity: 2) }
         + [NativeFunction.not, .floor, .ceiling, .int, .float].map { .supported($0, arity: 1) }
         + [.supported(.negate, source: "-", arity: 1),
@@ -118,9 +124,6 @@ enum NativeFunctionCatalog {
         .unsupported("TURNS_SINCE", token: "turns", arity: 1, feature: "TURNS_SINCE()"),
         .unsupported("READ_COUNT", token: "readc", arity: 1, feature: "READ_COUNT() of a divert-target variable"),
         .unsupported("RANDOM", token: "rnd", arity: 2, feature: "RANDOM()"),
-        .unsupported("POW", arity: 2, feature: "POW()"),
-        .unsupported("?", arity: 2, feature: "? (contains)"),
-        .unsupported("!?", arity: 2, feature: "!? (does not contain)"),
     ] + listEntries
 
     private static let listFeature = UnsupportedConstruct.list.name

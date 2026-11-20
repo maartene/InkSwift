@@ -54,7 +54,7 @@ These constructs compile to a playable blueprint. (Matrix rows 1–27, 29–35.)
 | 18 | Temp variables (`~ temp`) | `~ temp x = 1` | Frame-scoped local variable. |
 | 19 | Variable assignment (`~ x =`) | `~ hp = hp - 1` | Mutates a declared variable. |
 | 20 | Variable read in output (`{x}`) | `You have {hp} HP.` | Interpolates a variable into output. A float prints as inklecate prints it: `2`, `0.3`, `1E+20` (its 32-bit value; see [differences](../reference/differences-from-inklecate.md)). |
-| 21 | Arithmetic / logic operators | `{hp > 0 && alive}` | `+ - * / % == != > < && \|\| !` all evaluate. Mixed operands are first coerced to the higher type, as in inklecate (bool < int < float < string): `1 == 1.0` is true and `"a" + 1` is `a1`. An operator with no string form (all but `+ == !=`) applied to a string reports inklecate's runtime error in `currentErrors` and ends the story. |
+| 21 | Arithmetic / logic operators | `{hp > 0 && alive}` | `+ - * / % == != > < && \|\| !` all evaluate. Mixed operands are first coerced to the higher type, as in inklecate (bool < int < float < string): `1 == 1.0` is true and `"a" + 1` is `a1`. An operator with no string form (all but `+ == !=` and the contains operators) applied to a string reports inklecate's runtime error in `currentErrors` and ends the story. The string contains operators `?` / `has` and `!?` / `hasnt` bind between comparison and addition, as in inklecate (`"ab" + "c" ? "bc"` is true); on two numbers they report inklecate's error (`Cannot perform operation '?' on Int`). |
 | 22 | Inline conditionals (`{c: a\|b}`) | `{alive: alive\|dead}` | Inline branch on a boolean/numeric guard. |
 | 23 | Block conditionals (if / else if) | `{ hp > 0:\n  alive\n- else:\n  dead\n}` | Multi-line conditional block with else branch. |
 | 24 | Switch-style conditionals | `{ kind:\n- 1: red\n- 2: blue\n}` | Per-case dispatch via `==` + conditional diverts. |
@@ -62,7 +62,7 @@ These constructs compile to a playable blueprint. (Matrix rows 1–27, 29–35.)
 | 26 | Variable text: cycles (`{&a\|b}`) | `{&one\|two}` | Lowered to a visit-count switch that wraps modulo the stage count (`%`). |
 | 27 | Variable text: once-only (`{!a\|b}`) | `{!first time\|}` | Lowered to a visit-count switch that advances once per stage then blanks. |
 | 29 | Functions (`=== f(params) ===`) | `=== function raise(x) ===` | Callable knot with parameters and a return frame. |
-| 30 | Inline function calls `{f()}` | `{double(5)}` | Function invocation whose return value is emitted. The built-ins `FLOOR`, `CEILING`, `INT`, `FLOAT`, `MIN` and `MAX` compile to the runtime's natives and play as in inklecate. `SEED_RANDOM` compiles too; with RANDOM refused, a seed has no observable effect. As in inklecate, calling a knot or stitch as a function is rejected (`k hasn't been marked as a function…`). As in inklecate, a call to any other name that is not a story function is rejected with a located `.unresolvedReference` error (`Function call target not found`), and a built-in given the wrong number of arguments with a `.syntaxError`. |
+| 30 | Inline function calls `{f()}` | `{double(5)}` | Function invocation whose return value is emitted. The built-ins `FLOOR`, `CEILING`, `INT`, `FLOAT`, `MIN`, `MAX` and `POW` compile to the runtime's natives and play as in inklecate. `SEED_RANDOM` compiles too; with RANDOM refused, a seed has no observable effect. As in inklecate, calling a knot or stitch as a function is rejected (`k hasn't been marked as a function…`). As in inklecate, a call to any other name that is not a story function is rejected with a located `.unresolvedReference` error (`Function call target not found`), and a built-in given the wrong number of arguments with a `.syntaxError`. |
 | 31 | String interpolation | `Score: {score}` | `str`/`/str` interpolation of expression results. |
 | 32 | Tags (`#tag`) | `Hello #greeting` | Metadata tag attached to a line. |
 | 33 | Save / restore | (engine state) | `StoryState` round-trips through `chooseChoice`. |
@@ -75,8 +75,8 @@ These constructs are rejected by the compiler with a located
 `.unsupportedConstruct` error. (Matrix rows 28, 36–45.) Where the runtime also refuses a
 construct when it loads inklecate's JSON, the error's `construct` is the runtime's
 `UnsupportedFeature.name`: `"shuffle {~a|b}"`, `"threads (<-)"`, `"LIST"`, `"RANDOM()"`,
-`"EXTERNAL functions"`, `"TURNS()"`, `"TURNS_SINCE()"`, `"CHOICE_COUNT()"`, `"POW()"`,
-`"READ_COUNT() of a divert-target variable"`, `"? (contains)"`, `"!? (does not contain)"`.
+`"EXTERNAL functions"`, `"TURNS()"`, `"TURNS_SINCE()"`, `"CHOICE_COUNT()"`,
+`"READ_COUNT() of a divert-target variable"`.
 `INCLUDE` is `"INCLUDE"`.
 
 | # | Construct | Example | Reason |
@@ -91,7 +91,7 @@ construct when it loads inklecate's JSON, the error's `construct` is the runtime
 | 42 | String with inline logic | `~ return "value {n}"` (also in `~ temp`, function arguments and conditions) | The compiler has no lowering that builds a string at runtime (`str` … `out` … `/str`). Quotes in prose (`She said "hi {n}".`) are text and are supported. |
 | 43 | Tag with inline logic | `A line. # pic{n}.jpg` (also `{a\|b}` in a tag, on content, choice and gather lines) | The compiler emits the tag text verbatim and does not lower the logic inside it. Static tags are supported. |
 | 44 | Tag inside inline logic | `{met: Hi # greeting}`, `{A # t\|B}` (any `#` inside an inline `{…}`, even in quoted prose) | The compiler keeps the tag as literal text in the arm or alternative. A tag on its own line in a block conditional's branch is supported. |
-| 45 | `TURNS()`, `TURNS_SINCE()`, `CHOICE_COUNT()`, `POW()`, `READ_COUNT()`, `?` / `!?` | `{TURNS_SINCE(-> shop)}`, `{"hello" ? "ell"}` | The runtime has no turn counter, choice-count, divert-target read count or containment natives, and refuses them at load. `TURNS_SINCE` and `READ_COUNT` are rejected at the call, before their divert-target argument is read. |
+| 45 | `TURNS()`, `TURNS_SINCE()`, `CHOICE_COUNT()`, `READ_COUNT()` | `{TURNS_SINCE(-> shop)}` | The runtime has no turn counter, choice-count or divert-target read count natives, and refuses them at load. `TURNS_SINCE` and `READ_COUNT` are rejected at the call, before their divert-target argument is read. |
 
 ## Known gaps / future work
 

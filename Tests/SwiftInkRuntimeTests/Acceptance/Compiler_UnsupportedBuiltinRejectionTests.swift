@@ -41,7 +41,6 @@ struct Compiler_UnsupportedBuiltinRejectionTests {
         Rejection(source: "Before.\n{RANDOM(1, 6)}\n" + continuation, construct: "RANDOM()", line: 2),
         Rejection(source: "Before.\n{READ_COUNT(-> k)}\n" + continuation,
                   construct: "READ_COUNT() of a divert-target variable", line: 2, column: 2),
-        Rejection(source: "Before.\n{POW(2, 3)}\n" + continuation, construct: "POW()", line: 2),
         Rejection(source: "Before.\nCount: {TURNS_SINCE(-> k)}.\n" + continuation,
                   construct: "TURNS_SINCE()", line: 2, column: 9),
         Rejection(source: "Before.\n~ temp n = TURNS_SINCE(-> k) + 1\n" + continuation,
@@ -59,19 +58,6 @@ struct Compiler_UnsupportedBuiltinRejectionTests {
         if let column = rejection.column {
             #expect(error?.column == column)
         }
-    }
-
-    @Test(arguments: [
-        ("Before.\n{\"abc\" ? \"b\"}\n" + continuation, "? (contains)"),
-        ("Before.\n{\"abc\" !? \"b\"}\n" + continuation, "!? (does not contain)"),
-    ])
-    func `a contains operator is not compiled until it is supported`(source: String, construct: String) {
-        let error = #expect(throws: CompileError.self) {
-            _ = try InkCompiler.compile(source: source)
-        }
-        #expect(error?.kind == .unsupportedConstruct)
-        #expect(error?.construct == construct)
-        #expect(error?.line == 2)
     }
 
     @Test func `SEED_RANDOM from inklecate's JSON plays as inklecate does, with the evaluation stack balanced`() throws {

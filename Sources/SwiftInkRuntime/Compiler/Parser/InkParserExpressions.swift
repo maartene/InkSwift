@@ -37,10 +37,15 @@ public enum InkExpressionParser {
     /// Binding power of the comparison group (`> < >= <= == !=`) — binds tighter
     /// than the logical operators but looser than arithmetic.
     private static let comparisonPrecedence = 3
+    /// Binding power of the containment group (`?` `has` `!?` `hasnt`) — the
+    /// reference's precedence 3 (InkParser_Expressions.cs): tighter than
+    /// comparison, looser than arithmetic, so `a + b ? c == d` is
+    /// `((a + b) ? c) == d`.
+    private static let containmentPrecedence = 4
     /// Binding power of the additive group.
-    private static let additivePrecedence = 4
+    private static let additivePrecedence = 5
     /// Binding power of the multiplicative group — binds tighter than additive.
-    private static let multiplicativePrecedence = 5
+    private static let multiplicativePrecedence = 6
 
     /// Parse a single arithmetic/comparison expression from `source`.
     /// `source` parsed as an expression, or `nil` when it is not one. An
@@ -82,17 +87,14 @@ public enum InkExpressionParser {
     }
 
     /// Maps a parsed binary-operator token to its runtime native-function
-    /// symbol. The word-form logical operators (`and`, `or`) lower to the same
-    /// symbols as their native forms (`&&`, `||`) — mirroring how `not` already
-    /// lowers to `!` — so codegen only ever sees the canonical symbol, verified
+    /// symbol. The word-form operators (`and`, `or`, `has`, `hasnt`) lower to
+    /// the same symbols as their native forms (`&&`, `||`, `?`, `!?`) — as C#
+    /// `BinaryExpression.NativeNameForOp` does, and mirroring how `not` lowers
+    /// to `!` — so codegen only ever sees the canonical symbol, verified
     /// interchangeable against inklecate 1.2.1. Every other token is already its
     /// own native symbol and passes through unchanged.
     private static func nativeBinaryOperatorSymbol(for tokenText: String) -> String {
-        switch tokenText {
-        case andKeyword: return andNativeSymbol
-        case orKeyword: return orNativeSymbol
-        default: return tokenText
-        }
+        wordOperatorSymbols[tokenText] ?? tokenText
     }
 
     private static func parseOperand(from tokens: inout ExpressionTokenizer) throws -> InkExpression {
@@ -164,6 +166,15 @@ public enum InkExpressionParser {
     private static let andNativeSymbol = "&&"
     private static let orKeyword = "or"
     private static let orNativeSymbol = "||"
+    private static let hasKeyword = "has"
+    private static let hasntKeyword = "hasnt"
+
+    private static let wordOperatorSymbols = [
+        andKeyword: andNativeSymbol,
+        orKeyword: orNativeSymbol,
+        hasKeyword: NativeFunction.has.token,
+        hasntKeyword: NativeFunction.hasnt.token,
+    ]
 
     /// Parse a function-call operand `f(arg, …)` — the opening `(` is the next
     /// token. Arguments are comma-separated expressions; a bare `f()` has none.
@@ -219,10 +230,8 @@ public enum InkExpressionParser {
         case "||", orKeyword: return logicalOrPrecedence
         case "&&", andKeyword: return logicalAndPrecedence
         case ">", "<", ">=", "<=", "==", "!=": return comparisonPrecedence
-        // Containment parses so lowering can refuse it by name rather than the
-        // tokenizer dropping the rest of the expression; the reference binds it
-        // between comparison and addition, a level step 04-04 adds with support.
-        case "?", "!?": return comparisonPrecedence
+        case NativeFunction.has.token, NativeFunction.hasnt.token, hasKeyword, hasntKeyword:
+            return containmentPrecedence
         case "+", "-": return additivePrecedence
         case "*", "/", "%": return multiplicativePrecedence
         default: return nil
