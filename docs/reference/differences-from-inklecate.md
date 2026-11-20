@@ -210,6 +210,15 @@ Known places where the same compiled story plays differently on InkSwift's runti
   `getVariable` returns the `Double` (`0.30000000000000004` for `0.1 + 0.2`).
   Floats always print with a `.` as decimal separator; inklecate's own player uses the
   machine's locale ([inkle/ink#916](https://github.com/inkle/ink/issues/916)).
+- **Integer arithmetic is 64-bit and does not wrap.** ink integers are 32-bit and wrap
+  on overflow; InkSwift's are Swift `Int` (64-bit). With `VAR x = 2147483647`,
+  inklecate prints `-2147483648` for `{x + 1}` and `-2` for `{x * 2}`; InkSwift prints
+  `2147483648` and `4294967294`. This is deliberate: a story that relies on 32-bit
+  wrap-around is relying on an overflow, and InkSwift keeps the mathematically correct
+  result instead. Only `INT()` of a float uses the 32-bit range, clamping to it as
+  inklecate does. A result beyond the 64-bit range (about ±9.2E+18) is not wrapped
+  either: Swift's overflow check stops the app, so a story must keep its integers within
+  that range.
 - **Glue before a tag stops after the glued line.** For `Text <> # t` followed by
   `glued.` and `After the glue.`, inklecate and inkjs print `Text glued.After the glue.`:
   they keep gluing until the next choice point. InkSwift prints `Text glued.` (tag `t`)
