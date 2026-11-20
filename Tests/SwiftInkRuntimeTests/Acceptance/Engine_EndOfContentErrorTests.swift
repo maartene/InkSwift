@@ -86,11 +86,14 @@ struct Engine_EndOfContentErrorTests {
     // C# IncrementContentPointer does, and reach the root's `done`. inklecate -p
     // ends this path cleanly; before the fix the runtime ran out instead.
     //
-    // Runtime path only: the native compiler emits the labelled gather as a
-    // named-only root container with no `done` after its choice points, so the
-    // native story still runs out here (a compiler gap, reported in step 02-04).
-    @Test func `a divert into a labelled root gather whose choices are hidden ends safely`() throws {
-        let story = try Self.runtimeStory("divert-to-labelled-root-gather")
+    // Both paths (step 02-07): the native compiler keeps the gather in a named
+    // root container, so it puts the root's `done` after the gather's choice
+    // points, where inklecate's layout falls out into that `done`.
+    @Test(arguments: ["runtime", "native"])
+    func `a labelled root gather with its choices used up ends safely on both paths`(path: String) throws {
+        let story = path == "runtime"
+            ? try Self.runtimeStory("divert-to-labelled-root-gather")
+            : try Self.nativeStory("divert-to-labelled-root-gather")
 
         let lines = try CompilerOracle.play(story, choiceScript: [1])
 

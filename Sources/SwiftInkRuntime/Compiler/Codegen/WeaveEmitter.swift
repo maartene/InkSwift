@@ -903,7 +903,8 @@ private final class WeaveResolver {
                     gather,
                     key: key,
                     keyPrefix: keyPrefix,
-                    looseEnd: nextGatherFallThrough(after: gatherOrdinal, in: gathers, fallThrough: fallThrough)
+                    looseEnd: nextGatherFallThrough(after: gatherOrdinal, in: gathers, fallThrough: fallThrough),
+                    terminator: gatherTerminator(at: position, in: block, keyPrefix: keyPrefix, fallThrough: fallThrough)
                 )
                 gatherOrdinal += 1
             }
@@ -1044,6 +1045,23 @@ private final class WeaveResolver {
 
     // MARK: Gather lowering
 
+    /// What follows a gather's own choice points. inklecate auto-enters a gather
+    /// with no choice before it in its section and keeps it inline in its
+    /// weave's content (C# `Weave.AddRuntimeForGather`, `autoEnter`); any other
+    /// gather is named-only. So when an auto-entered gather of the top-level
+    /// weave offers no choice, flow falls out into the root's `done`
+    /// (`Story.cs:193`), the root weave's own terminator. Here every gather is a
+    /// named container, so that `done` goes after its choice points. A named-only
+    /// gather, or one in a knot, stitch or choice outcome, gets nothing and runs
+    /// out, as in inklecate's JSON.
+    private func gatherTerminator(
+        at position: Int, in block: WeaveBlock, keyPrefix: [String], fallThrough: FallThrough
+    ) -> [NodeKind] {
+        guard keyPrefix.isEmpty else { return [] }
+        if position > 0, case .choice = block.items[position - 1] { return [] }
+        return fallThrough.weaveTerminator
+    }
+
     /// A gather's container: its outcome prose, the implicit sub-weave it opens
     /// (choices following it, whose loose ends fall through to the gather's own
     /// loose end), and — when neither the prose nor a nested choice diverts away —
@@ -1052,7 +1070,8 @@ private final class WeaveResolver {
         _ gather: WeaveGather,
         key: String,
         keyPrefix: [String],
-        looseEnd: FallThrough
+        looseEnd: FallThrough,
+        terminator: [NodeKind]
     ) throws -> ContainerNode {
         // GATHER BODY OPENS WITH A BLOCK CONDITIONAL THEN PRESENTS CHOICES
         // (`- (paused) { not nope: … } "prose" * (yes) [Yes] …`, TheIntercept ~542):
@@ -1070,7 +1089,7 @@ private final class WeaveResolver {
         // textual continuation.
         if let nested = gather.nested, bodyContainsBlockConditional(gather.body) {
             return try gatherWithConditionalThenChoices(
-                gather, nested: nested, key: key, keyPrefix: keyPrefix, looseEnd: looseEnd
+                gather, nested: nested, key: key, keyPrefix: keyPrefix, looseEnd: looseEnd, terminator: terminator
             )
         }
         let body = lowerBody(gather.body, looseEnd: looseEnd, keyPrefix: keyPrefix + [key])
@@ -1078,7 +1097,7 @@ private final class WeaveResolver {
             lead: body.children,
             body: gather.body, nested: gather.nested,
             bodyNamed: body.named,
-            key: key, nestedKeyPrefix: keyPrefix + [key], looseEnd: looseEnd
+            key: key, nestedKeyPrefix: keyPrefix + [key], looseEnd: looseEnd, terminator: terminator
         )
     }
 
@@ -1103,7 +1122,8 @@ private final class WeaveResolver {
         nested: WeaveBlock,
         key: String,
         keyPrefix: [String],
-        looseEnd: FallThrough
+        looseEnd: FallThrough,
+        terminator: [NodeKind]
     ) throws -> ContainerNode {
         let gatherPath = keyPrefix + [key]
         let rejoinKey = "\(key)-w"
@@ -1114,7 +1134,7 @@ private final class WeaveResolver {
         // through to the gather's own loose end (the next gather / enclosing end).
         let resolvedNested = try resolve(nested, keyPrefix: rejoinPath, fallThrough: looseEnd)
         let rejoin = ContainerNode(
-            children: resolvedNested.children, namedContent: resolvedNested.named,
+            children: terminated(resolvedNested.children, by: terminator), namedContent: resolvedNested.named,
             flags: 0, name: rejoinKey
         )
 
@@ -1160,7 +1180,8 @@ private final class WeaveResolver {
         bodyNamed: [String: ContainerNode] = [:],
         key: String,
         nestedKeyPrefix: [String],
-        looseEnd: FallThrough
+        looseEnd: FallThrough,
+        terminator: [NodeKind] = []
     ) throws -> ContainerNode {
         var children = lead
         // The body's own named containers (inline-conditional `cond{N}-b*`/`-end`
@@ -1171,7 +1192,7 @@ private final class WeaveResolver {
         var named: [String: ContainerNode] = bodyNamed
         if let nested {
             let resolved = try resolve(nested, keyPrefix: nestedKeyPrefix, fallThrough: looseEnd)
-            children.append(contentsOf: stripDone(resolved.children))
+            children.append(contentsOf: terminated(resolved.children, by: terminator))
             for (nestedKey, container) in resolved.named { named[nestedKey] = container }
         } else if endsWithDivert(body) == false {
             children.append(contentsOf: looseEnd.nodes)
@@ -1230,6 +1251,13 @@ private final class WeaveResolver {
     private func stripDone(_ nodes: [NodeKind]) -> [NodeKind] {
         guard case .controlCommand("done")? = nodes.last else { return nodes }
         return Array(nodes.dropLast())
+    }
+
+    /// A nested weave's choice points followed by `terminator`: the root's `done`
+    /// for an auto-entered root gather, else nothing (any `done` the resolve
+    /// appended for an inherited `.done` loose end is dropped).
+    private func terminated(_ nodes: [NodeKind], by terminator: [NodeKind]) -> [NodeKind] {
+        stripDone(nodes) + terminator
     }
 
     private func endsWithDivert(_ statements: [InkStatement]) -> Bool {

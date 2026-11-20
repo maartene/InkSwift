@@ -19,7 +19,7 @@ import Foundation
 
 @Suite struct Compiler_LooseEndTests {
 
-    private enum Stop: Equatable {
+    enum Stop: Equatable {
         case line(String)
         case choices([String])
         case end(didSafeExit: Bool)
@@ -31,7 +31,7 @@ import Foundation
 
     /// Play `story` along `script` (then always the first choice), recording each
     /// non-empty line and each stop until the flow ends without choices.
-    private static func stops(of story: Story, script: [Int]) throws -> [Stop] {
+    static func stops(of story: Story, script: [Int]) throws -> [Stop] {
         var stops: [Stop] = []
         var continues = 0
         while stops.count < maximumStops {
@@ -126,5 +126,48 @@ import Foundation
         let referenceStops = try Self.stops(of: reference, script: [])
         #expect(nativeStops.last == .end(didSafeExit: endsSafely))
         #expect(nativeStops == referenceStops)
+    }
+
+    // MARK: Step 02-07 — a labelled root gather's choice points
+
+    /// `divert-to-labelled-root-gather`: the story opens with `- (top)`, which
+    /// inklecate auto-enters (no choice before it, C# `Weave.AddRuntimeForGather`)
+    /// and so keeps inline in the root's content: when its choices are all used
+    /// up, the flow falls out into the root's `done`. Choice 0 plays on to the
+    /// next gather; choice 1 diverts back to `top` with its choices used up.
+    /// Both stop safely, natively and on inklecate's JSON.
+    @Test(arguments: [0, 1])
+    func `a labelled root gather whose choices are used up ends safely, as on inklecate's JSON`(
+        rootChoice: Int
+    ) throws {
+        let name = "divert-to-labelled-root-gather"
+        let nativeStops = try Self.stops(of: try Self.nativeStory(name), script: [rootChoice])
+        let referenceStops = try Self.stops(of: try Self.referenceStory(name), script: [rootChoice])
+        #expect(nativeStops.last == .end(didSafeExit: true))
+        #expect(nativeStops == referenceStops)
+    }
+
+    /// Only an auto-entered gather of the top-level weave falls out into the
+    /// root's `done`. inklecate keeps a gather that follows a choice named-only,
+    /// and a gather nested in a choice inline in that named-only outcome, so
+    /// when their choices are hidden the flow runs out; a gather that opens the
+    /// root weave, with or without a block conditional in its body, sits inline
+    /// in the root and ends safely. Each expected stop is what inklecate's JSON
+    /// for that source plays on the InkSwift runtime (probed in step 02-07).
+    @Test(arguments: [
+        ("VAR f = false\nStart.\n* [a]\n- (mid) Mid.\n* {f} [b]\n- After.\n",
+         [Stop.line("Start."), .choices(["a"]), .line("Mid."), .end(didSafeExit: false)]),
+        ("VAR f = false\nStart.\n* [a]\n- - (inner) Inner.\n** {f} [b]\n",
+         [Stop.line("Start."), .choices(["a"]), .line("Inner."), .end(didSafeExit: false)]),
+        ("VAR f = false\nStart.\n* [a]\n- (mid) Mid.\n{ f:\n  Yes.\n}\nAfter cond.\n* {f} [b]\n",
+         [Stop.line("Start."), .choices(["a"]), .line("Mid."), .line("After cond."), .end(didSafeExit: false)]),
+        ("VAR f = false\nStart.\n- (top) Top.\n{ f:\n  Yes.\n}\nAfter cond.\n* {f} [b]\n- After.\n",
+         [Stop.line("Start."), .line("Top."), .line("After cond."), .end(didSafeExit: true)]),
+    ])
+    func `only a gather that opens the root weave ends safely when its choices are hidden`(
+        source: String, expected: [Stop]
+    ) throws {
+        let story = Story(blueprint: try InkCompiler.compile(source: source))
+        #expect(try Self.stops(of: story, script: []) == expected)
     }
 }

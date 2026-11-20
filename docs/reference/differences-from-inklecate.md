@@ -121,9 +121,6 @@ reproduction:
   prints nothing);
 - a block conditional before a choice in the same branch (the text after the block is
   dropped).
-- a divert back to a labelled gather at the top of the story whose choices are all used
-  up or hidden: inklecate's story ends cleanly, the native one runs out of content and
-  reports an error.
 
 ink's own test suite finds a few more, such as a tunnel call in the middle of a line, or
 a divert after choice text being kept as text. Each is a disabled test in
