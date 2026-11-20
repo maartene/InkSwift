@@ -299,41 +299,62 @@ enum RuntimeObjectEmitter {
         var children: [NodeKind] = []
         for (offset, statement) in statements.enumerated() {
             let rest = Array(statements[(offset + 1)...])
-            if case .conditionalBlock(let subject, let isSwitch, let branches) = statement.kind {
-                children.append(contentsOf: try ConditionalEmitter.lower(
-                    subject: subject, isSwitch: isSwitch, branches: branches,
-                    continuation: rest, keyPrefix: keyPrefix,
-                    fallThrough: fallThrough, named: &named,
-                    lowerBranch: branchLowerer(context: context),
-                    lowerContinuation: inlineConditionalContinuationLowerer(
-                        context: context, enclosingKeyPrefix: keyPrefix
-                    ),
-                    lowerExpression: { try ExpressionLowering.lowerExpression($0, context: context) }
-                ))
-                return children
-            }
-            if case .content(let segments) = statement.kind,
-               let inlineIndex = segments.firstIndex(where: isConditionalSegment) {
-                children.append(contentsOf: try lowerInlineConditionalLine(
-                    segments, conditionalIndex: inlineIndex, restOfBody: rest,
+            let lowered = try CompileError.locating(line: statement.position.line, column: statement.position.column) {
+                try lowerBodyStatement(
+                    statement, rest: rest, gluedToNext: isGlue(statements, at: offset + 1),
                     context: context, keyPrefix: keyPrefix, fallThrough: fallThrough, named: &named
-                ))
+                )
+            }
+            children.append(contentsOf: lowered.nodes)
+            if lowered.consumesRest {
                 return children
             }
-            if case .content(let segments) = statement.kind,
-               let variableTextIndex = segments.firstIndex(where: isVariableTextSegment) {
-                children.append(contentsOf: try lowerVariableTextLine(
-                    segments, variableTextIndex: variableTextIndex, restOfBody: rest,
-                    context: context, keyPrefix: keyPrefix, fallThrough: fallThrough, named: &named
-                ))
-                return children
-            }
-            let nextIsGlue = isGlue(statements, at: offset + 1)
-            children.append(contentsOf: try lower(
-                statement, gluedToNext: nextIsGlue, context: context
-            ))
         }
         return children
+    }
+
+    /// Lower one statement of a body. A block conditional, or a line carrying an
+    /// inline conditional or variable text, folds the `rest` of the body into its
+    /// rejoin container and so `consumesRest`; any other statement lowers alone.
+    private static func lowerBodyStatement(
+        _ statement: InkStatement,
+        rest: [InkStatement],
+        gluedToNext: Bool,
+        context: LoweringContext,
+        keyPrefix: [String],
+        fallThrough: WeaveEmitter.FallThrough,
+        named: inout [String: ContainerNode]
+    ) throws -> (nodes: [NodeKind], consumesRest: Bool) {
+        if case .conditionalBlock(let subject, let isSwitch, let branches) = statement.kind {
+            let nodes = try ConditionalEmitter.lower(
+                subject: subject, isSwitch: isSwitch, branches: branches,
+                continuation: rest, keyPrefix: keyPrefix,
+                fallThrough: fallThrough, named: &named,
+                lowerBranch: branchLowerer(context: context),
+                lowerContinuation: inlineConditionalContinuationLowerer(
+                    context: context, enclosingKeyPrefix: keyPrefix
+                ),
+                lowerExpression: { try ExpressionLowering.lowerExpression($0, context: context) }
+            )
+            return (nodes, true)
+        }
+        if case .content(let segments) = statement.kind,
+           let inlineIndex = segments.firstIndex(where: isConditionalSegment) {
+            let nodes = try lowerInlineConditionalLine(
+                segments, conditionalIndex: inlineIndex, restOfBody: rest,
+                context: context, keyPrefix: keyPrefix, fallThrough: fallThrough, named: &named
+            )
+            return (nodes, true)
+        }
+        if case .content(let segments) = statement.kind,
+           let variableTextIndex = segments.firstIndex(where: isVariableTextSegment) {
+            let nodes = try lowerVariableTextLine(
+                segments, variableTextIndex: variableTextIndex, restOfBody: rest,
+                context: context, keyPrefix: keyPrefix, fallThrough: fallThrough, named: &named
+            )
+            return (nodes, true)
+        }
+        return (try lower(statement, gluedToNext: gluedToNext, context: context), false)
     }
 
     /// A reusable branch-lowering closure for the conditional emitter: lowers an

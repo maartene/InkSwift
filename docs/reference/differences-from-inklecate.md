@@ -62,7 +62,6 @@ playing inklecate's `.ink.json` on the native runtime.
 | Tag inside inline logic: `{met: Hi # greeting}`, `{A # t\|B}` | Rejected | ✅ Works | Compile with inklecate |
 | Glue before a tag: `Text <> # t` | Compiles, **plays wrong** (prints `<>` and breaks the line) | ✅ Works | Put the tag on the glued line, or compile with inklecate |
 | A conditional inside a function body | Compiles, **plays wrong** | ✅ Works | Compile with inklecate |
-| `FLOOR()`, `INT()`, `CEILING()`, `FLOAT()` | Compile, **play wrong**¹ | ✅ Works | Compile with inklecate |
 | Multi-line sequences: `{stopping:` … `}`, `{cycle:` … `}` | Rejected | ✅ Works | Compile with inklecate, or use the inline forms (`{a\|b}`, `{&a\|b}`, `{!a\|b}`) |
 | Shuffle: `{~a\|b}` | Rejected | ❌ Refused at load | JS-bridge |
 | `LIST`, `RANDOM()`, threads (`<-`), `EXTERNAL` | Rejected | ❌ Refused at load | JS-bridge |
@@ -137,6 +136,14 @@ cases, inklecate's JSON plays correctly on the native runtime.
   (including one whose choices are all used up) runs out of content on both paths.
 - It **accepts some stories inklecate rejects**. Examples: a name used twice for
   different things, an unresolved variable, a string constant containing `#`.
+- A **function call** is checked as inklecate checks it. A call to a name that is
+  neither a story function nor a built-in (`{nosuchfunction(1.5)}`, `~ gret()` when the
+  function is `greet`) is a `CompileError` of kind `.unresolvedReference` with inklecate's
+  message, `Function call target not found: '-> nosuchfunction'`, at the call's line. A
+  built-in called with the wrong number of arguments is a `.syntaxError` with inklecate's
+  message, such as `FLOOR should take 1 parameter`. `FLOOR()`, `CEILING()`, `INT()`,
+  `FLOAT()`, `MIN()` and `MAX()` compile to the runtime's built-ins and print what
+  inklecate prints.
 
 If you rely on inklecate's checks, run inklecate over your stories in CI even when you
 ship with the native compiler.

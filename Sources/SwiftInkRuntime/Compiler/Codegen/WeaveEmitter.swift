@@ -403,6 +403,8 @@ private struct WeaveChoice {
     /// pre-pass can collect labels referenced as read-counts. Not lowered here
     /// (the choice-offer guard emission is a later slice); discovery-only at 02-02.
     let condition: InkExpression?
+    /// Where the choice line starts, so an error in its guard is located there.
+    let position: SourcePosition
 }
 
 private struct WeaveGather {
@@ -537,7 +539,8 @@ private enum WeaveParser {
             isSticky: isSticky,
             body: bodyStatements,
             nested: nested,
-            condition: condition
+            condition: condition,
+            position: header.position
         )
     }
 
@@ -959,7 +962,9 @@ private final class WeaveResolver {
         nodes.append(contentsOf: [.controlCommand("/str"), .controlCommand("/ev")])
         if let condition = choice.condition {
             nodes.append(.controlCommand("ev"))
-            nodes.append(contentsOf: try lowerCondition(condition))
+            nodes.append(contentsOf: try CompileError.locating(line: choice.position.line, column: choice.position.column) {
+                try lowerCondition(condition)
+            })
             nodes.append(.controlCommand("/ev"))
         }
         let targetPath = ContainerPath(components: target.map(PathComponent.init(parsing:)))

@@ -62,7 +62,7 @@ These constructs compile to a playable blueprint. (Matrix rows 1–27, 29–35.)
 | 26 | Variable text: cycles (`{&a\|b}`) | `{&one\|two}` | Lowered to a visit-count switch that wraps modulo the stage count (`%`). |
 | 27 | Variable text: once-only (`{!a\|b}`) | `{!first time\|}` | Lowered to a visit-count switch that advances once per stage then blanks. |
 | 29 | Functions (`=== f(params) ===`) | `=== function raise(x) ===` | Callable knot with parameters and a return frame. |
-| 30 | Inline function calls `{f()}` | `{double(5)}` | Function invocation whose return value is emitted. |
+| 30 | Inline function calls `{f()}` | `{double(5)}` | Function invocation whose return value is emitted. The built-ins `FLOOR`, `CEILING`, `INT`, `FLOAT`, `MIN` and `MAX` compile to the runtime's natives and play as in inklecate. As in inklecate, a call to any other name that is not a story function is rejected with a located `.unresolvedReference` error (`Function call target not found`), and a built-in given the wrong number of arguments with a `.syntaxError`. |
 | 31 | String interpolation | `Score: {score}` | `str`/`/str` interpolation of expression results. |
 | 32 | Tags (`#tag`) | `Hello #greeting` | Metadata tag attached to a line. |
 | 33 | Save / restore | (engine state) | `StoryState` round-trips through `chooseChoice`. |

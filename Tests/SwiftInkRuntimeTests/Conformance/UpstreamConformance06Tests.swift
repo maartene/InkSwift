@@ -289,7 +289,7 @@ struct UpstreamConformance06Tests {
         c.equal("1\n1\n2\n0.6666667\n0\n1\n", story.continueMaximally())
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: FLOOR, INT, CEILING and casts"))
+    @Test
     func `TestFloorCeilingAndCasts — native compiler and runtime`() {
         Conformance.run("TestFloorCeilingAndCasts", .native, Self.testFloorCeilingAndCasts)
     }

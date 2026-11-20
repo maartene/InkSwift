@@ -148,9 +148,6 @@
   "native": "unsupported threads",
   "runtime": "unsupported threads"
  },
- "TestFloorCeilingAndCasts": {
-  "native": "FLOOR, INT, CEILING and casts"
- },
  "TestFunctionCallRestrictions": {
   "native": "native accepts a story inklecate rejects (function call restrictions)"
  },
