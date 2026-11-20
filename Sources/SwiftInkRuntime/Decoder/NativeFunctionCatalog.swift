@@ -28,8 +28,9 @@ enum NativeFunction: String, CaseIterable, CustomStringConvertible {
     case ceiling = "CEILING"
     case int = "INT"
     case float = "FLOAT"
-    /// SEED_RANDOM is accepted: without the RNG tokens, which are refused, a seed
-    /// has no observable effect, so ignoring it plays exactly as the reference does.
+    /// SEED_RANDOM is accepted on both paths: without the RNG tokens, which are
+    /// refused, a seed has no observable effect, so ignoring it plays exactly as
+    /// the reference does. Like C#, it pops the seed and pushes void.
     case seedRandom = "srnd"
 
     /// The token ink JSON spells this native with.
@@ -73,6 +74,17 @@ enum UnsupportedConstruct: CaseIterable {
         case .external: return "EXTERNAL functions"
         case .include: return "INCLUDE"
         case .shuffle: return "shuffle {~a|b}"
+        }
+    }
+
+    /// The keyword a statement using the construct opens with, if it is a
+    /// keyword statement (`LIST colours = …`, `EXTERNAL f(x)`, `INCLUDE a.ink`).
+    var statementKeyword: String? {
+        switch self {
+        case .list: return "LIST"
+        case .external: return "EXTERNAL"
+        case .include: return "INCLUDE"
+        case .thread, .shuffle: return nil
         }
     }
 

@@ -92,6 +92,79 @@ import Testing
         #expect(UnsupportedConstruct.shuffle.name == "shuffle {~a|b}")
     }
 
+    /// Every unsupported built-in an author can call, with arguments the
+    /// compiler can parse. TURNS_SINCE and READ_COUNT take a divert target,
+    /// which the compiler rejects before reading the argument.
+    static let callableUnsupportedEntries: [NativeFunctionEntry] = NativeFunctionCatalog.entries.filter { entry in
+        guard case .unsupported = entry.status else { return false }
+        return entry.sourceName.allSatisfy { $0.isUppercase || $0 == "_" }
+    }
+
+    /// The name the runtime refuses `token` under when it loads a story.
+    static func runtimeFeatureName(forToken token: String) -> String? {
+        let json = #"{"inkVersion":21,"root":[["ev",1,"\#(token)","pop","/ev","done",null],"done",null],"listDefs":{}}"#
+        do {
+            _ = try Story(json: json)
+            return nil
+        } catch StoryError.unsupportedFeatures(let features) {
+            return features.first?.name
+        } catch {
+            return nil
+        }
+    }
+
+    static func compiledConstruct(of source: String) -> String? {
+        do {
+            _ = try InkCompiler.compile(source: source)
+            return nil
+        } catch let error as CompileError {
+            return error.construct
+        } catch {
+            return nil
+        }
+    }
+
+    @Test func `every callable unsupported built-in is in the consistency check`() {
+        #expect(Set(Self.callableUnsupportedEntries.map(\.sourceName)) == [
+            "CHOICE_COUNT", "TURNS", "TURNS_SINCE", "READ_COUNT", "RANDOM", "POW", "LIST_RANGE", "LIST_RANDOM",
+            "LIST_MIN", "LIST_MAX", "LIST_ALL", "LIST_COUNT", "LIST_VALUE", "LIST_INVERT",
+        ])
+    }
+
+    @Test(arguments: callableUnsupportedEntries.map { ($0.sourceName, $0.token, $0.arity) })
+    func `the compiler rejects an unsupported built-in under the name the runtime refuses it by`(
+        name: String, token: String, arity: Int
+    ) throws {
+        let arguments = Array(repeating: "1", count: arity).joined(separator: ", ")
+        let construct = Self.compiledConstruct(of: "Before.\n~ temp x = \(name)(\(arguments))\nAfter.\n-> END\n")
+
+        #expect(construct != nil)
+        #expect(construct == Self.runtimeFeatureName(forToken: token))
+    }
+
+    @Test(arguments: [
+        ("<- k\nAfter.\n-> END\n=== k\nIn k.\n-> DONE\n", UnsupportedConstruct.thread),
+        ("{~a|b}\nAfter.\n-> END\n", .shuffle),
+    ])
+    func `the compiler rejects a statement-level construct under the name the runtime refuses it by`(
+        source: String, construct: UnsupportedConstruct
+    ) throws {
+        let token = try #require(construct.runtimeToken)
+        #expect(Self.compiledConstruct(of: source) == construct.name)
+        #expect(Self.runtimeFeatureName(forToken: token) == construct.name)
+    }
+
+    @Test(arguments: [
+        ("LIST colours = red, green\nAfter.\n-> END\n", UnsupportedConstruct.list),
+        ("EXTERNAL f(x)\nAfter.\n-> END\n", .external),
+        ("INCLUDE other.ink\nAfter.\n-> END\n", .include),
+    ])
+    func `the compiler names a construct with no runtime token by the catalog's name`(
+        source: String, construct: UnsupportedConstruct
+    ) {
+        #expect(Self.compiledConstruct(of: source) == construct.name)
+    }
+
     @Test func `a native prints as its runtime token`() {
         #expect("\(NativeFunction.min)" == "MIN")
         #expect("\(NativeFunction.negate)" == "_")

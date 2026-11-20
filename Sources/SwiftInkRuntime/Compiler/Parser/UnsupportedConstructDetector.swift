@@ -8,7 +8,7 @@
 //   {a|b|c}   plain alternatives, no top-level `:`  → "sequence"
 //   {&a|b}    leading `&`                            → "cycle"
 //   {!a|b}    leading `!` (optionally escaped `\!`)  → "once"
-//   {~a|b}    leading `~`                            → "shuffle"
+//   {~a|b}    leading `~`                            → "shuffle {~a|b}"
 //
 // Inline conditionals `{cond: a|b}` (S4) also use `|`, but carry a top-level
 // `:` before the alternatives — the `:` discriminates them so supported forms
@@ -22,57 +22,71 @@ enum UnsupportedConstructDetector {
 
     /// Inspect a whole statement `line` for a statement-level unsupported
     /// construct (matrix rows 36-39, 41): thread `<- knot`, `LIST` declaration,
-    /// `RANDOM(`/`SEED_RANDOM(` calls, `EXTERNAL` declaration, and `INCLUDE`. Throws a
-    /// located `.unsupportedConstruct` naming the construct so the statement scan
-    /// short-circuits BEFORE any StoryBlueprint is built (fail-closed). The
-    /// `line` is the whitespace-trimmed statement; `column` is its leading column.
+    /// `EXTERNAL` declaration, `INCLUDE`, and a call of a built-in that takes a
+    /// divert target. Throws a located `.unsupportedConstruct` under the
+    /// catalog's name, the one the runtime refuses the feature by, so the
+    /// statement scan short-circuits BEFORE any StoryBlueprint is built
+    /// (fail-closed). The `line` is the whitespace-trimmed statement; `column`
+    /// is its leading column.
     static func checkStatement(line trimmed: String, lineNumber: Int, column: Int) throws {
-        guard let construct = statementConstruct(of: trimmed) else { return }
+        guard let (construct, offset) = statementConstruct(of: trimmed) ?? divertTargetBuiltInCall(in: trimmed) else {
+            return
+        }
         throw CompileError(
             kind: .unsupportedConstruct,
             construct: construct,
             message: "Ink \(construct) is not supported by the runtime.",
             line: lineNumber,
-            column: column
+            column: column + offset
         )
     }
 
-    /// Name the statement-level unsupported construct of a trimmed statement, or
-    /// `nil` when the statement uses no such construct. Threads/LIST/EXTERNAL/INCLUDE are
-    /// recognised by their leading keyword; RANDOM by its call appearing anywhere
-    /// in an expression (e.g. on a `~ temp x = RANDOM(...)` right-hand side).
-    private static func statementConstruct(of trimmed: String) -> String? {
+    /// Name the statement-level unsupported construct of a trimmed statement,
+    /// which starts the statement, or `nil` when the statement uses no such
+    /// construct. Each is recognised by its leading arrow or keyword.
+    private static func statementConstruct(of trimmed: String) -> (construct: String, offset: Int)? {
         if trimmed.hasPrefix("<-") {
-            return "thread"
+            return (UnsupportedConstruct.thread.name, 0)
         }
-        if keyword(trimmed, isLeading: "LIST") {
-            return "list"
-        }
-        if keyword(trimmed, isLeading: "EXTERNAL") {
-            return "external"
-        }
-        if keyword(trimmed, isLeading: "INCLUDE") {
-            return "include"
-        }
-        if containsRandomCall(trimmed) {
-            return "random"
+        return UnsupportedConstruct.allCases.first { opens(trimmed, with: $0) }.map { ($0.name, 0) }
+    }
+
+    /// True when `trimmed` begins with the construct's keyword followed by
+    /// whitespace, so `LISTING` is not mistaken for `LIST` and `EXTERNALITY` not
+    /// for `EXTERNAL`.
+    private static func opens(_ trimmed: String, with construct: UnsupportedConstruct) -> Bool {
+        guard let keyword = construct.statementKeyword, trimmed.hasPrefix(keyword) else { return false }
+        let remainder = trimmed.dropFirst(keyword.count)
+        return remainder.first == " " || remainder.first == "\t"
+    }
+
+    /// The unsupported built-ins whose argument is a divert target (`-> knot`),
+    /// by source name, with their catalog name. The expression parser cannot
+    /// read a divert target, so they are refused at the call, before the argument.
+    private static let divertTargetBuiltIns: [String: String] = Dictionary(
+        uniqueKeysWithValues: NativeFunctionCatalog.entries.compactMap { entry in
+            guard ["TURNS_SINCE", "READ_COUNT"].contains(entry.sourceName),
+                  case .unsupported(let feature) = entry.status else { return nil }
+            return (entry.sourceName, feature)
+        })
+
+    /// The first call of a divert-target built-in in `trimmed`, as its feature
+    /// name and the call's offset from the start of the statement. Only a whole
+    /// identifier counts: `MY_TURNS_SINCE(` is a different function.
+    private static func divertTargetBuiltInCall(in trimmed: String) -> (construct: String, offset: Int)? {
+        var identifier = ""
+        for (offset, character) in trimmed.enumerated() {
+            let isAlphanumeric = character.isLetter || character.isNumber
+            if isAlphanumeric || "_.".contains(character) {
+                identifier.append(character)
+                continue
+            }
+            if character == "(", let feature = divertTargetBuiltIns[identifier] {
+                return (feature, offset - identifier.count)
+            }
+            identifier = ""
         }
         return nil
-    }
-
-    /// True when `trimmed` begins with `keyword` followed by whitespace, so
-    /// `LISTING` is not mistaken for `LIST` and `EXTERNALITY` not for `EXTERNAL`.
-    private static func keyword(_ trimmed: String, isLeading keyword: String) -> Bool {
-        guard trimmed.hasPrefix(keyword) else { return false }
-        let remainder = trimmed.dropFirst(keyword.count)
-        guard let first = remainder.first else { return false }
-        return first == " " || first == "\t"
-    }
-
-    /// True when the line contains a `RANDOM(` call (case-insensitive). This also
-    /// matches `SEED_RANDOM(`, since `RANDOM(` is its trailing substring.
-    private static func containsRandomCall(_ trimmed: String) -> Bool {
-        trimmed.range(of: "RANDOM(", options: .caseInsensitive) != nil
     }
 
     /// Run every statement-level check on one trimmed source line: the
@@ -182,7 +196,7 @@ enum UnsupportedConstructDetector {
                 throw CompileError(
                     kind: .unsupportedConstruct,
                     construct: construct,
-                    message: "Variable-text \(construct) `{…|…}` is not supported.",
+                    message: "Variable-text \(construct) is not supported.",
                     line: lineNumber,
                     column: column
                 )
@@ -236,7 +250,8 @@ enum UnsupportedConstructDetector {
         return leadingMarker(of: trimmed)
     }
 
-    /// Map a leading `~` marker (a leading `\` escape is skipped) to "shuffle".
+    /// Map a leading `~` marker (a leading `\` escape is skipped) to the
+    /// catalog's shuffle name.
     /// Returns `nil` for every other leading character — `&` cycle, `!` once, and
     /// the no-marker sequence form are now SUPPORTED and lowered by the compiler,
     /// so only shuffle short-circuits here.
@@ -246,7 +261,7 @@ enum UnsupportedConstructDetector {
             characters = characters.dropFirst()
         }
         switch characters.first {
-        case "~": return "shuffle"
+        case "~": return UnsupportedConstruct.shuffle.name
         default: return nil
         }
     }

@@ -70,18 +70,21 @@ enum ExpressionLowering {
         }
     }
 
-    /// The catalog native for an operator symbol. The expression parser only
-    /// produces symbols of supported natives (`InkParserExpressions.bindingPower`,
-    /// the `!`/`_` prefixes and the `+=`/`-=` assignments), so a miss is a
-    /// compiler defect; it is still reported as a compile error, never a crash.
+    /// The catalog native for an operator symbol. An operator the catalog
+    /// refuses (`?`, `!?`) is rejected under the name the runtime refuses it by;
+    /// any other miss is a compiler defect, still reported, never a crash.
     private static func nativeOperator(_ symbol: String) throws -> NativeFunction {
-        guard let native = NativeFunctionCatalog.supportedNative(forToken: symbol) else {
-            throw CompileError(
-                kind: .unsupportedConstruct, construct: symbol,
-                message: "operator '\(symbol)' is not a supported native function"
-            )
+        if let native = NativeFunctionCatalog.supportedNative(forToken: symbol) {
+            return native
         }
-        return native
+        throw unsupported(NativeFunctionCatalog.unsupportedFeature(forToken: symbol) ?? symbol)
+    }
+
+    /// The located-by-the-caller error for a feature the runtime cannot play,
+    /// named as the runtime names it when it refuses inklecate's JSON.
+    private static func unsupported(_ feature: String) -> CompileError {
+        CompileError(kind: .unsupportedConstruct, construct: feature,
+                     message: "Ink \(feature) is not supported by the runtime.")
     }
 
     /// Lower a name: a CONST inlines its value; a name resolving to a known weave
@@ -103,28 +106,40 @@ enum ExpressionLowering {
         NativeFunctionCatalog.entries.map { ($0.sourceName, $0) }, uniquingKeysWith: { first, _ in first })
 
     /// Lower a function call `f(args)`, resolving the name as C# `FunctionCall.cs`
-    /// does: a built-in native first (arity-checked, then its arguments and the
-    /// `.nativeFunction` node), else a story function, else an error —
-    /// inklecate's "Function call target not found". A catalog-unsupported
-    /// built-in (TURNS, RANDOM, LIST_…) and SEED_RANDOM, whose native does not
-    /// push a value yet, keep the plain call lowering until step 04-03.
+    /// does: a built-in first (an unsupported one is refused under the runtime's
+    /// name; a supported one is arity-checked, then its arguments and the
+    /// `.nativeFunction` node), else a story function, else an error.
     private static func lowerFunctionCall(
         name: String,
         arguments: [InkExpression],
         context: LoweringContext
     ) throws -> [NodeKind] {
         switch builtInsBySourceName[name]?.status {
-        case .supported(let native) where native != .seedRandom:
+        case .supported(let native):
             try checkArity(of: name, expected: NativeFunctionCatalog.entry(for: native).arity, given: arguments.count)
             return try lowerArguments(arguments, parameters: [], context: context) + [.nativeFunction(native)]
-        case .supported, .unsupported:
-            return try lowerStoryCall(name: name, arguments: arguments, context: context)
+        case .unsupported(let feature):
+            throw unsupported(feature)
         case nil:
-            guard context.functions[name] != nil else {
-                throw CompileError(kind: .unresolvedReference, message: "Function call target not found: '-> \(name)'")
-            }
+            try checkIsStoryFunction(name, context: context)
             return try lowerStoryCall(name: name, arguments: arguments, context: context)
         }
+    }
+
+    /// Reject a call to anything but a story function with inklecate's message:
+    /// a knot or stitch is not callable (C# `Divert.ResolveReferences`, typo
+    /// "delcare" and all), and any other name is not found.
+    private static func checkIsStoryFunction(_ name: String, context: LoweringContext) throws {
+        guard context.functions[name] == nil else { return }
+        guard context.knotStitchPaths[name] != nil else {
+            throw CompileError(kind: .unresolvedReference, message: "Function call target not found: '-> \(name)'")
+        }
+        let identifier = name.split(separator: ".").last.map(String.init) ?? name
+        throw CompileError(
+            kind: .unresolvedReference,
+            message: "\(identifier) hasn't been marked as a function, but it's being called as one. "
+                + "Do you need to delcare the knot as '== function \(identifier) =='?"
+        )
     }
 
     /// C#'s arity error for a built-in (`FunctionCall.cs`): "FLOOR should take 1

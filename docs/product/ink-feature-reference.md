@@ -62,7 +62,7 @@ These constructs compile to a playable blueprint. (Matrix rows 1–27, 29–35.)
 | 26 | Variable text: cycles (`{&a\|b}`) | `{&one\|two}` | Lowered to a visit-count switch that wraps modulo the stage count (`%`). |
 | 27 | Variable text: once-only (`{!a\|b}`) | `{!first time\|}` | Lowered to a visit-count switch that advances once per stage then blanks. |
 | 29 | Functions (`=== f(params) ===`) | `=== function raise(x) ===` | Callable knot with parameters and a return frame. |
-| 30 | Inline function calls `{f()}` | `{double(5)}` | Function invocation whose return value is emitted. The built-ins `FLOOR`, `CEILING`, `INT`, `FLOAT`, `MIN` and `MAX` compile to the runtime's natives and play as in inklecate. As in inklecate, a call to any other name that is not a story function is rejected with a located `.unresolvedReference` error (`Function call target not found`), and a built-in given the wrong number of arguments with a `.syntaxError`. |
+| 30 | Inline function calls `{f()}` | `{double(5)}` | Function invocation whose return value is emitted. The built-ins `FLOOR`, `CEILING`, `INT`, `FLOAT`, `MIN` and `MAX` compile to the runtime's natives and play as in inklecate. `SEED_RANDOM` compiles too; with RANDOM refused, a seed has no observable effect. As in inklecate, calling a knot or stitch as a function is rejected (`k hasn't been marked as a function…`). As in inklecate, a call to any other name that is not a story function is rejected with a located `.unresolvedReference` error (`Function call target not found`), and a built-in given the wrong number of arguments with a `.syntaxError`. |
 | 31 | String interpolation | `Score: {score}` | `str`/`/str` interpolation of expression results. |
 | 32 | Tags (`#tag`) | `Hello #greeting` | Metadata tag attached to a line. |
 | 33 | Save / restore | (engine state) | `StoryState` round-trips through `chooseChoice`. |
@@ -72,20 +72,26 @@ These constructs compile to a playable blueprint. (Matrix rows 1–27, 29–35.)
 ## MUST-REJECT
 
 These constructs are rejected by the compiler with a located
-`.unsupportedConstruct` error. (Matrix rows 28, 36–44.)
+`.unsupportedConstruct` error. (Matrix rows 28, 36–45.) Where the runtime also refuses a
+construct when it loads inklecate's JSON, the error's `construct` is the runtime's
+`UnsupportedFeature.name`: `"shuffle {~a|b}"`, `"threads (<-)"`, `"LIST"`, `"RANDOM()"`,
+`"EXTERNAL functions"`, `"TURNS()"`, `"TURNS_SINCE()"`, `"CHOICE_COUNT()"`, `"POW()"`,
+`"READ_COUNT() of a divert-target variable"`, `"? (contains)"`, `"!? (does not contain)"`.
+`INCLUDE` is `"INCLUDE"`.
 
 | # | Construct | Example | Reason |
 |---|-----------|---------|--------|
 | 28 | Variable text: shuffle (`{~a\|b}`) | `{~heads\|tails}` | Requires RANDOM, which the runtime genuinely lacks. |
 | 36 | Threads (`<-`) | `<- conversation` | Concurrent flow weaving is unimplemented in the runtime. |
 | 37 | LIST declarations | `LIST colors = red, green` | List value type and operators are unimplemented. |
-| 38 | RANDOM / SEED_RANDOM | `~ r = RANDOM(1, 6)` | No deterministic RNG support in the runtime. |
+| 38 | RANDOM | `~ r = RANDOM(1, 6)` | No deterministic RNG support in the runtime. (`SEED_RANDOM` is supported: without RANDOM a seed has no observable effect.) |
 | 39 | External functions | `EXTERNAL beep()` | No host-binding mechanism for external calls. |
 | 40 | Multi-line sequences | `{stopping:` / `- Halt!` / `- I said halt!` / `}` (also `{cycle:`, `{once:`, `{shuffle:`, `{&`) | The compiler has no lowering for the block form; only the inline `{a\|b}` forms (rows 25–27) are supported. A story using one plays correctly from its inklecate/Inky `.ink.json`. |
 | 41 | `INCLUDE` | `INCLUDE chapter_two.ink` | The compiler reads a single source string and has no file resolution. |
 | 42 | String with inline logic | `~ return "value {n}"` (also in `~ temp`, function arguments and conditions) | The compiler has no lowering that builds a string at runtime (`str` … `out` … `/str`). Quotes in prose (`She said "hi {n}".`) are text and are supported. |
 | 43 | Tag with inline logic | `A line. # pic{n}.jpg` (also `{a\|b}` in a tag, on content, choice and gather lines) | The compiler emits the tag text verbatim and does not lower the logic inside it. Static tags are supported. |
 | 44 | Tag inside inline logic | `{met: Hi # greeting}`, `{A # t\|B}` (any `#` inside an inline `{…}`, even in quoted prose) | The compiler keeps the tag as literal text in the arm or alternative. A tag on its own line in a block conditional's branch is supported. |
+| 45 | `TURNS()`, `TURNS_SINCE()`, `CHOICE_COUNT()`, `POW()`, `READ_COUNT()`, `?` / `!?` | `{TURNS_SINCE(-> shop)}`, `{"hello" ? "ell"}` | The runtime has no turn counter, choice-count, divert-target read count or containment natives, and refuses them at load. `TURNS_SINCE` and `READ_COUNT` are rejected at the call, before their divert-target argument is read. |
 
 ## Known gaps / future work
 
@@ -113,7 +119,7 @@ the reasons are not uniform:
   provide. It therefore stays unsupported until RANDOM lands — it is the only
   variable-text form still rejected.
 
-- **Threads, LIST, RANDOM/SEED_RANDOM, EXTERNAL (rows 36–39)** are
+- **Threads, LIST, RANDOM, EXTERNAL and the built-ins of row 45 (rows 36–39, 45)** are
   **runtime-unsupported**: the engine has no execution model for them today, and
   `Story(json:)` refuses a story that uses them, at load, with
   `StoryError.unsupportedFeatures` (#32); `SEED_RANDOM` on its own is accepted, as a

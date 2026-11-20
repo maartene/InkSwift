@@ -219,6 +219,10 @@ public enum InkExpressionParser {
         case "||", orKeyword: return logicalOrPrecedence
         case "&&", andKeyword: return logicalAndPrecedence
         case ">", "<", ">=", "<=", "==", "!=": return comparisonPrecedence
+        // Containment parses so lowering can refuse it by name rather than the
+        // tokenizer dropping the rest of the expression; the reference binds it
+        // between comparison and addition, a level step 04-04 adds with support.
+        case "?", "!?": return comparisonPrecedence
         case "+", "-": return additivePrecedence
         case "*", "/", "%": return multiplicativePrecedence
         default: return nil
@@ -292,6 +296,9 @@ private struct ExpressionTokenizer {
         if characters[index] == "\"" {
             return scanStringLiteral(from: index)
         }
+        if let containment = scanContainmentOperator(from: index) {
+            return containment
+        }
         if let comparison = scanComparisonOperator(from: index) {
             return comparison
         }
@@ -333,6 +340,15 @@ private struct ExpressionTokenizer {
         }
         let endIndex = index < characters.count ? index + 1 : index
         return (ExpressionToken(text: contents, isStringLiteral: true), endIndex)
+    }
+
+    /// Scan a containment operator (`!?`, `?`) beginning at `index`, before
+    /// `!` can be read as a negation.
+    private func scanContainmentOperator(from index: Int) -> (token: ExpressionToken, endIndex: Int)? {
+        for symbol in ["!?", "?"] where characters[index...].starts(with: symbol) {
+            return (ExpressionToken(text: symbol), index + symbol.count)
+        }
+        return nil
     }
 
     /// Scan a comparison operator (`>= <= == != > <`) beginning at `index`.

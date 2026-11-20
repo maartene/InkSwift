@@ -294,7 +294,12 @@ struct TreeWalker {
                 default: return value
                 }
             }
-        case .seedRandom: _ = state.evalStack.popLast()  // pop seed; result is implementation-defined
+        // The seed is popped and void pushed, as C# `Story` does, so the `pop`
+        // compiled for the discarded call removes the void and nothing below it.
+        // With RANDOM refused, a seed has no observable effect.
+        case .seedRandom:
+            _ = state.evalStack.popLast()
+            state.evalStack.append(.string("void"))
         case .floor:      applyUnaryOp(state: &state) { $0.floored }
         case .ceiling:    applyUnaryOp(state: &state) { $0.ceiled }
         case .int:        applyUnaryOp(state: &state) { $0.toInt }

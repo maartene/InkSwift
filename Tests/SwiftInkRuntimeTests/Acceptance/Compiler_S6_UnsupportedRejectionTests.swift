@@ -14,19 +14,21 @@ import Testing
 import Foundation
 @testable import SwiftInkRuntime
 
-// fixture name → the construct word the located error must name (case-insensitive).
+// fixture name → the construct the located error must name: the runtime's
+// `UnsupportedFeature` name for the same feature (ADR-025), so a host sees one
+// vocabulary whether the story is compiled natively or loaded from JSON.
 // Variable-text rejection is now shuffle-ONLY (slice-01, DDD-5 / DISTILL U-2):
 // the deterministic sequence/cycle/once forms COMPILE via VariableTextEmitter, so
 // `reject-seq`/`reject-cycle`/`reject-once` left this corpus. Shuffle stays
 // unsupported (no deterministic lowering), as do the statement-level constructs.
 private let rejectCorpus: [(fixture: String, construct: String)] = [
-    ("reject-shuffle", "shuffle"),
-    ("reject-thread", "thread"),
-    ("reject-list", "list"),
-    ("reject-random", "random"),
-    ("reject-external", "external"),
+    ("reject-shuffle", "shuffle {~a|b}"),
+    ("reject-thread", "threads (<-)"),
+    ("reject-list", "LIST"),
+    ("reject-random", "RANDOM()"),
+    ("reject-external", "EXTERNAL functions"),
     ("reject-multiline-sequence", "multi-line sequence"),
-    ("reject-include", "include"),
+    ("reject-include", "INCLUDE"),
     ("reject-string-inline-logic", "string with inline logic"),
     ("reject-tag-inline-logic", "tag with inline logic"),
     ("reject-tag-inside-inline-logic", "tag inside inline logic"),
@@ -156,7 +158,7 @@ struct Compiler_S6_UnsupportedRejectionTests {
         } catch let error as CompileError {
             #expect(error.kind == .unsupportedConstruct,
                     "\(fixture): expected .unsupportedConstruct, got \(error.kind)")
-            #expect(error.construct?.range(of: construct, options: .caseInsensitive) != nil,
+            #expect(error.construct == construct,
                     "\(fixture): error should NAME the construct '\(construct)'; got \(String(describing: error.construct))")
             #expect(error.line > 0,
                     "\(fixture): error should report a source LOCATION (line > 0); got line \(error.line)")
