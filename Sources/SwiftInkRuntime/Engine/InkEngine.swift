@@ -318,7 +318,8 @@ final class InkEngine {
 
     /// Implicit void return: the function's OWN BODY container exhausted
     /// with a function element on top of the return stack.
-    /// Push void sentinel so the caller's "out" command has something to consume.
+    /// Push void (C# `Runtime.Void`, Story.cs ~2685-2691) so the caller's `out`,
+    /// `pop` or assignment has a result to consume.
     ///
     /// The depth test matters: a nested sub-container inside the body must
     /// pop one level, NOT end the function. An inline conditional lowers to
@@ -338,7 +339,7 @@ final class InkEngine {
               let element = state.returnStack.pop(.function) else {
             return false
         }
-        state.evalStack.append(.string("void"))
+        state.evalStack.append(.void)
         applyFunctionReturn(to: element)
         return true
     }
@@ -443,7 +444,10 @@ final class InkEngine {
 
     /// ->->: pop the tunnel element and resume at its position. Any other
     /// element on top, or none, refuses the pop and ends the flow.
+    /// `->->` pops the void its `ev void /ev` pushed, as C# does before it
+    /// pops the call stack (Story.cs ~1263-1270).
     private func returnFromTunnel() {
+        _ = state.evalStack.popLast()
         guard let element = state.returnStack.pop(.tunnel) else {
             return refusePop(.tunnel)
         }
@@ -1183,7 +1187,7 @@ final class InkEngine {
         case .float(let f):  return f
         case .string(let s): return s
         case .bool(let b):   return b
-        case .variablePointer: return nil
+        case .variablePointer, .void: return nil
         }
     }
 

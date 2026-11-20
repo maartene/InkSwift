@@ -6,7 +6,7 @@
 //   B4 — .controlCommand "done"/"end" sets isEnded = true
 //   (B5 — .divert updating containerPath — removed with the dead write it pinned:
 //    InkEngine resolves every divert and owns the container stack.)
-//   B6 — "out" control command suppresses void sentinel (does not emit "void" text)
+//   B6 — "out" control command suppresses the void value (emits nothing for it)
 //   B7 — .variablePointer node pushes a pointer sentinel onto evalStack
 //   B8 — variable assignment via pointer mutates the pointed-to global variable
 
@@ -106,12 +106,12 @@ struct TreeWalkerTests {
         #expect(state.isEnded == true)
     }
 
-    // B6: "out" suppresses void sentinel — does not emit "void" text to output stream
+    // B6: "out" suppresses the void value — emits nothing to the output stream
     @Test func `out control command suppresses void sentinel and does not emit void to output`() throws {
         let walker = TreeWalker()
         var state = StoryState()
-        // Push the void sentinel (string "void") onto the eval stack
-        state.evalStack.append(.string("void"))
+        // Push the void value (C# Runtime.Void) onto the eval stack
+        state.evalStack.append(.void)
         try walker.dispatchNode(.controlCommand("out"), state: &state)
         #expect(state.outputStream.isEmpty, "out must not emit the void sentinel to outputStream")
         #expect(state.evalStack.isEmpty, "void sentinel must be consumed from evalStack by out")

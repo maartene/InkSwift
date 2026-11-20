@@ -663,7 +663,10 @@ enum RuntimeObjectEmitter {
         _ value: InkExpression?,
         context: LoweringContext
     ) throws -> [NodeKind] {
-        let valueNodes = try value.map { try ExpressionLowering.lowerExpression($0, context: context) } ?? []
+        // A bare `~ return` returns void, as inklecate emits `ev void /ev ~ret`;
+        // without it the caller's `out`, `pop` or assignment would consume a
+        // value that belongs to the caller.
+        let valueNodes = try value.map { try ExpressionLowering.lowerExpression($0, context: context) } ?? [.voidValue]
         return ExpressionLowering.evalGroup(valueNodes) + [.controlCommand("~ret")]
     }
 

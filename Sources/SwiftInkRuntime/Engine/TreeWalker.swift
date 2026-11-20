@@ -110,8 +110,11 @@ struct TreeWalker {
         case .nativeFunction(let fn):
             try handleNativeFunction(fn, state: &state)
 
+        // C# pushes a `Void` content object onto the evaluation stack like any
+        // value (Story.cs ~950-956): `ev void /ev ~ret` returns it from a bare
+        // `~ return`, `ev void /ev ->->` hands it to the tunnel return.
         case .voidValue:
-            break  // no-op
+            state.evalStack.append(.void)
 
         case .container:
             break  // inline sub-containers handled by InkEngine via path resolution
@@ -148,13 +151,13 @@ struct TreeWalker {
 
         case "out":
             if let top = state.evalStack.popLast() {
-                // Suppress the void sentinel pushed by implicit function returns.
-                // A printed value is text like any other: inside a string or tag
-                // span it belongs to that span (Story.cs EndString/EndTag collect
-                // every StringValue back to the span's start).
-                guard case .string(let s) = top, s == "void" else {
+                // A function that returned nothing prints nothing (Story.cs
+                // ~1231: `out` skips only `Void`). A printed value is text like
+                // any other: inside a string or tag span it belongs to that span
+                // (Story.cs EndString/EndTag collect every StringValue back to
+                // the span's start).
+                if top != .void {
                     handleText(top.asString, state: &state)
-                    break
                 }
             }
 
@@ -310,7 +313,7 @@ struct TreeWalker {
         // With RANDOM refused, a seed has no observable effect.
         case .seedRandom:
             _ = state.evalStack.popLast()
-            state.evalStack.append(.string("void"))
+            state.evalStack.append(.void)
         case .floor:      applyUnaryOp(state: &state) { $0.floored }
         case .ceiling:    applyUnaryOp(state: &state) { $0.ceiled }
         case .int:        applyUnaryOp(state: &state) { $0.toInt }
