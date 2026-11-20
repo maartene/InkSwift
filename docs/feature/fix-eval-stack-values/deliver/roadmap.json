@@ -1,0 +1,142 @@
+{
+  "roadmap": {
+    "project_id": "fix-eval-stack-values",
+    "created_at": "2026-11-20T12:00:00Z",
+    "total_steps": 4,
+    "phases": 1,
+    "goal": "Fix GitHub #46, #44, #41: the evaluation stack holds the values the reference holds (0 for a missing variable, a distinct void) and operators coerce and raise the reference's errors."
+  },
+  "phases": [
+    {
+      "id": "01",
+      "name": "Regression tests + fixes",
+      "steps": [
+        {
+          "id": "01-01",
+          "name": "Missing variable reads as 0 (#46)",
+          "description": "handleVariableReference pushes nothing for a variable it cannot find, leaving the evaluation stack one short and printing nothing. Push .int(0) as C# Story.cs:1690-1693 does. Record the missing RUNTIME WARNING in differences-from-inklecate.md (warning channel is #39).",
+          "acceptance_criteria": [
+            "Native compile of `VAR flag = false` / `{flag:` / `    ~ temp y = 1` / `}` / `Value: {y}.` / `After.` / `* Go` / `    Gone.` / `    -> END` prints `Value: 0.` then `After.`, offers choice `Go`, and choosing it prints `Gone.`",
+            "Same story via Story(json:) on inklecate's JSON plays identically",
+            "An expression using the missing temp (e.g. `{y + 2}`) prints 2, proving the stack is balanced",
+            "docs/reference/differences-from-inklecate.md lists the missing 'Variable not found' runtime warning, pointing at #39"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Bug_EvalStackValuesTests.swift",
+          "scenario_name": "Reading a temp whose declaration was skipped uses 0",
+          "criteria": "Regression tests fail before the fix and pass after; full swift test green; commit message contains `Fixes #46`.",
+          "implementation_notes": [
+            "Sources/SwiftInkRuntime/Engine/TreeWalker.swift handleVariableReference: replace `guard let v = value else { return }` with a push of .int(0) (C# IntValue(0)); keep comment citing Story.cs and #39 for the warning.",
+            "Leave the underflow guards for step 01-03; update their comments only if now misleading.",
+            "Fixture must continue past the read (prose + choice + choice content)."
+          ],
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Engine/TreeWalker.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Bug_EvalStackValuesTests.swift",
+            "docs/reference/differences-from-inklecate.md"
+          ],
+          "dependencies": []
+        },
+        {
+          "id": "01-02",
+          "name": "Distinct void value on the evaluation stack (#44)",
+          "description": "The runtime uses the string \"void\" as its no-value sentinel, so a story string \"void\" is never printed. Add a .void case to InkValue, push it for implicit function returns, srnd, and the JSON `void` node; `out` suppresses only .void.",
+          "acceptance_criteria": [
+            "`VAR v = \"void\"` / `A {v} B` prints `A void B`",
+            "A string literal `{\"void\"}` mid-line prints `void`",
+            "A function that returns nothing (implicit end, and bare `~ return`) called mid-line prints nothing for the call and the line continues",
+            "Each fixture continues with prose and a choice whose content plays",
+            "Native compile and Story(json:) on inklecate JSON agree",
+            "InkValue.void round-trips through Codable (save/restore of a variable holding a void result)"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Bug_EvalStackValuesTests.swift",
+          "scenario_name": "A story string \"void\" is printed",
+          "criteria": "Regression tests fail before the fix and pass after; full swift test green; commit message contains `Fixes #44`.",
+          "implementation_notes": [
+            "Sources/SwiftInkRuntime/Engine/StoryState.swift InkValue: add `case void`; extend Codable (new type tag, additive so older saves still decode), asDouble/asBool/asString/coercionType etc. exhaustively.",
+            "InkEngine.swift:~341 and TreeWalker.swift:~308 push .void instead of .string(\"void\").",
+            "TreeWalker .voidValue node: C# pushes Void (ControlCommand / Void object handling in Story.cs); verify against the C# source and the compiler's `ev void /ev` lowering for bare `~ return` before changing the no-op; make sure the stack stays balanced either way.",
+            "`out` suppresses only .void.",
+            "Operators on .void are handled in 01-03; here, give .void a neutral conversion so behaviour is otherwise unchanged."
+          ],
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Engine/StoryState.swift",
+            "Sources/SwiftInkRuntime/Engine/TreeWalker.swift",
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Bug_EvalStackValuesTests.swift"
+          ],
+          "dependencies": [
+            "01-01"
+          ]
+        },
+        {
+          "id": "01-03",
+          "name": "Unary operators coerce and raise the reference's errors; IEEE float division; int divide-by-zero error (#41)",
+          "description": "Unary natives go through applyUnaryOp with no coercion or error path, and /,% by zero return 0. Add UnaryNativeFunction mirroring BinaryNativeFunction; follow IEEE for float division; report integer division by zero and stack underflow as runtime errors that end the flow.",
+          "acceptance_criteria": [
+            "`VAR b = true` / `H: {-b} {FLOOR(b)} {not b} {INT(b)} {FLOAT(b)}` prints `H: -1 1 false 1 1` (inklecate-verified)",
+            "`VAR s = \"a\"` / `{not s}` reports `Cannot perform operation '!' on String` in currentErrors and ends the flow; likewise `_` for `-s`, `FLOOR`, `CEILING`, `INT`, `FLOAT`",
+            "`VAR z = 0.0` / `C: {1.0 / z} {-1.0 / z} {0.0 / z} {1.0 % z}` prints `C: Infinity -Infinity NaN NaN` (inklecate-verified, invariant culture)",
+            "`VAR z = 0` / `{1 / z}` and `{7 % z}` report `Attempted to divide by zero.` and end the flow (maintainer decision; inklecate crashes, inkle/ink#843 open and unanswered)",
+            "Any unary or binary operator applied to a void value reports `Attempting to perform <token> on a void value. Did you forget to 'return' a value from a function you called here?` (NativeFunctionCall.cs:98) and ends the flow",
+            "Evaluation-stack underflow in applyUnaryOp/applyBinaryOp/handleVariableAssignment reports a runtime error (e.g. `Evaluation stack is empty`) and ends the flow (maintainer decision) instead of silently skipping",
+            "Fixtures continue past the operator with prose and a choice; error cases assert that following prose does NOT play",
+            "differences-from-inklecate.md records the integer divide-by-zero choice"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Bug_EvalStackValuesTests.swift",
+          "scenario_name": "Operators with one operand and division by zero match the reference",
+          "criteria": "Regression tests fail before the fix and pass after; full swift test green; conformance backlog checked for newly passing tests (re-enable + update scripts/conformance/known-failures.json); commit message contains `Fixes #41`.",
+          "implementation_notes": [
+            "StoryState.swift: UnaryNativeFunction { function; int: ((Int)->InkValue)?; float: ((Double)->InkValue)? } with callAsFunction coercing via max(coercionType, .int) and throwing `Cannot perform operation '<token>' on <Type>`; C# registers Negate/Not/Floor/Ceiling/Int/Float for Int and Float only (NativeFunctionCall.cs ~336-385).",
+            "Void check precedes coercion for unary and binary (C# NativeFunctionCall.Call ~96-99).",
+            "divide/modulo: float follows IEEE (Double / and truncatingRemainder); int zero divisor throws InkRuntimeError(\"Attempted to divide by zero.\") \u2014 record the reasoning and inkle/ink#843 in a code comment.",
+            "handleNativeFunction becomes throwing for unary natives; handleVariableAssignment's underflow must surface as an InkRuntimeError (check its call site propagates throws to InkEngine.reportRuntimeError).",
+            "Run INKSWIFT_CONFORMANCE_BACKLOG=1 swift test --filter UpstreamConformance before/after to find newly passing backlog tests."
+          ],
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Engine/StoryState.swift",
+            "Sources/SwiftInkRuntime/Engine/TreeWalker.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Bug_EvalStackValuesTests.swift",
+            "docs/reference/differences-from-inklecate.md",
+            "scripts/conformance/known-failures.json"
+          ],
+          "dependencies": [
+            "01-02"
+          ]
+        },
+        {
+          "id": "01-04",
+          "name": "Close the implementation review's follow-ups",
+          "description": "Review of 3589fc8/fbe6662/c7b0286 found remaining silent stack pops, a silent operator-lookup return, false comments and under-specified docs. Make every evaluation-stack pop consistent with the 'short stack is a runtime error' decision and fix the comments and docs.",
+          "acceptance_criteria": [
+            "`->->`, `pop` and `srnd` on an empty evaluation stack report `Evaluation stack is empty` and end the flow (same path as operators), pinned by the short-stack test",
+            "applyBinaryOp no longer has a silent return for a native missing from the lookup table (total lookup, e.g. an exhaustive switch, so unary and binary are consistent)",
+            "`.void` reaching coercion is a programming error (preconditionFailure), not a silent int",
+            "Comments describing `->->` and void are accurate; the divide-by-zero rationale lives in one place",
+            "A test pins that a legacy save holding the string \"void\" decodes to the string \"void\"",
+            "differences-from-inklecate.md states: saves with a void value can't be read by builds before 2.2.2; a `->-> target` override target is ignored and play resumes at the call site; the empty-stack error covers every pop"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Bug_EvalStackValuesTests.swift",
+          "scenario_name": "Every evaluation-stack pop reports a short stack",
+          "criteria": "Full swift test green; no behaviour change for valid stories.",
+          "implementation_notes": [
+            "See review findings S1, S2, S4, S6, N1-N3, N5, N6 in the dispatch prompt."
+          ],
+          "files_to_modify": [
+            "Sources/SwiftInkRuntime/Engine/TreeWalker.swift",
+            "Sources/SwiftInkRuntime/Engine/InkEngine.swift",
+            "Sources/SwiftInkRuntime/Engine/StoryState.swift",
+            "Tests/SwiftInkRuntimeTests/Acceptance/Bug_EvalStackValuesTests.swift",
+            "docs/reference/differences-from-inklecate.md"
+          ],
+          "dependencies": [
+            "01-03"
+          ]
+        }
+      ]
+    }
+  ],
+  "validation": {
+    "status": "approved",
+    "approved_by": "maintainer (RCA review, 2026-11-20)"
+  }
+}
