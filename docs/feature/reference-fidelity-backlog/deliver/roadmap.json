@@ -2,7 +2,7 @@
   "roadmap": {
     "project_id": "reference-fidelity-backlog",
     "created_at": "2026-11-19T12:00:00Z",
-    "total_steps": 21,
+    "total_steps": 22,
     "implementation_notes": [
       "Expected values marked as predictions are verified with `inklecate -p` before RED; inklecate's output is authoritative.",
       "Releases (tag, push, GitHub release, README `from:` snippet) are cut by the orchestrator, never by the crafter. No tag between 02-04 and 02-05 (one patch). No tag between 04-02 and 04-04 (one minor)."
@@ -982,6 +982,52 @@
           ],
           "deps": [
             "05-01"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "06",
+      "name": "Review follow-ups",
+      "description": "Code- and test-only leftovers from the DELIVER Phase 4 review (2026-11-20). No behaviour change, no release.",
+      "steps": [
+        {
+          "id": "06-01",
+          "name": "Close the implementation review's code and test follow-ups",
+          "description": "Feature-delta U15. Findings #3 and #5-#12 of the Phase 4 review: a native coverage gap in the coercion AT, a second built-in name list, dead code, silent stack-underflow returns, partial catalog test coverage, a split unescape convention and an unused scanner mode, a misleading FallThrough name, and unconfirmed fatalErrors. Behaviour-changing findings went to issues #44 and #45.",
+          "agent": "nw-software-crafter",
+          "criteria": [
+            "#3: Engine_NumericCoercionTests asserts the FULL oracle on the native path (no filter on '('); FLOOR/CEILING/INT/FLOAT/MIN/MAX lines are now checked natively",
+            "#8: catalog tests iterate NativeFunction.allCases, so every native has an entry (no reachable preconditionFailure in NativeFunctionCatalog.entry(for:)); #5: the divert-target built-ins (TURNS_SINCE, READ_COUNT) come from a catalog flag, not a hard-coded list in UnsupportedConstructDetector, and its header comment matches its behaviour",
+            "#6: TreeWalker's unreachable `case \"visit\": break` is removed; its done/end handling gets a comment that it serves only global decl; #7: silent `guard … return` on stack underflow in applyBinaryOp/applyUnaryOp/handleVariableAssignment become a preconditionFailure or a recorded runtime error (decide from whether well-formed JSON can reach them; no oracle or conformance test may change)",
+            "#9/#10: ContentTextScanner's comment states where text is unescaped (one site, or the comment documents the actual two); the unused escapeAgnostic mode is removed or documented as the reference mode with a test; #11: FallThrough.end is renamed to a name saying it emits nothing (e.g. .runOut); #12: WeaveEmitter's fatalErrors are confirmed unreachable from user input (comment with the invariant) or become CompileErrors",
+            "Behaviour-neutral: full suite green, no oracle or conformance expectation changes; conformance backlog failure lines identical before and after",
+            "Manual mutation check done: 3-5 mutations reported in the commit message, none surviving unexplained; changed production files' Code Health not below their main baseline"
+          ],
+          "test_file": "Tests/SwiftInkRuntimeTests/Acceptance/Engine_NumericCoercionTests.swift",
+          "scenario_name": "Review follow-ups leave behaviour unchanged",
+          "files_to_modify": [
+            "Tests/SwiftInkRuntimeTests/Acceptance/Engine_NumericCoercionTests.swift",
+            "Tests/SwiftInkRuntimeTests/Unit/NativeFunctionCatalogTests.swift",
+            "Sources/SwiftInkRuntime/Decoder/NativeFunctionCatalog.swift",
+            "Sources/SwiftInkRuntime/Compiler/Parser/UnsupportedConstructDetector.swift",
+            "Sources/SwiftInkRuntime/Engine/TreeWalker.swift",
+            "Sources/SwiftInkRuntime/Compiler/Parser/ContentTextScanner.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/WeaveEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/ConditionalEmitter.swift",
+            "Sources/SwiftInkRuntime/Compiler/Codegen/RuntimeObjectEmitter.swift"
+          ],
+          "implementation_notes": [
+            "TEST PARADIGM (project convention, CLAUDE.md): Swift Testing, backtick test names (string-label @Test(\"…\") forbidden), example-based and parametrized (@Test(arguments:)) tests; behavioural truth from the inklecate oracle fixtures and the upstream conformance suite. No property-testing library is used in this project; express invariant checks as parametrized tests over representative inputs.",
+            "MANUAL MUTATION CHECK (CLAUDE.md): 3-5 plausible-bug mutations (e.g. drop '|' from the content stop set, off-by-one an offset, forget the choice-context brackets, make the detector's primitive escape-agnostic). Report each and its outcome in the commit message; never commit a mutation.",
+            "CODE HEALTH: CodeScene CLI self-check on every changed production file against the main baseline; >=9.5 approve, 9–9.5 report, <9 rework. InkParser.swift should improve as the raw scanners leave it.",
+            "Commit to main through the pre-commit gate (SwiftLint --strict + full swift test); never bypass.",
+            "RELEASE: none (code- and test-only); ships with the next release.",
+            "COMMIT MESSAGE: `refactor: …` / `test: …`, ends with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.",
+            "GATE: des-commit commits with --no-verify; run `.githooks/pre-commit` yourself before des-commit."
+          ],
+          "deps": [
+            "05-02"
           ]
         }
       ]
