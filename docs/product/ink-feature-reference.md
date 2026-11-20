@@ -34,7 +34,7 @@ These constructs compile to a playable blueprint. (Matrix rows 1–27, 29–35.)
 
 | # | Construct | Example | Reason |
 |---|-----------|---------|--------|
-| 1 | Text output / newlines | `Hello, world.` | Plain prose is the base case; emitted verbatim. |
+| 1 | Text output / newlines | `Hello, world.` | Plain prose is the base case; emitted verbatim. As in inklecate, a backslash escapes the next character, which prints literally and never acts as logic: `\{`, `\}`, `\#`, `\|`, `\[`, `\]`, `\\` in prose, choice text, alternatives, tags and strings. |
 | 2 | Knots (`=== name`) | `=== forest ===` | Named top-level containers; resolved as divert targets. |
 | 3 | Stitches (`= name`) | `= clearing` | Named sub-containers within a knot. |
 | 4 | Diverts (`->`) | `-> forest` | Absolute, relative pure-ancestor, and anchor diverts all resolve. |

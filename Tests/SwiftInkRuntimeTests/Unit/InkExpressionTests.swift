@@ -53,11 +53,10 @@ struct InkExpressionParserTests {
     }
 
     // B1d — an escaped quote inside a string literal does NOT terminate the
-    // scan; the inner escaped-quote characters are carried in the contents
-    // rather than truncating at the first `\"`.
+    // scan, and reads as a quote (#35): inklecate prints `He said "hello"`.
     @Test func `parses a string literal containing escaped quotes`() throws {
         let expression = try InkExpressionParser.parse(#""He said \"hello\"""#)
-        #expect(expression == .stringLiteral(#"He said \"hello\""#))
+        #expect(expression == .stringLiteral(#"He said "hello""#))
     }
 }
 

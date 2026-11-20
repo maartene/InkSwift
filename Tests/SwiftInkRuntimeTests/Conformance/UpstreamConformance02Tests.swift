@@ -110,7 +110,7 @@ struct UpstreamConformance02Tests {
         c.equal("this is a '|' character\n", story.continueMaximally())
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: escaped characters in alternatives"))
+    @Test
     func `TestEscapeCharacter — native compiler and runtime`() {
         Conformance.run("TestEscapeCharacter", .native, Self.testEscapeCharacter)
     }

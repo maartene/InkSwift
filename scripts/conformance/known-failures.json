@@ -118,9 +118,6 @@
  "TestEndOfContent": {
   "native": "native compiler reports no warnings"
  },
- "TestEscapeCharacter": {
-  "native": "escaped characters in alternatives"
- },
  "TestEvaluatingFunctionVariableStateBug": {
   "native": "not ported \u2014 needs an EvaluateFunction API",
   "runtime": "not ported \u2014 needs an EvaluateFunction API"

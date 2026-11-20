@@ -145,7 +145,7 @@ enum VariableTextEmitter {
     private static func stageContainer(_ stageKey: String, text: String, endPath: [String]) -> ContainerNode {
         var children: [NodeKind] = [.controlCommand("pop")]
         if text.isEmpty == false {
-            children.append(.text(text))
+            children.append(.text(ContentTextScanner.unescaped(text)))
         }
         children.append(unconditionalDivert(to: endPath))
         return ContainerNode(children: children, namedContent: [:], flags: 0, name: stageKey)

@@ -52,6 +52,18 @@ enum GlueMarker {
         return .none
     }
 
+    /// The first `#` of a line whose text before it ends in glue (`Text <> # t`),
+    /// or `nil`. Glue still joins such a line to the next one, as in inklecate,
+    /// whose JSON reads `"^Text ","<>","^ ","#","^t","/#"`.
+    static func tagAfterGlue(in line: String) -> ContentTextScanner.Token? {
+        let tokens = ContentTextScanner.scan(line, context: .content)
+        guard let hashPosition = tokens.firstIndex(where: { $0.marker == .hash }) else {
+            return nil
+        }
+        let beforeTag = tokens[..<hashPosition].last { $0.marker != nil || $0.text.allSatisfy(\.isWhitespace) == false }
+        return beforeTag?.marker == .glue ? tokens[hashPosition] : nil
+    }
+
     /// Whether `body` ends with a glue marker.
     static func endsWithGlue(_ body: String) -> Bool {
         ContentTextScanner.scan(body, context: .content).last?.marker == .glue

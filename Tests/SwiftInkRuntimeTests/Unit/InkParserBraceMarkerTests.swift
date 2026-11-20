@@ -46,11 +46,13 @@ struct InkParserBraceMarkerTests {
     }
 
     // M5 — a leading `\` escapes the marker: the body is a plain sequence whose
-    // first stage begins with the literal `!`. Must also be claimed ahead of the
-    // `:` test, or the escaped body would fall through to the conditional path.
+    // first stage begins with the escaped `!`. Must also be kept from the `:`
+    // test, or the escaped body would fall through to the conditional path.
+    // Stages are source text, escape pair intact; it prints `!a: NotEscaped`
+    // (#35, the stage is unescaped when it becomes output).
     @Test func `an escaped marker yields a plain sequence with the marker literal`() throws {
         #expect(try segments(of: "{\\!a: NotEscaped|Other}")
-            == [.variableText(mode: .sequence, stages: ["!a: NotEscaped", "Other"])])
+            == [.variableText(mode: .sequence, stages: ["\\!a: NotEscaped", "Other"])])
     }
 
     // M6 — an UNMARKED body with a top-level `:` is still an inline conditional.

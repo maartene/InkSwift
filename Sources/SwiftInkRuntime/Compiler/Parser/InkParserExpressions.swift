@@ -203,7 +203,7 @@ public enum InkExpressionParser {
 
     private static func operand(from token: ExpressionToken) throws -> InkExpression {
         if token.isStringLiteral {
-            try UnsupportedConstructDetector.checkStringLiteral(token.text)
+            try UnsupportedConstructDetector.checkStringLiteral(token.literalSource)
             return .stringLiteral(token.text)
         }
         if token.text == "true" {
@@ -264,10 +264,14 @@ public enum InkExpressionParser {
 private struct ExpressionToken {
     let text: String
     let isStringLiteral: Bool
+    /// A string literal's source text between its quotes, escape pairs intact;
+    /// `text` is its value, escapes read.
+    let literalSource: String
 
-    init(text: String, isStringLiteral: Bool = false) {
+    init(text: String, isStringLiteral: Bool = false, literalSource: String? = nil) {
         self.text = text
         self.isStringLiteral = isStringLiteral
+        self.literalSource = literalSource ?? text
     }
 }
 
@@ -331,18 +335,19 @@ private struct ExpressionTokenizer {
     /// Scan a double-quoted string literal beginning at the opening quote at
     /// `start`. Returns the unquoted contents and the index just past the
     /// closing quote. The contents are string text (`ContentTextScanner`): an
-    /// escape pair (an escaped quote or backslash) never closes the literal and
-    /// is kept verbatim in escape-agnostic mode.
+    /// escape pair (`\"`, `\\`, `\{`) never closes the literal and reads as the
+    /// escaped character (#35).
     private func scanStringLiteral(from start: Int) -> (token: ExpressionToken, endIndex: Int) {
-        let rest = String(characters[(start + 1)...])
+        let rest = Array(characters[(start + 1)...])
         var contents = ""
-        for token in ContentTextScanner.scan(rest, context: .string) {
+        for token in ContentTextScanner.scan(String(rest), context: .string) {
             if token.marker == .quote {
-                return (ExpressionToken(text: contents, isStringLiteral: true), start + 1 + token.end)
+                let source = String(rest[..<token.offset])
+                return (ExpressionToken(text: contents, isStringLiteral: true, literalSource: source), start + 1 + token.end)
             }
             contents += token.text
         }
-        return (ExpressionToken(text: contents, isStringLiteral: true), characters.count)
+        return (ExpressionToken(text: contents, isStringLiteral: true, literalSource: String(rest)), characters.count)
     }
 
     /// Scan a containment operator (`!?`, `?`) beginning at `index`, before

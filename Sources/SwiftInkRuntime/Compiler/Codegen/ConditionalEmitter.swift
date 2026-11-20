@@ -342,7 +342,7 @@ enum ConditionalEmitter {
         if let arrow = ContentTextScanner.first(.divert, in: trimmed, context: .content) {
             let prose = String(trimmed.prefix(arrow.offset)).trimmingCharacters(in: .whitespaces)
             if prose.isEmpty == false {
-                children.append(.text(prose))
+                children.append(.text(ContentTextScanner.unescaped(prose)))
             }
             let target = String(trimmed.dropFirst(arrow.end)).trimmingCharacters(in: .whitespaces)
             children.append(LoweringContext.divertNode(to: target, qualify: qualifyDivertTarget))
@@ -359,13 +359,13 @@ enum ConditionalEmitter {
         case .leading(let remainder):
             children.append(.controlCommand(GlueMarker.marker))
             if remainder.trimmingCharacters(in: .whitespaces).isEmpty == false {
-                children.append(.text(remainder))
+                children.append(.text(ContentTextScanner.unescaped(remainder)))
             }
             children.append(unconditionalDivert(to: endPath))
             return ContainerNode(children: children, namedContent: [:], flags: 0, name: key)
         case .trailing(let prose):
             if prose.isEmpty == false {
-                children.append(.text(prose))
+                children.append(.text(ContentTextScanner.unescaped(prose)))
             }
             children.append(.controlCommand(GlueMarker.marker))
             children.append(unconditionalDivert(to: endPath))
@@ -374,7 +374,7 @@ enum ConditionalEmitter {
             break
         }
         if text.isEmpty == false {
-            children.append(.text(text))
+            children.append(.text(ContentTextScanner.unescaped(text)))
         }
         children.append(unconditionalDivert(to: endPath))
         return ContainerNode(children: children, namedContent: [:], flags: 0, name: key)

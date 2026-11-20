@@ -951,7 +951,7 @@ private final class WeaveResolver {
         let labelText: String
         let tags: [String]
         if choice.echoesLabel {
-            labelText = choice.label
+            labelText = ContentTextScanner.unescaped(choice.label)
             tags = []
         } else {
             (labelText, tags) = Self.splitChoiceLabelTag(choice.label)
@@ -1001,7 +1001,7 @@ private final class WeaveResolver {
     private static func splitChoiceLabelTag(_ label: String) -> (text: String, tags: [String]) {
         let parts = ContentTextScanner.split(label, at: .hash, context: .choice)
         guard parts.count > 1 else {
-            return (label, [])
+            return (parts[0], [])
         }
         // The text portion is NOT trimmed: inklecate keeps whatever whitespace
         // sits between the prose and the `#` verbatim (`[Tagged choice #
@@ -1037,7 +1037,7 @@ private final class WeaveResolver {
     ) throws -> ContainerNode {
         var lead: [NodeKind] = []
         if choice.echoesLabel {
-            lead.append(.text(choice.label))
+            lead.append(.text(ContentTextScanner.unescaped(choice.label)))
             lead.append(.newline)
         }
         let body = try lowerBody(choice.body, looseEnd: looseEnd, keyPrefix: keyPrefix)

@@ -603,7 +603,7 @@ enum RuntimeObjectEmitter {
     ) throws -> [NodeKind] {
         switch statement.kind {
         case .text(let value):
-            let text = gluedToNext ? value + " " : value
+            let text = ContentTextScanner.unescaped(gluedToNext ? value + " " : value)
             return [.text(text), .newline]
         case .content(let segments):
             return try lowerContent(segments, context: context)

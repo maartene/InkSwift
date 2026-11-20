@@ -41,8 +41,8 @@ enum ContentTextScanner {
         case escapeAgnostic, escapeAware
     }
 
-    /// The compiler's mode. 05-02 flips it to `.escapeAware` (#35).
-    static let compilerMode = Mode.escapeAgnostic
+    /// The compiler's mode: inklecate's rule (#35).
+    static let compilerMode = Mode.escapeAware
 
     /// A structural character (or pair) that stops a literal run.
     enum Marker: Equatable, Sendable {
@@ -74,6 +74,11 @@ enum ContentTextScanner {
 
         /// Offset just past the token in the source.
         var end: Int { offset + length }
+
+        /// The source text the token spans, escape pairs intact.
+        func source(in characters: [Character]) -> String {
+            String(characters[offset..<end])
+        }
 
         /// `+1` for `{`, `-1` for `}`, `0` otherwise.
         var braceDepthChange: Int {
@@ -110,6 +115,37 @@ enum ContentTextScanner {
     /// mode, the unescaped text in escape-aware mode.
     static func text(of text: String, context: Context, mode: Mode = compilerMode) -> String {
         scan(text, context: context, mode: mode).map(\.text).joined()
+    }
+
+    /// `text` as the compiler prints it: every escape pair `\x` read as `x`.
+    ///
+    /// The parser keeps source text, escape pairs intact, until text becomes
+    /// output (a text node of the story), and unescapes it there, exactly once:
+    /// text that is split again later (a brace body, an alternative's stages, a
+    /// choice body) must still know which characters were escaped.
+    static func unescaped(_ text: String) -> String {
+        self.text(of: text, context: .content)
+    }
+
+    /// The offset of the first unescaped `target` in `text` outside any `{…}`
+    /// group, or `nil`. Depth changes only at brace markers, so a token is
+    /// searched whole at its depth; an escape pair is skipped whole, so `\:`
+    /// never matches `:`.
+    static func firstTopLevel(_ target: Character, in text: String) -> Int? {
+        let characters = Array(text)
+        var depth = 0
+        var index = 0
+        for token in scan(text, context: .content) {
+            depth += token.braceDepthChange
+            index = token.offset
+            while depth == 0, index < token.end {
+                if characters[index] == target {
+                    return index
+                }
+                index += compilerMode == .escapeAware && isEscapePair(at: index, in: characters) ? 2 : 1
+            }
+        }
+        return nil
     }
 
     /// The first `marker` in `text`, or `nil`.

@@ -60,7 +60,6 @@ playing inklecate's `.ink.json` on the native runtime.
 | String with inline logic: `~ return "value {n}"` | Rejected | ✅ Works | Compile with inklecate |
 | Tag with inline logic: `Line. # pic{n}.jpg` | Rejected | ✅ Works | Compile with inklecate |
 | Tag inside inline logic: `{met: Hi # greeting}`, `{A # t\|B}` | Rejected | ✅ Works | Compile with inklecate |
-| Glue before a tag: `Text <> # t` | Compiles, **plays wrong** (prints `<>` and breaks the line) | ✅ Works | Put the tag on the glued line, or compile with inklecate |
 | A conditional inside a function body | Compiles, **plays wrong** | ✅ Works | Compile with inklecate |
 | Multi-line sequences: `{stopping:` … `}`, `{cycle:` … `}` | Rejected | ✅ Works | Compile with inklecate, or use the inline forms (`{a\|b}`, `{&a\|b}`, `{!a\|b}`) |
 | Shuffle: `{~a\|b}` | Rejected | ❌ Refused at load | JS-bridge |
@@ -113,8 +112,8 @@ load](#not-supported-refused-at-load)), so a host sees one vocabulary on both pa
 What is *not* rejected:
 
 - Quotes in prose are text: `She said "hi {n}".` compiles and interpolates `{n}`.
-- An escaped brace or hash is not logic: `Line # a\{b\}` compiles. (The escapes
-  currently keep their backslash in the native compile, where inklecate drops it.)
+- An escaped brace or hash is not logic: `Line # a\{b\}` compiles, and prints the tag
+  `a{b}` as inklecate does.
 - A tag on its own line inside a block conditional's branch compiles normally.
 
 ### Stories the native compiler builds differently

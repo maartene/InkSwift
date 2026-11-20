@@ -1335,6 +1335,13 @@ public enum InkParser {
         position: SourcePosition,
         into statements: inout [InkStatement]
     ) throws {
+        if let tag = GlueMarker.tagAfterGlue(in: trimmed) {
+            let beforeTag = String(trimmed.prefix(tag.offset)).trimmingCharacters(in: .whitespaces)
+            try appendContent(from: beforeTag, position: position, into: &statements)
+            let tagSegment = ContentSegment.tag(tagText(after: tag, in: trimmed))
+            statements.append(InkStatement(kind: .content([tagSegment]), position: position))
+            return
+        }
         if carriesInterpolationOrTag(trimmed) {
             if ContentTextScanner.contains(.braceOpen, in: trimmed, context: .content) {
                 try UnsupportedConstructDetector.check(line: trimmed, lineNumber: position.line)
@@ -1387,6 +1394,7 @@ public enum InkParser {
     /// Empty literal runs are dropped.
     private static func parseContentSegments(_ line: String) throws -> [ContentSegment] {
         let tokens = ContentTextScanner.scan(line, context: .content)
+        let characters = Array(line)
         var segments: [ContentSegment] = []
         var literal = ""
         var position = 0
@@ -1395,7 +1403,7 @@ public enum InkParser {
             case .braceOpen?:
                 appendLiteral(literal, into: &segments)
                 literal = ""
-                let (segment, next) = try scanBraceSegment(in: tokens, after: position)
+                let (segment, next) = try scanBraceSegment(in: tokens, of: characters, after: position)
                 segments.append(segment)
                 position = next
             case .hash?:
@@ -1426,9 +1434,11 @@ public enum InkParser {
     /// Scan a `{ … }` group beginning at the brace token at `openPosition`.
     /// Returns the resulting segment and the token position just past the
     /// closing brace. The body runs to the FIRST `}`; nesting is not tracked.
+    /// The body is kept as source text, escape pairs intact: its stages and
+    /// branches are split again, and unescaped when they become output.
     ///
     /// Classification order matters and mirrors inklecate: a LEADING ALTERNATIVE
-    /// MARKER — `!` once, `&` cycle, `\` escape-to-sequence — read after any
+    /// MARKER — `!` once, `&` cycle — read after any
     /// leading whitespace, claims the WHOLE body ahead of every other test. Only
     /// an unmarked body is then tested for a top-level `:` (inline conditional
     /// `{ cond: a|b }`), then a top-level `|` (unmarked alternative), and finally
@@ -1444,19 +1454,24 @@ public enum InkParser {
     /// downgrade an unsupported shuffle to a plain sequence.
     private static func scanBraceSegment(
         in tokens: [ContentTextScanner.Token],
+        of characters: [Character],
         after openPosition: Int
     ) throws -> (segment: ContentSegment, next: Int) {
         var position = openPosition + 1
-        var body = ""
         while position < tokens.count, tokens[position].marker != .braceClose {
-            body += tokens[position].text
             position += 1
         }
+        let bodyEnd = position < tokens.count ? tokens[position].offset : characters.count
+        let body = String(characters[tokens[openPosition].end..<bodyEnd])
         let next = min(position + 1, tokens.count)
         if let markerSegment = leadingAlternativeSegment(body) {
             return (markerSegment, next)
         }
-        if let colonIndex = topLevelColonIndex(in: body) {
+        // A body opening with an escape pair (`\\!a: x|y`) is no condition:
+        // inklecate's condition expression fails on the `\\`, so it is a
+        // sequence whose first stage prints `!a: x`.
+        let leadsWithEscape = body.first { $0.isWhitespace == false } == "\\"
+        if leadsWithEscape == false, let colonIndex = topLevelColonIndex(in: body) {
             return (try inlineConditionalSegment(body, colonIndex: colonIndex), next)
         }
         if topLevelBarIndex(in: body) != nil {
@@ -1468,8 +1483,10 @@ public enum InkParser {
 
     /// The characters that, in leading position, mark a brace body as a
     /// variable-text alternative. Deliberately excludes shuffle `~` — see
-    /// `scanBraceSegment`.
-    private static let alternativeMarkers: Set<Character> = ["!", "&", "\\"]
+    /// `scanBraceSegment`. An escaped `\!` or `\&` is no marker: inklecate reads
+    /// `{\!a|b}` as a sequence whose first stage prints `!a`, and rejects `{\x}`
+    /// ("Expected some kind of logic, conditional or sequence within braces").
+    private static let alternativeMarkers: Set<Character> = ["!", "&"]
 
     /// Build a variable-text segment when `body` opens with an alternative
     /// marker, skipping any leading whitespace so `{ !a: q }` classifies exactly
@@ -1487,8 +1504,8 @@ public enum InkParser {
     /// Build a variable-text segment from a `{a|b|c}` / `{&a|b}` / `{!a|b}` body
     /// (it has a top-level `|` but no top-level `:`). The leading marker selects
     /// the mode — `&` cycle, `!` once, none sequence — and is stripped before the
-    /// body is top-level-`|`-split into raw stage texts. A leading `\` escape means
-    /// the first character is literal, so the form is a plain sequence. Shuffle
+    /// body is top-level-`|`-split into raw stage texts. A leading escape pair
+    /// (`\!`) is stage text, so the form is a plain sequence. Shuffle
     /// `{~a|b}` never reaches here: `UnsupportedConstructDetector` rejects it first.
     private static func variableTextSegment(_ body: String) -> ContentSegment {
         let (mode, content) = modeAndContent(of: body)
@@ -1497,24 +1514,10 @@ public enum InkParser {
     }
 
     /// Read the leading mode marker of a variable-text body and return the mode
-    /// plus the body with that marker stripped. A leading `\` escape yields a
-    /// sequence over the body minus the escape character.
-    ///
-    /// PROBE for 05-02 (escape-aware mode): this reads a leading `\` as a
-    /// body-level "escape-to-sequence" marker, unlike inklecate. There
-    /// `ContentTextAllowingEcapeChar` makes ANY `\x` in a stage the literal
-    /// `x`; an escape is a property of the content run, not of the body, and
-    /// only the first one is handled here (`{a|\|b}` still splits at the
-    /// escaped bar, `{\!a|b\!}` keeps the second backslash). Because `\` is
-    /// in `alternativeMarkers`, `{\x}` is a one-stage sequence even with no
-    /// top-level `|`. Once the scanner unescapes, `{\!a|b}` would reach here as
-    /// `!a|b` and be misread as a once-only: 05-02 must classify the mode on
-    /// the scanner's tokens (an escaped first character is no marker) and drop
-    /// `\` from `alternativeMarkers`.
+    /// plus the body with that marker stripped. The body is source text, so an
+    /// escaped marker (`\!a|b`) starts with `\\` and stays a plain sequence whose
+    /// first stage prints `!a`, as inklecate prints it.
     private static func modeAndContent(of body: String) -> (VariableTextMode, String) {
-        if body.first == "\\" {
-            return (.sequence, String(body.dropFirst()))
-        }
         switch body.first {
         case "&": return (.cycle, String(body.dropFirst()))
         case "!": return (.once, String(body.dropFirst()))
@@ -1523,11 +1526,13 @@ public enum InkParser {
     }
 
     /// Split a variable-text body at every top-level `|` into stage texts,
-    /// ignoring `|` nested inside `{…}` groups.
+    /// ignoring `|` nested inside `{…}` groups and escaped `\|`. Stages stay
+    /// source text, escape pairs intact.
     private static func topLevelBarSplit(_ body: String) -> [String] {
         var stages: [String] = []
         var current = ""
         var depth = 0
+        let characters = Array(body)
         for token in ContentTextScanner.scan(body, context: .content) {
             depth += token.braceDepthChange
             if token.marker == .bar && depth == 0 {
@@ -1535,7 +1540,7 @@ public enum InkParser {
                 current = ""
                 continue
             }
-            current += token.text
+            current += token.source(in: characters)
         }
         stages.append(current)
         return stages
@@ -1580,17 +1585,9 @@ public enum InkParser {
     /// The variable-text and inline-branch separator, as the scanner defines it.
     private static let barCharacter = Character(ContentTextScanner.Marker.bar.text)
 
-    /// Index of the first `target` at brace-nesting depth 0. Depth changes only
-    /// at brace markers, so a run is searched whole at its depth.
+    /// Index of the first unescaped `target` at brace-nesting depth 0.
     private static func topLevelIndex(of target: Character, in body: String) -> String.Index? {
-        var depth = 0
-        for token in ContentTextScanner.scan(body, context: .content) {
-            depth += token.braceDepthChange
-            guard depth == 0, let offset = token.text.firstIndex(of: target) else { continue }
-            let offsetInBody = token.offset + token.text.distance(from: token.text.startIndex, to: offset)
-            return body.index(body.startIndex, offsetBy: offsetInBody)
-        }
-        return nil
+        ContentTextScanner.firstTopLevel(target, in: body).map { body.index(body.startIndex, offsetBy: $0) }
     }
 
     private static func appendLiteral(_ literal: String, into segments: inout [ContentSegment]) {

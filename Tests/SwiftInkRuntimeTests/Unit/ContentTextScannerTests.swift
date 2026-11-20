@@ -137,7 +137,7 @@ struct ContentTextScannerTests {
     // MARK: - Queries
 
     @Test func `text re-joins the scanned pieces`() {
-        #expect(Scanner.text(of: "a\\{b} <> c -> d # e", context: .content) == "a\\{b} <> c -> d # e")
+        #expect(Scanner.text(of: "a\\{b} <> c -> d # e", context: .content, mode: .escapeAgnostic) == "a\\{b} <> c -> d # e")
         #expect(Scanner.text(of: "a\\{b", context: .content, mode: .escapeAware) == "a{b")
     }
 
