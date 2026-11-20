@@ -218,6 +218,12 @@ Known places where the same compiled story plays differently on InkSwift's runti
   [inkle/ink#923](https://github.com/inkle/ink/issues/923), "Gluing a tag causes glue
   state to persist indefinitely", which InkSwift does not copy
   ([#43](https://github.com/maartene/InkSwift/issues/43)).
+- **No warning for a variable that doesn't exist.** Reading a temp whose declaration
+  was skipped (`{flag: ~ temp y = 1}` with `flag` false, then `{y}`) reads as the
+  integer 0 on both paths, as in inkle's runtime. inkle's runtime also warns
+  "Variable not found: 'y'. Using default value of 0 (false)…". InkSwift has no
+  runtime warnings yet, so it says nothing
+  ([#39](https://github.com/maartene/InkSwift/issues/39)).
 - **Default (fallback) choices** and a tunnel onwards with a divert (`->-> target`)
   differ in some cases.
 

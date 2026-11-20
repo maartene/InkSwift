@@ -210,10 +210,9 @@ struct TreeWalker {
     // MARK: - Variable handling
 
     private func handleVariableAssignment(name: String, isGlobal: Bool, state: inout StoryState) {
-        // An empty stack is reachable from well-formed inklecate JSON, so this is
-        // not a precondition: reading a temp whose declaration was skipped
-        // (`{flag: ~ temp y = 1}`, then `~ temp z = y`) pushes nothing in
-        // handleVariableReference, where C# warns and pushes 0.
+        // Defensive: well-formed JSON always leaves a value to assign (a missing
+        // variable reads as 0, see handleVariableReference), so an empty stack is
+        // not expected; the assignment is then skipped.
         guard let value = state.evalStack.popLast() else { return }
 
         // VAR= (global): always write to variablesState, with pointer write-through
@@ -261,7 +260,13 @@ struct TreeWalker {
         } else {
             value = state.variablesState[name]
         }
-        guard let v = value else { return }
+        // A variable that does not exist (a temp whose declaration was skipped)
+        // reads as 0, as Story.cs VariableReference does. The reference also
+        // warns "Variable not found"; InkSwift has no runtime warnings yet (#39).
+        guard let v = value else {
+            state.evalStack.append(.int(0))
+            return
+        }
         // If the variable holds a pointer, dereference it to the pointed-to global.
         // Ref-param pointers always point into globals (the caller's variable).
         if case .variablePointer(let pointedName, _) = v {
@@ -315,14 +320,14 @@ struct TreeWalker {
 
     // MARK: - Stack operation helpers
 
-    /// An empty stack is reachable from well-formed JSON, see
+    /// Defensive: an empty stack is not expected, see
     /// `handleVariableAssignment`; the operation is then skipped.
     private func applyUnaryOp(state: inout StoryState, op: (InkValue) -> InkValue) {
         guard let top = state.evalStack.popLast() else { return }
         state.evalStack.append(op(top))
     }
 
-    /// Fewer than two operands is reachable from well-formed JSON, see
+    /// Defensive: fewer than two operands is not expected, see
     /// `handleVariableAssignment`; the operation is then skipped.
     private func applyBinaryOp(_ fn: NativeFunction, state: inout StoryState) throws(InkRuntimeError) {
         guard let operation = BinaryNativeFunction.byFunction[fn], state.evalStack.count >= 2 else { return }
