@@ -61,12 +61,23 @@ enum ExpressionLowering {
         case .binary(let oper, let left, let right):
             return lowerExpression(left, context: context)
                 + lowerExpression(right, context: context)
-                + [.nativeFunction(oper)]
+                + [.nativeFunction(nativeOperator(oper))]
         case .unary(let oper, let operand):
-            return lowerExpression(operand, context: context) + [.nativeFunction(oper)]
+            return lowerExpression(operand, context: context) + [.nativeFunction(nativeOperator(oper))]
         case .functionCall(let name, let arguments):
             return lowerFunctionCall(name: name, arguments: arguments, context: context)
         }
+    }
+
+    /// The catalog native for an operator symbol. The expression parser only
+    /// produces symbols of supported natives (`InkParserExpressions.bindingPower`,
+    /// the `!`/`_` prefixes and the `+=`/`-=` assignments), so a miss is a
+    /// compiler defect, not an author error.
+    private static func nativeOperator(_ symbol: String) -> NativeFunction {
+        guard let native = NativeFunctionCatalog.supportedNative(forToken: symbol) else {
+            preconditionFailure("operator '\(symbol)' is not a supported native function")
+        }
+        return native
     }
 
     /// Lower a name: a CONST inlines its value; a name resolving to a known weave

@@ -197,7 +197,7 @@ extension InkValue {
 /// An operation without a string form raises the reference's error when the
 /// operands coerce to strings.
 struct BinaryNativeFunction {
-    let name: String
+    let function: NativeFunction
     let int: (Int, Int) -> InkValue
     let float: (Double, Double) -> InkValue
     var string: ((String, String) -> InkValue)?
@@ -208,7 +208,7 @@ struct BinaryNativeFunction {
         case .floats(let a, let b): return float(a, b)
         case .strings(let a, let b):
             guard let string else {
-                throw InkRuntimeError(message: "Cannot perform operation '\(name)' on String")
+                throw InkRuntimeError(message: "Cannot perform operation '\(function.token)' on String")
             }
             return string(a, b)
         }
@@ -216,53 +216,53 @@ struct BinaryNativeFunction {
 
     /// A comparison or logic operation: the same Bool-valued test for ints and floats.
     static func test(
-        _ name: String,
+        _ function: NativeFunction,
         int: @escaping (Int, Int) -> Bool,
         float: @escaping (Double, Double) -> Bool,
         string: ((String, String) -> Bool)? = nil
     ) -> BinaryNativeFunction {
         BinaryNativeFunction(
-            name: name,
+            function: function,
             int: { .bool(int($0, $1)) },
             float: { .bool(float($0, $1)) },
             string: string.map { test in { .bool(test($0, $1)) } })
     }
 
     static let add = BinaryNativeFunction(
-        name: "+", int: { .int($0 + $1) }, float: { .float($0 + $1) }, string: { .string($0 + $1) })
+        function: .add, int: { .int($0 + $1) }, float: { .float($0 + $1) }, string: { .string($0 + $1) })
     static let subtract = BinaryNativeFunction(
-        name: "-", int: { .int($0 - $1) }, float: { .float($0 - $1) })
+        function: .subtract, int: { .int($0 - $1) }, float: { .float($0 - $1) })
     static let multiply = BinaryNativeFunction(
-        name: "*", int: { .int($0 * $1) }, float: { .float($0 * $1) })
+        function: .multiply, int: { .int($0 * $1) }, float: { .float($0 * $1) })
     // Division and modulo by zero yield 0.0 rather than trapping; C# throws a
     // non-story DivideByZeroException for ints and returns Infinity/NaN for floats.
     static let divide = BinaryNativeFunction(
-        name: "/",
+        function: .divide,
         int: { $1 == 0 ? .float(0.0) : .int($0 / $1) },
         float: { $1 == 0.0 ? .float(0.0) : .float($0 / $1) })
     static let modulo = BinaryNativeFunction(
-        name: "%",
+        function: .modulo,
         int: { $1 == 0 ? .float(0.0) : .int($0 % $1) },
         float: { $1 == 0.0 ? .float(0.0) : .float($0.truncatingRemainder(dividingBy: $1)) })
-    static let equal = test("==", int: ==, float: ==, string: ==)
-    static let notEqual = test("!=", int: !=, float: !=, string: !=)
-    static let greater = test(">", int: >, float: >)
-    static let less = test("<", int: <, float: <)
-    static let greaterOrEqual = test(">=", int: >=, float: >=)
-    static let lessOrEqual = test("<=", int: <=, float: <=)
-    static let and = test("&&", int: { $0 != 0 && $1 != 0 }, float: { $0 != 0 && $1 != 0 })
-    static let or = test("||", int: { $0 != 0 || $1 != 0 }, float: { $0 != 0 || $1 != 0 })
+    static let equal = test(.equal, int: ==, float: ==, string: ==)
+    static let notEqual = test(.notEqual, int: !=, float: !=, string: !=)
+    static let greater = test(.greater, int: >, float: >)
+    static let less = test(.less, int: <, float: <)
+    static let greaterOrEqual = test(.greaterOrEqual, int: >=, float: >=)
+    static let lessOrEqual = test(.lessOrEqual, int: <=, float: <=)
+    static let and = test(.and, int: { $0 != 0 && $1 != 0 }, float: { $0 != 0 && $1 != 0 })
+    static let or = test(.or, int: { $0 != 0 || $1 != 0 }, float: { $0 != 0 || $1 != 0 })
     static let min = BinaryNativeFunction(
-        name: "MIN", int: { .int(Swift.min($0, $1)) }, float: { .float(Swift.min($0, $1)) })
+        function: .min, int: { .int(Swift.min($0, $1)) }, float: { .float(Swift.min($0, $1)) })
     static let max = BinaryNativeFunction(
-        name: "MAX", int: { .int(Swift.max($0, $1)) }, float: { .float(Swift.max($0, $1)) })
+        function: .max, int: { .int(Swift.max($0, $1)) }, float: { .float(Swift.max($0, $1)) })
 
-    /// The binary natives by their ink name.
-    static let byName: [String: BinaryNativeFunction] = Dictionary(
+    /// The binary natives by the catalog native they implement.
+    static let byFunction: [NativeFunction: BinaryNativeFunction] = Dictionary(
         uniqueKeysWithValues: [
             add, subtract, multiply, divide, modulo, equal, notEqual, greater, less,
             greaterOrEqual, lessOrEqual, and, or, min, max,
-        ].map { ($0.name, $0) })
+        ].map { ($0.function, $0) })
 }
 
 // MARK: - ChoiceFlags

@@ -270,13 +270,14 @@ struct TreeWalker {
 
     /// Binary natives coerce their operands to one type first (C#
     /// `CoerceValuesToSingleType`), see `BinaryNativeFunction`; one with no
-    /// string form throws the reference's error on string operands.
-    private func handleNativeFunction(_ fn: String, state: inout StoryState) throws(InkRuntimeError) {
-        if let binary = BinaryNativeFunction.byName[fn] {
-            return try applyBinaryOp(state: &state, op: binary.callAsFunction)
-        }
+    /// string form throws the reference's error on string operands. The switch
+    /// is exhaustive over the catalog, so a new native cannot be silently ignored.
+    private func handleNativeFunction(_ fn: NativeFunction, state: inout StoryState) throws(InkRuntimeError) {
         switch fn {
-        case "!":
+        case .add, .subtract, .multiply, .divide, .modulo, .equal, .notEqual, .greater, .less,
+             .greaterOrEqual, .lessOrEqual, .and, .or, .min, .max:
+            try applyBinaryOp(fn, state: &state)
+        case .not:
             applyUnaryOp(state: &state) { value in
                 return .bool(!value.asBool)
             }
@@ -285,7 +286,7 @@ struct TreeWalker {
         // for int and float only — `AddIntUnaryOp(Negate, x => -x)` and its float
         // counterpart, with no bool or string form. Any other value is therefore
         // left untouched rather than coerced into a number it never had.
-        case "_":
+        case .negate:
             applyUnaryOp(state: &state) { value in
                 switch value {
                 case .int(let number): return .int(-number)
@@ -293,12 +294,11 @@ struct TreeWalker {
                 default: return value
                 }
             }
-        case "srnd":    _ = state.evalStack.popLast()  // pop seed; result is implementation-defined
-        case "FLOOR":   applyUnaryOp(state: &state) { $0.floored }
-        case "CEILING": applyUnaryOp(state: &state) { $0.ceiled }
-        case "INT":     applyUnaryOp(state: &state) { $0.toInt }
-        case "FLOAT":   applyUnaryOp(state: &state) { $0.toFloat }
-        default:    break  // unreachable: InkDecoder refuses any other native function
+        case .seedRandom: _ = state.evalStack.popLast()  // pop seed; result is implementation-defined
+        case .floor:      applyUnaryOp(state: &state) { $0.floored }
+        case .ceiling:    applyUnaryOp(state: &state) { $0.ceiled }
+        case .int:        applyUnaryOp(state: &state) { $0.toInt }
+        case .float:      applyUnaryOp(state: &state) { $0.toFloat }
         }
     }
 
@@ -309,13 +309,10 @@ struct TreeWalker {
         state.evalStack.append(op(top))
     }
 
-    private func applyBinaryOp(
-        state: inout StoryState,
-        op: (InkValue, InkValue) throws(InkRuntimeError) -> InkValue
-    ) throws(InkRuntimeError) {
-        guard state.evalStack.count >= 2 else { return }
+    private func applyBinaryOp(_ fn: NativeFunction, state: inout StoryState) throws(InkRuntimeError) {
+        guard let operation = BinaryNativeFunction.byFunction[fn], state.evalStack.count >= 2 else { return }
         let rhs = state.evalStack.removeLast()
         let lhs = state.evalStack.removeLast()
-        state.evalStack.append(try op(lhs, rhs))
+        state.evalStack.append(try operation(lhs, rhs))
     }
 }

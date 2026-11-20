@@ -29,8 +29,21 @@ only_rules:
   - r5_no_compiler_import_from_decoder_engine
   - r6_visit_counts_through_counter
   - r7_output_stream_through_walker_helpers
+  - r8_native_functions_from_catalog
 
 custom_rules:
+  # R8 — One native-function catalog (ADR-025): a `.nativeFunction` node carries
+  # a `NativeFunction` from Decoder/NativeFunctionCatalog.swift, never a string.
+  # Building one from a string literal outside Decoder/ would bring back a second
+  # vocabulary of built-in names; Decoder/ maps tokens through the catalog.
+  r8_native_functions_from_catalog:
+    name: "R8 native functions come from the catalog"
+    included: "Sources/.*\\.swift"
+    excluded: "Sources/SwiftInkRuntime/Decoder/.*\\.swift"
+    regex: "\\.nativeFunction\\(\""
+    message: "R8: build .nativeFunction nodes from a NativeFunction case (Decoder/NativeFunctionCatalog.swift), not a string."
+    severity: error
+
   # R7 — One way into the output stream (ADR-020 §1): only the walker's output
   # helpers (Engine/TreeWalker+Output.swift) append to StoryState.outputStream,
   # so glue, the nop trim, newline de-duplication and (from 02-02) tag items

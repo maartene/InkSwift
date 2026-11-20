@@ -29,7 +29,7 @@ struct NodeKindTests {
             .intValue(1),
             .floatValue(1.5),
             .controlCommand("ev"),
-            .nativeFunction("+"),
+            .nativeFunction(.add),
             .divert(target: .path(PathReference(parsing: "knot")), isConditional: false),
             .tunnelDivert(target: PathReference(parsing: "sub_room")),
             .functionCall(target: PathReference(parsing: "double")),

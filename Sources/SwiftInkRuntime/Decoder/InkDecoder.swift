@@ -6,48 +6,15 @@ struct InkDecoder {
 
     // The reference vocabulary (`JsonSerialisation.cs` `_controlCommandNames`,
     // `NativeFunctionCall.cs`) splits three ways: tokens the engine executes, tokens
-    // it does not support yet (see `unsupportedTokens`), and anything else, which
-    // is not ink JSON at all and makes the story malformed — as the reference's
-    // "Failed to convert token to runtime object".
+    // it does not support yet (`NativeFunctionCatalog.unsupportedFeatureByToken`),
+    // and anything else, which is not ink JSON at all and makes the story malformed
+    // — as the reference's "Failed to convert token to runtime object". Natives
+    // and refused tokens come from `NativeFunctionCatalog` (ADR-025).
 
     private static let controlCommands: Set<String> = [
         "ev", "/ev", "out", "pop", "->->", "~ret", "du", "str", "/str",
         "nop", "visit", "done", "end", "<>"
     ]
-
-    /// `srnd` (SEED_RANDOM) is accepted: without the RNG tokens, which are
-    /// rejected, a seed has no observable effect, so ignoring it plays exactly as
-    /// the reference does.
-    private static let nativeFunctions: Set<String> = [
-        "+", "-", "/", "*", "%", "_", "==", ">", "<", ">=", "<=", "!=",
-        "!", "&&", "||", "MIN", "MAX", "FLOOR", "CEILING", "INT", "FLOAT",
-        "srnd"
-    ]
-
-    /// Valid ink tokens the runtime does not support yet, by the name an author
-    /// knows the feature by. A story holding any of them is refused at load
-    /// (issue #32): playing on would silently print or skip them.
-    private static let unsupportedTokens: [String: String] = {
-        var tokens: [String: String] = [
-            "choiceCnt": "CHOICE_COUNT()",
-            "turn": "TURNS()",
-            "turns": "TURNS_SINCE()",
-            "readc": "READ_COUNT() of a divert-target variable",
-            "rnd": "RANDOM()",
-            "seq": "shuffle {~a|b}",
-            "thread": "threads (<-)",
-            "POW": "POW()",
-            "?": "? (contains)",
-            "!?": "!? (does not contain)",
-        ]
-        for listToken in ["listInt", "range", "lrnd", "L^", "LIST_MIN", "LIST_MAX",
-                          "LIST_ALL", "LIST_COUNT", "LIST_VALUE", "LIST_INVERT"] {
-            tokens[listToken] = listFeature
-        }
-        return tokens
-    }()
-
-    private static let listFeature = "LIST"
 
     // MARK: - Public API
 
@@ -233,13 +200,14 @@ struct InkDecoder {
     }
 
     /// The unsupported feature a token stands for, or `nil`: one of
-    /// `unsupportedTokens`, a list value, an external function call, or a tag in
+    /// the catalog's refused tokens (issue #32: playing on would silently print or
+    /// skip them), a list value, an external function call, or a tag in
     /// the inkVersion 20 format (`{"#": "text"}`, replaced by `"#"`…`"/#"` in 21).
     private static func unsupportedFeature(of element: InkJSONValue) -> String? {
-        if case .string(let string) = element { return unsupportedTokens[string] }
+        if case .string(let string) = element { return NativeFunctionCatalog.unsupportedFeature(forToken: string) }
         guard case .object(let dict) = element else { return nil }
-        if dict["list"] != nil { return listFeature }
-        if dict["x()"] != nil { return "EXTERNAL functions" }
+        if dict["list"] != nil { return UnsupportedConstruct.list.name }
+        if dict["x()"] != nil { return UnsupportedConstruct.external.name }
         if dict["#"] != nil { return "tags in the inkVersion 20 format (recompile with a current inklecate)" }
         return nil
     }
@@ -252,7 +220,7 @@ struct InkDecoder {
         if let node = Self.fixedTokens[string] { return node }
         if string.hasPrefix("^") { return .text(String(string.dropFirst())) }
         if Self.controlCommands.contains(string) { return .controlCommand(string) }
-        if Self.nativeFunctions.contains(string) { return .nativeFunction(string) }
+        if let native = NativeFunctionCatalog.supportedNative(forToken: string) { return .nativeFunction(native) }
         throw InkDecodeError.malformedJSON
     }
 

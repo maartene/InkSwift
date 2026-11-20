@@ -9,7 +9,7 @@ internal enum NodeKind {
     case functionCall(target: PathReference)
     case choicePoint(target: PathReference, flags: ChoiceFlags)
     case controlCommand(String)
-    case nativeFunction(String)
+    case nativeFunction(NativeFunction)
     case intValue(Int)
     case floatValue(Double)
     case boolValue(Bool)

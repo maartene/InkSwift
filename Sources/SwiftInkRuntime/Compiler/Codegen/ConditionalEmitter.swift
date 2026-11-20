@@ -394,7 +394,7 @@ enum ConditionalEmitter {
         if isSwitch {
             nodes.append(contentsOf: lowerExpression(subject))
             nodes.append(contentsOf: lowerExpression(match))
-            nodes.append(.nativeFunction("=="))
+            nodes.append(.nativeFunction(.equal))
         } else {
             nodes.append(contentsOf: lowerExpression(match))
         }

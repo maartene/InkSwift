@@ -117,7 +117,7 @@ enum VariableTextEmitter {
     /// against the stage count.
     private static func indexNodes(mode: VariableTextMode, stageCount: Int) -> [NodeKind] {
         let bound = mode == .cycle ? stageCount : stageCount - 1
-        let op = mode == .cycle ? "%" : "MIN"
+        let op: NativeFunction = mode == .cycle ? .modulo : .min
         return [
             .controlCommand("ev"),
             .controlCommand("visit"),
@@ -134,7 +134,7 @@ enum VariableTextEmitter {
             .controlCommand("ev"),
             .controlCommand("du"),
             .intValue(index),
-            .nativeFunction("=="),
+            .nativeFunction(.equal),
             .controlCommand("/ev"),
             conditionalDivert(to: stagePath),
         ]
