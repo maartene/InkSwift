@@ -63,13 +63,23 @@ import Testing
         #expect(NativeFunctionCatalog.unsupportedFeature(forToken: token) == nil)
     }
 
-    @Test(arguments: [
-        (NativeFunction.add, 2), (.subtract, 2), (.min, 2), (.max, 2), (.equal, 2),
-        (.not, 1), (.negate, 1), (.floor, 1), (.ceiling, 1), (.int, 1), (.float, 1),
-        (.seedRandom, 1), (.pow, 2), (.has, 2), (.hasnt, 2),
-    ])
-    func `each supported native carries the reference arity`(native: NativeFunction, arity: Int) {
-        #expect(NativeFunctionCatalog.entry(for: native).arity == arity)
+    /// Every native's arity in the reference (`NativeFunctionCall.cs`), so the
+    /// catalog is proven to hold an entry for each one.
+    static let referenceArity: [NativeFunction: Int] = [
+        .add: 2, .subtract: 2, .divide: 2, .multiply: 2, .modulo: 2, .negate: 1,
+        .equal: 2, .greater: 2, .less: 2, .greaterOrEqual: 2, .lessOrEqual: 2, .notEqual: 2,
+        .not: 1, .and: 2, .or: 2, .min: 2, .max: 2, .floor: 1, .ceiling: 1, .int: 1,
+        .float: 1, .pow: 2, .has: 2, .hasnt: 2, .seedRandom: 1,
+    ]
+
+    @Test(arguments: NativeFunction.allCases)
+    func `every native has a catalog entry with the reference arity`(native: NativeFunction) {
+        #expect(NativeFunctionCatalog.entry(for: native).arity == Self.referenceArity[native])
+    }
+
+    @Test func `exactly the built-ins whose argument is a divert target are flagged as such`() {
+        let flagged = NativeFunctionCatalog.entries.filter(\.takesDivertTarget).map(\.sourceName)
+        #expect(Set(flagged) == ["TURNS_SINCE", "READ_COUNT"])
     }
 
     @Test func `every two-argument native has a binary operation and no other native does`() {

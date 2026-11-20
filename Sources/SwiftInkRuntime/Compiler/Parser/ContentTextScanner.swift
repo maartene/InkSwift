@@ -19,13 +19,8 @@
 /// Every token carries its source offset (in characters) and source length,
 /// so a consumer can locate it in the text it scanned.
 ///
-/// Two modes, so that only one step changes behaviour (ADR-026 §5):
-/// - `.escapeAgnostic` reproduces the compiler before #35. A backslash is
-///   ordinary text: it neither protects the next character nor disappears. The
-///   one exception is the string context, whose closing quote has always skipped
-///   escape pairs: there a pair `\x` is never a stop, and stays raw in the run.
-/// - `.escapeAware` is inklecate's rule: `\x` is the literal `x` and never a
-///   stop. `UnsupportedConstructDetector` already reads text this way (#31).
+/// A backslash escapes the character after it, as in inklecate (#35): `\x` is
+/// the literal `x` in a run and never a stop. A lone trailing `\` is text.
 ///
 /// Thread arrows `<-` are not a marker yet: no consumer splits on them, and
 /// making `<-` a marker would change how `<->` reads.
@@ -35,14 +30,6 @@ enum ContentTextScanner {
     enum Context: CaseIterable, Sendable {
         case content, choice, string, tag
     }
-
-    /// How a backslash reads.
-    enum Mode: Sendable {
-        case escapeAgnostic, escapeAware
-    }
-
-    /// The compiler's mode: inklecate's rule (#35).
-    static let compilerMode = Mode.escapeAware
 
     /// A structural character (or pair) that stops a literal run.
     enum Marker: Equatable, Sendable {
@@ -64,8 +51,7 @@ enum ContentTextScanner {
     struct Token: Equatable, Sendable {
         /// The marker, or `nil` for a literal run.
         let marker: Marker?
-        /// The token's text: a marker's source text, or a run's text (raw in
-        /// escape-agnostic mode, unescaped in escape-aware mode).
+        /// The token's text: a marker's source text, or a run's unescaped text.
         let text: String
         /// Offset of the token's first source character.
         let offset: Int
@@ -93,9 +79,9 @@ enum ContentTextScanner {
     // MARK: - Scanning
 
     /// Scan `text` in `context` into literal runs and markers.
-    static func scan(_ text: String, context: Context, mode: Mode = compilerMode) -> [Token] {
-        var cursor = Cursor(characters: Array(text), context: context, pairsEscapes: pairsEscapes(context, mode))
-        return cursor.tokens(unescaping: mode == .escapeAware)
+    static func scan(_ text: String, context: Context) -> [Token] {
+        var cursor = Cursor(characters: Array(text), context: context)
+        return cursor.scanAll()
     }
 
     /// The escape primitive: `\` at `index` escapes the character after it, so
@@ -104,25 +90,25 @@ enum ContentTextScanner {
         characters[index] == "\\" && index + 1 < characters.count
     }
 
-    /// Whether escape pairs are units in this context and mode (see `Mode`).
-    private static func pairsEscapes(_ context: Context, _ mode: Mode) -> Bool {
-        mode == .escapeAware || context == .string
-    }
-
     // MARK: - Queries
 
-    /// The scanned text joined back together: `text` itself in escape-agnostic
-    /// mode, the unescaped text in escape-aware mode.
-    static func text(of text: String, context: Context, mode: Mode = compilerMode) -> String {
-        scan(text, context: context, mode: mode).map(\.text).joined()
+    /// The scanned text joined back together, unescaped.
+    static func text(of text: String, context: Context) -> String {
+        scan(text, context: context).map(\.text).joined()
     }
 
     /// `text` as the compiler prints it: every escape pair `\x` read as `x`.
     ///
-    /// The parser keeps source text, escape pairs intact, until text becomes
-    /// output (a text node of the story), and unescapes it there, exactly once:
-    /// text that is split again later (a brace body, an alternative's stages, a
-    /// choice body) must still know which characters were escaped.
+    /// Every piece of text is unescaped exactly once, when it is final: nothing
+    /// will split it again. Where that happens depends on the piece:
+    /// - the literal runs of a content line and its tag text are final when the
+    ///   parser scans the line (`InkParser.parseContentSegments`), and are
+    ///   unescaped there, by the scan itself;
+    /// - text the parser keeps for later splitting keeps its escape pairs, since
+    ///   a split must still know which characters were escaped: a `.text`
+    ///   statement, a brace body (alternative stages, conditional arms) and a
+    ///   choice label. Each is unescaped here, by the emitter that turns it into
+    ///   a text node.
     static func unescaped(_ text: String) -> String {
         self.text(of: text, context: .content)
     }
@@ -142,26 +128,26 @@ enum ContentTextScanner {
                 if characters[index] == target {
                     return index
                 }
-                index += compilerMode == .escapeAware && isEscapePair(at: index, in: characters) ? 2 : 1
+                index += isEscapePair(at: index, in: characters) ? 2 : 1
             }
         }
         return nil
     }
 
     /// The first `marker` in `text`, or `nil`.
-    static func first(_ marker: Marker, in text: String, context: Context, mode: Mode = compilerMode) -> Token? {
-        scan(text, context: context, mode: mode).first { $0.marker == marker }
+    static func first(_ marker: Marker, in text: String, context: Context) -> Token? {
+        scan(text, context: context).first { $0.marker == marker }
     }
 
     /// Whether `text` holds `marker`.
-    static func contains(_ marker: Marker, in text: String, context: Context, mode: Mode = compilerMode) -> Bool {
-        first(marker, in: text, context: context, mode: mode) != nil
+    static func contains(_ marker: Marker, in text: String, context: Context) -> Bool {
+        first(marker, in: text, context: context) != nil
     }
 
     /// `text` cut at every `marker`, empty pieces kept.
-    static func split(_ text: String, at marker: Marker, context: Context, mode: Mode = compilerMode) -> [String] {
+    static func split(_ text: String, at marker: Marker, context: Context) -> [String] {
         var pieces = [""]
-        for token in scan(text, context: context, mode: mode) {
+        for token in scan(text, context: context) {
             if token.marker == marker {
                 pieces.append("")
             } else {
@@ -209,22 +195,20 @@ enum ContentTextScanner {
     private struct Cursor {
         let characters: [Character]
         let stops: [Character: Marker]
-        let pairsEscapes: Bool
         var index = 0
         var tokens: [Token] = []
         var run = ""
         var runStart = 0
 
-        init(characters: [Character], context: Context, pairsEscapes: Bool) {
+        init(characters: [Character], context: Context) {
             self.characters = characters
             self.stops = ContentTextScanner.stops(for: context)
-            self.pairsEscapes = pairsEscapes
         }
 
-        mutating func tokens(unescaping: Bool) -> [Token] {
+        mutating func scanAll() -> [Token] {
             while index < characters.count {
-                if pairsEscapes, ContentTextScanner.isEscapePair(at: index, in: characters) {
-                    appendEscapePair(unescaping: unescaping)
+                if ContentTextScanner.isEscapePair(at: index, in: characters) {
+                    appendEscapePair()
                 } else if let marker = ContentTextScanner.marker(at: index, in: characters, stops: stops) {
                     appendMarker(marker)
                 } else {
@@ -236,10 +220,8 @@ enum ContentTextScanner {
             return tokens
         }
 
-        private mutating func appendEscapePair(unescaping: Bool) {
-            if unescaping == false {
-                run.append(characters[index])
-            }
+        /// The escaped character joins the run; its backslash is dropped.
+        private mutating func appendEscapePair() {
             run.append(characters[index + 1])
             index += 2
         }

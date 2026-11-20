@@ -26,8 +26,8 @@ struct ContentTextScannerTests {
         var description: String { "\(marker.map { "\($0)" } ?? "run")(\(text.debugDescription)@\(offset))" }
     }
 
-    private func scanned(_ text: String, _ context: Scanner.Context, mode: Scanner.Mode = .escapeAgnostic) -> [Expected] {
-        Scanner.scan(text, context: context, mode: mode).map {
+    private func scanned(_ text: String, _ context: Scanner.Context) -> [Expected] {
+        Scanner.scan(text, context: context).map {
             Expected(marker: $0.marker, text: $0.text, offset: $0.offset)
         }
     }
@@ -105,40 +105,29 @@ struct ContentTextScannerTests {
 
     // MARK: - Escapes
 
-    /// Escape-agnostic mode reproduces the compiler before #35: a backslash is
-    /// ordinary text, so it neither protects the next character nor disappears.
-    @Test(arguments: [Scanner.Context.content, .choice, .tag])
-    func `in escape-agnostic mode a backslash is ordinary text`(context: Scanner.Context) {
-        #expect(scanned("a\\{b", context) == [.run("a\\", 0), .marker(.braceOpen, "{", 2), .run("b", 3)])
-    }
-
-    /// A string literal has always skipped escape pairs when looking for its
-    /// closing quote (the expression tokenizer did so before this scanner), so
-    /// in escape-agnostic mode the string context keeps the pair, raw.
-    @Test func `in escape-agnostic mode a string keeps escape pairs raw and an escaped quote is not a stop`() {
-        #expect(scanned("a\\\"b\"c", .string) == [.run("a\\\"b", 0), .marker(.quote, "\"", 4), .run("c", 5)])
-    }
-
     @Test(arguments: [Scanner.Context.content, .choice, .string, .tag])
-    func `in escape-aware mode an escaped character is literal text without its backslash`(context: Scanner.Context) {
-        #expect(scanned("a\\{b\\#c", context, mode: .escapeAware) == [.run("a{b#c", 0)])
-        #expect(Scanner.scan("a\\{b", context: context, mode: .escapeAware).first?.length == 4)
+    func `an escaped character is literal text without its backslash`(context: Scanner.Context) {
+        #expect(scanned("a\\{b\\#c", context) == [.run("a{b#c", 0)])
+        #expect(Scanner.scan("a\\{b", context: context).first?.length == 4)
     }
 
-    @Test func `a trailing lone backslash is literal text in either mode`() {
-        #expect(scanned("a\\", .content, mode: .escapeAware) == [.run("a\\", 0)])
+    /// An escaped quote is not a stop: the string literal runs on past it.
+    @Test func `an escaped quote does not end a string`() {
+        #expect(scanned("a\\\"b\"c", .string) == [.run("a\"b", 0), .marker(.quote, "\"", 4), .run("c", 5)])
+    }
+
+    @Test func `a trailing lone backslash is literal text`() {
         #expect(scanned("a\\", .content) == [.run("a\\", 0)])
     }
 
-    @Test func `escape-aware markers keep their source offsets after an escape`() {
-        #expect(scanned("\\{x}", .content, mode: .escapeAware) == [.run("{x", 0), .marker(.braceClose, "}", 3)])
+    @Test func `markers keep their source offsets after an escape`() {
+        #expect(scanned("\\{x}", .content) == [.run("{x", 0), .marker(.braceClose, "}", 3)])
     }
 
     // MARK: - Queries
 
     @Test func `text re-joins the scanned pieces`() {
-        #expect(Scanner.text(of: "a\\{b} <> c -> d # e", context: .content, mode: .escapeAgnostic) == "a\\{b} <> c -> d # e")
-        #expect(Scanner.text(of: "a\\{b", context: .content, mode: .escapeAware) == "a{b")
+        #expect(Scanner.text(of: "a\\{b} <> c -> d # e", context: .content) == "a{b} <> c -> d # e")
     }
 
     @Test func `first finds the first marker of a kind`() {
@@ -152,14 +141,14 @@ struct ContentTextScannerTests {
         #expect(Scanner.split("plain", at: .hash, context: .choice) == ["plain"])
     }
 
-    /// The detector's escape primitive is escape-aware whatever the compiler's mode.
+    /// The detector's view: only an unescaped `{` is a marker.
     @Test(arguments: [
         ("a{b", true),
         ("a\\{b", false),
         ("a\\\\{b", true),
         ("a\\", false),
     ])
-    func `the escape-aware scan sees only unescaped markers`(text: String, hasBrace: Bool) {
-        #expect(Scanner.contains(.braceOpen, in: text, context: .content, mode: .escapeAware) == hasBrace)
+    func `the scan sees only unescaped markers`(text: String, hasBrace: Bool) {
+        #expect(Scanner.contains(.braceOpen, in: text, context: .content) == hasBrace)
     }
 }

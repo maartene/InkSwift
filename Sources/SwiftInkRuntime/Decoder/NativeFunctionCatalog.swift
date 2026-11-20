@@ -58,13 +58,22 @@ struct NativeFunctionEntry {
     let token: String
     let arity: Int
     let status: Status
+    /// The argument is a divert target (`TURNS_SINCE(-> knot)`), which the
+    /// compiler's expression parser cannot read, so the call is refused before it.
+    let takesDivertTarget: Bool
 
     static func supported(_ native: NativeFunction, source: String? = nil, arity: Int) -> NativeFunctionEntry {
-        NativeFunctionEntry(sourceName: source ?? native.token, token: native.token, arity: arity, status: .supported(native))
+        NativeFunctionEntry(
+            sourceName: source ?? native.token, token: native.token, arity: arity, status: .supported(native),
+            takesDivertTarget: false)
     }
 
-    static func unsupported(_ source: String, token: String? = nil, arity: Int, feature: String) -> NativeFunctionEntry {
-        NativeFunctionEntry(sourceName: source, token: token ?? source, arity: arity, status: .unsupported(feature: feature))
+    static func unsupported(
+        _ source: String, token: String? = nil, arity: Int, feature: String, takesDivertTarget: Bool = false
+    ) -> NativeFunctionEntry {
+        NativeFunctionEntry(
+            sourceName: source, token: token ?? source, arity: arity, status: .unsupported(feature: feature),
+            takesDivertTarget: takesDivertTarget)
     }
 }
 
@@ -121,8 +130,9 @@ enum NativeFunctionCatalog {
     private static let unsupportedEntries: [NativeFunctionEntry] = [
         .unsupported("CHOICE_COUNT", token: "choiceCnt", arity: 0, feature: "CHOICE_COUNT()"),
         .unsupported("TURNS", token: "turn", arity: 0, feature: "TURNS()"),
-        .unsupported("TURNS_SINCE", token: "turns", arity: 1, feature: "TURNS_SINCE()"),
-        .unsupported("READ_COUNT", token: "readc", arity: 1, feature: "READ_COUNT() of a divert-target variable"),
+        .unsupported("TURNS_SINCE", token: "turns", arity: 1, feature: "TURNS_SINCE()", takesDivertTarget: true),
+        .unsupported("READ_COUNT", token: "readc", arity: 1, feature: "READ_COUNT() of a divert-target variable",
+                     takesDivertTarget: true),
         .unsupported("RANDOM", token: "rnd", arity: 2, feature: "RANDOM()"),
     ] + listEntries
 

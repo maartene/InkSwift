@@ -63,27 +63,14 @@ import Foundation
         #expect(try CompilerOracle.play(story) == Self.oracleLines)
     }
 
-    // Scenario: compiled natively, the operator lines (`==`, `!=`, `+` with
-    // strings and bools) match the oracle. Built-in calls (FLOOR, CEILING, INT,
-    // FLOAT, MIN, MAX) do not compile natively yet; they are dropped from the
-    // source here and asserted natively once calls resolve (step 04-02).
-    @Test func `natively compiled operator lines match the oracle`() throws {
-        let source = try CompilerOracle.source(Self.fixture)
-            .split(separator: "\n", omittingEmptySubsequences: false)
-            .filter { $0.contains("(") == false }
-            .joined(separator: "\n")
-        let story = Story(blueprint: try InkCompiler.compile(source: source))
+    // Scenario: compiled natively, every line matches the oracle: the operator
+    // lines (`==`, `!=`, `+` with strings and bools) and the built-in calls
+    // (FLOOR, CEILING, INT, FLOAT, MIN, MAX), which compile natively since
+    // step 04-02.
+    @Test func `natively compiled operator and cast lines match the oracle`() throws {
+        let story = Story(blueprint: try InkCompiler.compile(source: try CompilerOracle.source(Self.fixture)))
 
-        #expect(try CompilerOracle.play(story) == [
-            "Eq: true",
-            "Neq: false",
-            "StrInt: a1",
-            "StrFloat: a1.5",
-            "BoolInt: 2",
-            "The values are printed.",
-            "Carry on",
-            "You carried on.",
-        ])
+        #expect(try CompilerOracle.play(story) == Self.oracleLines)
     }
 
     // Scenario: `"a" - 1` coerces 1 to "1", and `-` has no string form: the

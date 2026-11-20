@@ -75,7 +75,7 @@ enum RuntimeObjectEmitter {
         _ body: [InkStatement],
         context: LoweringContext,
         keyPrefix: [String],
-        fallThrough: WeaveEmitter.FallThrough = .end,
+        fallThrough: WeaveEmitter.FallThrough = .runOut,
         named: inout [String: ContainerNode],
         terminateFlatBodyWithDone: Bool = true
     ) throws -> [NodeKind] {
@@ -121,7 +121,7 @@ enum RuntimeObjectEmitter {
             },
             // Threads the gather/choice loose-end into a body that LEADS with a
             // variable-text line, so its folded trailing choices fall through to the
-            // enclosing gather (not the hardcoded `.end`) — #3b layer 1+2.
+            // enclosing gather (not the hardcoded `.runOut`) — #3b layer 1+2.
             lowerStatementWithFallThrough: { statements, looseEnd, _ in
                 // Same shared-ordinal seeding as `lowerStatement` so sibling bodies'
                 // anonymous conditional/sequence containers get unique ordinals and
@@ -293,7 +293,7 @@ enum RuntimeObjectEmitter {
         _ statements: [InkStatement],
         context: LoweringContext,
         keyPrefix: [String],
-        fallThrough: WeaveEmitter.FallThrough = .end,
+        fallThrough: WeaveEmitter.FallThrough = .runOut,
         named: inout [String: ContainerNode]
     ) throws -> [NodeKind] {
         var children: [NodeKind] = []
@@ -366,7 +366,7 @@ enum RuntimeObjectEmitter {
             // The caller decides where this body's loose end lands (an arm rejoins
             // its own conditional's `-end`; a rejoin body inherits the enclosing
             // scope's fall-through), so THREAD it — a conditional nested in the body
-            // otherwise fell back on the `.end` default and ended the story inside
+            // otherwise fell back on the `.runOut` default and ended the story inside
             // its own rejoin container, stranding everything after the outer block.
             try lowerBody(body, context: context, keyPrefix: prefix, fallThrough: fallThrough, named: &collected)
         }
@@ -393,7 +393,7 @@ enum RuntimeObjectEmitter {
         restOfBody: [InkStatement],
         context: LoweringContext,
         keyPrefix: [String],
-        fallThrough: WeaveEmitter.FallThrough = .end,
+        fallThrough: WeaveEmitter.FallThrough = .runOut,
         named: inout [String: ContainerNode]
     ) throws -> [NodeKind] {
         guard case .variableText(let mode, let stages) = segments[variableTextIndex] else {
@@ -431,7 +431,7 @@ enum RuntimeObjectEmitter {
             // they are addressed from that scope — keyed by `enclosingKeyPrefix`, not
             // the continuation's own `prefix`. The loose-end fall-through threads the
             // enclosing target down so choices after the variable-text line fall
-            // through to the enclosing gather, not the hardcoded `.end` (#3b layer 2).
+            // through to the enclosing gather, not the hardcoded `.runOut` (#3b layer 2).
             //
             // Route through the resolver ONLY when the continuation LEADS with a
             // weave item (choice/gather). When it leads with ANOTHER variable-text /
@@ -471,7 +471,7 @@ enum RuntimeObjectEmitter {
         restOfBody: [InkStatement],
         context: LoweringContext,
         keyPrefix: [String],
-        fallThrough: WeaveEmitter.FallThrough = .end,
+        fallThrough: WeaveEmitter.FallThrough = .runOut,
         named: inout [String: ContainerNode]
     ) throws -> [NodeKind] {
         guard case .conditional(let condition, let ifTrue, let ifFalse) = segments[conditionalIndex] else {

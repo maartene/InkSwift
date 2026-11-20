@@ -183,7 +183,9 @@ struct TreeWalker {
 
         // The step loop never reaches these: InkEngine.executeFlowNode handles
         // `done` and `end` itself, because `end` is the engine's forceEnd()
-        // (ADR-020 §4). Only standalone dispatch (`global decl`) ends here.
+        // (ADR-020 §4). They are reachable only from the standalone dispatch of
+        // `global decl` (InkEngine.initializeGlobalVariables), which inklecate
+        // closes with `end`.
         case "done", "end":
             state.isEnded = true
             state.pointer.index = Int.max
@@ -194,20 +196,24 @@ struct TreeWalker {
         case "nop":
             trimTrailingSpace(state: &state)
 
-        case "visit":
-            break  // handled by InkEngine before dispatchNode is reached (it owns the visit counter)
-
         case "#n":
             break  // anonymous named-container reference marker — no-op at walk time
 
         default:
-            break  // unknown control commands are no-ops
+            // Unknown control commands are no-ops. `visit` never gets here from
+            // the step loop: InkEngine.executeVisitCountNode consumes it first,
+            // because the engine owns the visit counter.
+            break
         }
     }
 
     // MARK: - Variable handling
 
     private func handleVariableAssignment(name: String, isGlobal: Bool, state: inout StoryState) {
+        // An empty stack is reachable from well-formed inklecate JSON, so this is
+        // not a precondition: reading a temp whose declaration was skipped
+        // (`{flag: ~ temp y = 1}`, then `~ temp z = y`) pushes nothing in
+        // handleVariableReference, where C# warns and pushes 0.
         guard let value = state.evalStack.popLast() else { return }
 
         // VAR= (global): always write to variablesState, with pointer write-through
@@ -309,11 +315,15 @@ struct TreeWalker {
 
     // MARK: - Stack operation helpers
 
+    /// An empty stack is reachable from well-formed JSON, see
+    /// `handleVariableAssignment`; the operation is then skipped.
     private func applyUnaryOp(state: inout StoryState, op: (InkValue) -> InkValue) {
         guard let top = state.evalStack.popLast() else { return }
         state.evalStack.append(op(top))
     }
 
+    /// Fewer than two operands is reachable from well-formed JSON, see
+    /// `handleVariableAssignment`; the operation is then skipped.
     private func applyBinaryOp(_ fn: NativeFunction, state: inout StoryState) throws(InkRuntimeError) {
         guard let operation = BinaryNativeFunction.byFunction[fn], state.evalStack.count >= 2 else { return }
         let rhs = state.evalStack.removeLast()

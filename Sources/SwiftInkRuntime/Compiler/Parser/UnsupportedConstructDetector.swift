@@ -1,14 +1,16 @@
-// Reject-list detection for the native Ink compiler (DDD-8): variable-text
-// alternative constructs share the `{…|…}` syntax and are outside the runtime's
-// supported set (matrix rows 25-28). This detector runs during the inline scan
-// and short-circuits with a located, construct-named `.unsupportedConstruct`
-// error BEFORE any codegen — fail-closed, no partial story (D2 / KPI #2).
+// Reject-list detection for the native Ink compiler (DDD-8). It runs during the
+// statement and inline scans and short-circuits with a located, construct-named
+// `.unsupportedConstruct` error BEFORE any codegen — fail-closed, no partial
+// story (D2 / KPI #2). It refuses the statement-level constructs (threads,
+// LIST, EXTERNAL, INCLUDE, divert-target built-ins), the tag and string shapes
+// of #31, and one variable-text form.
 //
-// The four forms are distinguished by the marker leading the brace group:
-//   {a|b|c}   plain alternatives, no top-level `:`  → "sequence"
-//   {&a|b}    leading `&`                            → "cycle"
-//   {!a|b}    leading `!` (optionally escaped `\!`)  → "once"
-//   {~a|b}    leading `~`                            → "shuffle {~a|b}"
+// Variable-text alternatives share the `{…|…}` syntax; the marker leading the
+// brace group names the form:
+//   {a|b|c}   plain alternatives, no top-level `:`  → sequence, supported
+//   {&a|b}    leading `&`                            → cycle, supported
+//   {!a|b}    leading `!` (optionally escaped `\!`)  → once, supported
+//   {~a|b}    leading `~`                            → "shuffle {~a|b}", refused
 //
 // Inline conditionals `{cond: a|b}` (S4) also use `|`, but carry a top-level
 // `:` before the alternatives — the `:` discriminates them so supported forms
@@ -60,13 +62,13 @@ enum UnsupportedConstructDetector {
         return remainder.first == " " || remainder.first == "\t"
     }
 
-    /// The unsupported built-ins whose argument is a divert target (`-> knot`),
-    /// by source name, with their catalog name. The expression parser cannot
-    /// read a divert target, so they are refused at the call, before the argument.
+    /// The unsupported built-ins the catalog flags as taking a divert target
+    /// (`-> knot`), by source name, with their catalog name. The expression
+    /// parser cannot read a divert target, so they are refused at the call,
+    /// before the argument.
     private static let divertTargetBuiltIns: [String: String] = Dictionary(
         uniqueKeysWithValues: NativeFunctionCatalog.entries.compactMap { entry in
-            guard ["TURNS_SINCE", "READ_COUNT"].contains(entry.sourceName),
-                  case .unsupported(let feature) = entry.status else { return nil }
+            guard entry.takesDivertTarget, case .unsupported(let feature) = entry.status else { return nil }
             return (entry.sourceName, feature)
         })
 
@@ -104,7 +106,7 @@ enum UnsupportedConstructDetector {
     /// error is unlocated; `InkParser` fills in the statement's position.
     /// `contents` is the literal's raw text, escape pairs (`\{`) still in place.
     static func checkStringLiteral(_ contents: String) throws {
-        guard escapeAwareScan(contents, context: .string).contains(where: { $0.marker == .braceOpen }) else { return }
+        guard ContentTextScanner.scan(contents, context: .string).contains(where: { $0.marker == .braceOpen }) else { return }
         throw CompileError(
             kind: .unsupportedConstruct,
             construct: "string with inline logic",
@@ -123,7 +125,7 @@ enum UnsupportedConstructDetector {
     /// - A tag with inline logic: a top-level tag, which runs to the end of the
     ///   line, holding a `{` (`Line # pic{n}.jpg`, `# {a|b}`).
     static func checkTag(line trimmed: String, lineNumber: Int, column: Int) throws {
-        let tokens = escapeAwareScan(trimmed, context: .content)
+        let tokens = ContentTextScanner.scan(trimmed, context: .content)
         guard let (hash, insideLogic) = firstTag(in: tokens) else { return }
         let construct: String
         if insideLogic {
@@ -140,13 +142,6 @@ enum UnsupportedConstructDetector {
             line: lineNumber,
             column: column + hash.offset
         )
-    }
-
-    /// The line read the way inklecate reads it, whatever the compiler's mode:
-    /// an escaped character (`\{`, `\#`) is text, never a marker (#31). This is
-    /// the scanner's single escape primitive, shared with escape-aware content.
-    private static func escapeAwareScan(_ text: String, context: ContentTextScanner.Context) -> [ContentTextScanner.Token] {
-        ContentTextScanner.scan(text, context: context, mode: .escapeAware)
     }
 
     /// The first unescaped `#` in the scanned line, and whether it sits inside a

@@ -64,14 +64,15 @@ enum WeaveEmitter {
     /// `WeaveEmitter` (not nested in the private `WeaveResolver`) so a caller can
     /// thread an enclosing-scope loose-end target into `lower` (#3b layer 2): an
     /// inline/gather-lead variable-text continuation that opens a weave must fall
-    /// through to its ENCLOSING gather, not the hardcoded `.end`.
+    /// through to its ENCLOSING gather, not the hardcoded `.runOut`.
     enum FallThrough {
         /// Divert to a gather container at this qualified path.
         case gather([String])
-        /// No enclosing gather: the flow runs out here. Emits nothing, as
-        /// inklecate does — an `end` would force-end the flow and discard a
-        /// choice generated earlier in the same continue (#28).
-        case end
+        /// No enclosing gather: the flow runs out here, and the loose end emits
+        /// nothing, as in inklecate. It is deliberately not an `end`, which
+        /// would force-end the flow and discard a choice generated earlier in
+        /// the same continue (#28).
+        case runOut
         /// No enclosing gather in the top-level flow: the loose end reaches the
         /// `done` inklecate adds after the root's content (`Story.cs:193`). In
         /// inklecate's layout a rejoin or a final gather sits inline in that
@@ -87,7 +88,7 @@ enum WeaveEmitter {
                 return [.divert(target: .path(PathReference(parsing: path.joined(separator: "."))), isConditional: false)]
             case .done:
                 return [.controlCommand("done")]
-            case .end:
+            case .runOut:
                 return []
             }
         }
@@ -119,7 +120,7 @@ enum WeaveEmitter {
     static func lower(
         _ statements: [InkStatement],
         keyPrefix: [String] = [],
-        fallThrough: FallThrough = .end,
+        fallThrough: FallThrough = .runOut,
         lowerStatement: @escaping ([InkStatement], [String]) throws -> BodyLowering,
         lowerStatementWithFallThrough: (([InkStatement], FallThrough, [String]) throws -> BodyLowering)? = nil,
         lowerCondition: @escaping (InkExpression) throws -> [NodeKind] = { _ in [] }
@@ -146,7 +147,7 @@ enum WeaveEmitter {
     static func lowerWithLabelPaths(
         _ statements: [InkStatement],
         keyPrefix: [String] = [],
-        fallThrough: FallThrough = .end,
+        fallThrough: FallThrough = .runOut,
         lowerStatement: @escaping ([InkStatement], [String]) throws -> BodyLowering,
         lowerStatementWithFallThrough: (([InkStatement], FallThrough, [String]) throws -> BodyLowering)? = nil,
         lowerCondition: @escaping (InkExpression) throws -> [NodeKind] = { _ in [] }
@@ -506,7 +507,8 @@ private enum WeaveParser {
         atLevel level: Int
     ) -> WeaveChoice {
         guard case .choice(_, let isSticky, let choiceOnlyLabel, let body, let weaveLabel, let condition) = header.kind else {
-            fatalError("parseChoice requires a choice statement")
+            // parseBlock calls this only for a statement it matched as a choice.
+            preconditionFailure("parseChoice requires a choice statement; parseBlock matched it as one")
         }
         var bodyStatements: [InkStatement] = []
         if choiceOnlyLabel != nil {
@@ -555,7 +557,8 @@ private enum WeaveParser {
         atLevel level: Int
     ) -> WeaveGather {
         guard case .gather(_, let label, let outcome) = header.kind else {
-            fatalError("parseGather requires a gather statement")
+            // parseBlock calls this only for a statement it matched as a gather.
+            preconditionFailure("parseGather requires a gather statement; parseBlock matched it as one")
         }
         // A gather whose outcome is a divert (`- -> target`, parser bug #1)
         // lowers via the shared inline-body helper so the leading `->` becomes
@@ -822,7 +825,7 @@ private final class WeaveResolver {
     let lowerStatement: ([InkStatement], [String]) throws -> WeaveEmitter.BodyLowering
     /// Lowers a gather/choice body while threading the enclosing loose-end target,
     /// so a body that LEADS with a variable-text / inline-conditional line falls
-    /// through to the enclosing gather (not the hardcoded `.end`) once its trailing
+    /// through to the enclosing gather (not the hardcoded `.runOut`) once its trailing
     /// choices thread off that line (#3b layer 1+2). `nil` falls back to the plain
     /// `lowerStatement` (callers that do not thread a loose-end into bodies). Takes
     /// the container's own key prefix (see `lowerStatement`).

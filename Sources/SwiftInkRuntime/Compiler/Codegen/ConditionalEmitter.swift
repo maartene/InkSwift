@@ -40,7 +40,7 @@ enum ConditionalEmitter {
     /// target is the enclosing conditional's own `-end` (the arm rejoins its
     /// conditional); for the REJOIN body it is the enclosing scope's fall-through
     /// (the rejoin is that scope's loose end). Without it the nested rejoin fell
-    /// back on `lowerBody`'s `.end` default and terminated the story there,
+    /// back on `lowerBody`'s `.runOut` default and terminated the story there,
     /// stranding everything after the outer block.
     typealias BranchLowerer = (
         _ body: [InkStatement],
@@ -63,7 +63,7 @@ enum ConditionalEmitter {
         branches: [ConditionalBranch],
         continuation: [InkStatement],
         keyPrefix: [String],
-        fallThrough: WeaveEmitter.FallThrough = .end,
+        fallThrough: WeaveEmitter.FallThrough = .runOut,
         named: inout [String: ContainerNode],
         lowerBranch: BranchLowerer,
         lowerContinuation: BranchLowerer? = nil,
@@ -114,7 +114,7 @@ enum ConditionalEmitter {
         falseText: String,
         continuation: [InkStatement],
         keyPrefix: [String],
-        fallThrough: WeaveEmitter.FallThrough = .end,
+        fallThrough: WeaveEmitter.FallThrough = .runOut,
         named: inout [String: ContainerNode],
         lowerBranch: BranchLowerer,
         lowerContinuation: BranchLowerer? = nil,
@@ -253,7 +253,7 @@ enum ConditionalEmitter {
         var armNamed: [String: ContainerNode] = [:]
         // An arm's loose end is its OWN conditional's rejoin: a conditional nested
         // inside this arm must divert its rejoin container to `endPath`, not
-        // terminate the story with the lowerer's `.end` default. The same target
+        // terminate the story with the lowerer's `.runOut` default. The same target
         // threads a weave-bearing arm's loose ends, so a choice taken inside the
         // arm rejoins the block exactly where a plain arm body does.
         var children: [NodeKind]
