@@ -224,6 +224,20 @@ Known places where the same compiled story plays differently on InkSwift's runti
   "Variable not found: 'y'. Using default value of 0 (false)…". InkSwift has no
   runtime warnings yet, so it says nothing
   ([#39](https://github.com/maartene/InkSwift/issues/39)).
+- **Integer division by zero is a runtime error.** `{1 / z}` or `{7 % z}` with
+  `VAR z = 0` crashes inklecate's player with an unhandled .NET
+  `DivideByZeroException` (the open upstream issue
+  [inkle/ink#843](https://github.com/inkle/ink/issues/843), unanswered since 2023), so
+  there is no story behaviour to copy. InkSwift reports `Attempted to divide by zero.`
+  in `currentErrors` and ends the flow, like any other runtime error
+  ([#41](https://github.com/maartene/InkSwift/issues/41)). Float division follows IEEE
+  on both: `{1.0 / z}` with `VAR z = 0.0` prints `Infinity`, `{0.0 / z}` prints `NaN`.
+- **A short evaluation stack is a runtime error.** JSON in which an operator or an
+  assignment finds no value to work on (inklecate never writes such JSON) reports
+  `Evaluation stack is empty` in `currentErrors` and ends the flow, where inkle's runtime
+  fails with an internal exception. `Story(json:)` accepts JSON from any source, so a
+  malformed story must not crash the app hosting it
+  ([#41](https://github.com/maartene/InkSwift/issues/41)).
 - **Default (fallback) choices** and a tunnel onwards with a divert (`->-> target`)
   differ in some cases.
 

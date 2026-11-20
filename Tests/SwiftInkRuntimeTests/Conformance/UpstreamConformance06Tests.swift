@@ -160,12 +160,12 @@ struct UpstreamConformance06Tests {
         c.isTrue(c.hadWarning())
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: an undeclared temp prints 0 with a warning"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: runtime warnings (#39)"))
     func `TestTempNotFound — native compiler and runtime`() {
         Conformance.run("TestTempNotFound", .native, Self.testTempNotFound)
     }
 
-    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: an undeclared temp prints 0 with a warning"))
+    @Test(.disabled(if: Conformance.skipsBacklog, "conformance: runtime warnings (#39)"))
     func `TestTempNotFound — inklecate JSON on the runtime`() {
         Conformance.run("TestTempNotFound", .runtime, Self.testTempNotFound)
     }

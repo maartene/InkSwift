@@ -351,8 +351,8 @@
   "native": "native accepts a story inklecate rejects ('Unresolved variable: x')"
  },
  "TestTempNotFound": {
-  "native": "an undeclared temp prints 0 with a warning",
-  "runtime": "an undeclared temp prints 0 with a warning"
+  "native": "runtime warnings (#39)",
+  "runtime": "runtime warnings (#39)"
  },
  "TestTempUsageInOptions": {
   "native": "temp variables in choice text",

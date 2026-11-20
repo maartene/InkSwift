@@ -26,6 +26,21 @@
 // returning nothing — implicitly and by bare `~ return` — printed mid-line,
 // stored in a temp and in a global that survives a save/restore). Both
 // continue past the construct with prose, a choice and the choice's content.
+//
+// #41 — unary natives took their operand as it came and could not fail, and
+// division by zero gave 0: `{-b}` on a bool printed `true`, `{not s}` on a
+// string printed `false`, `{1.0 / z}` printed `0`. The reference
+// (NativeFunctionCall.cs `Call`, ~90-120) first refuses a void operand, then
+// lifts every operand to at least an int (`CoerceValuesToSingleType`, ~231),
+// so a bool negates as 1, and refuses a type with no registered form
+// ("Cannot perform operation '<op>' on String"). Float `/` and `%` follow
+// IEEE. Fixtures: bug-operator-values.ink (bool operands and float division by
+// zero, continuing past them with prose and a choice; INT of an infinite or
+// NaN quotient saturates to C#'s 32-bit int, as .NET's conversion does) and
+// bug-operator-errors.ink (a choice per refused operation, each in a knot
+// whose following prose must not play), messages from `inklecate -p`.
+// Integer division by zero crashes inklecate (inkle/ink#843); InkSwift reports
+// "Attempted to divide by zero." instead, a maintainer decision.
 
 import Testing
 import Foundation
@@ -134,5 +149,93 @@ struct Bug_EvalStackValuesTests {
 
             #expect(result.native == result.oracle)
         }
+    }
+
+    // MARK: - #41: operators with one operand and division by zero
+
+    private static let operatorValuesFixture = "bug-operator-values"
+    private static let operatorErrorsFixture = "bug-operator-errors"
+
+    private static let operatorValuesPlaythrough = [
+        "H: -1 1 false 1 1",
+        "I: 1",
+        "C: Infinity -Infinity NaN NaN",
+        "J: 2147483647 -2147483648 0",
+        "After.",
+        "Go",
+        "Gone."
+    ]
+
+    @Test func `operators coerce a bool operand to an int and float division by zero follows IEEE`() throws {
+        for story in try Self.stories(Self.operatorValuesFixture) {
+            let lines = try CompilerOracle.play(story)
+
+            #expect(lines == Self.operatorValuesPlaythrough)
+            #expect(story.currentErrors.isEmpty)
+        }
+    }
+
+    @Test func `the native compile plays operator values as inklecate's JSON does`() throws {
+        let result = try CompilerOracle.compileAndPlay(Self.operatorValuesFixture)
+
+        #expect(result.native == result.oracle)
+    }
+
+    private static let voidOperandHint = "on a void value. Did you forget to 'return' a value from a function you called here?"
+
+    // The choice index picks the knot that applies one refused operation.
+    // Messages are `inklecate -p`'s, except integer division by zero, where
+    // inklecate crashes (inkle/ink#843) and InkSwift reports C#'s exception text.
+    @Test(arguments: [
+        (0, "Cannot perform operation '!' on String"),
+        (1, "Cannot perform operation '_' on String"),
+        (2, "Cannot perform operation 'FLOOR' on String"),
+        (3, "Cannot perform operation 'CEILING' on String"),
+        (4, "Cannot perform operation 'INT' on String"),
+        (5, "Cannot perform operation 'FLOAT' on String"),
+        (6, "Attempted to divide by zero."),
+        (7, "Attempted to divide by zero."),
+        (8, "Attempting to perform + \(voidOperandHint)"),
+        (9, "Attempting to perform _ \(voidOperandHint)"),
+    ])
+    func `a refused operation reports the reference error and the prose after it does not play`(
+        choice: Int, message: String
+    ) throws {
+        for story in try Self.stories(Self.operatorErrorsFixture) {
+            #expect(Self.playUntilStopped(story) == ["Before."])
+
+            try story.chooseChoice(at: choice)
+
+            #expect(Self.playUntilStopped(story) == [])
+            #expect(story.currentErrors == [message])
+            #expect(story.currentChoices.isEmpty)
+        }
+    }
+
+    private static func playUntilStopped(_ story: Story) -> [String] {
+        var lines: [String] = []
+        while story.canContinue {
+            let line = story.`continue`().trimmingCharacters(in: .whitespacesAndNewlines)
+            if line.isEmpty == false { lines.append(line) }
+        }
+        return lines
+    }
+
+    // No ink source leaves the evaluation stack short — every operator and
+    // assignment inklecate emits has its operands pushed first — so these
+    // stories are hand-written JSON, kept to one line each: a unary operator,
+    // a binary operator with one operand, and a temp assignment with nothing
+    // to assign. Malformed JSON must report an error, not crash the host.
+    @Test(arguments: [#""_""#, #"1,"+""#, #"{"temp=":"x"}"#])
+    func `an operation on a short evaluation stack reports an error and the prose after it does not play`(
+        evaluation: String
+    ) throws {
+        let json = #"{"inkVersion":21,"root":[["^Before.","\n","ev",\#(evaluation),"/ev","^After.","\n","done",null],"done",null],"listDefs":{}}"#
+        let story = try Story(json: json)
+
+        let lines = Self.playUntilStopped(story)
+
+        #expect(lines.contains("After.") == false)
+        #expect(story.currentErrors == ["Evaluation stack is empty"])
     }
 }

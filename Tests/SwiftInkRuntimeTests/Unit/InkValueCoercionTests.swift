@@ -48,9 +48,9 @@ import Testing
     ])
     func `FLOOR and CEILING keep a float a float and an int an int`(
         value: InkValue, floor: InkValue, ceiling: InkValue
-    ) {
-        #expect(value.floored == floor)
-        #expect(value.ceiled == ceiling)
+    ) throws {
+        #expect(try UnaryNativeFunction.floor(value) == floor)
+        #expect(try UnaryNativeFunction.ceiling(value) == ceiling)
     }
 
     @Test(arguments: [
@@ -58,11 +58,11 @@ import Testing
         (InkValue.float(-1.7), InkValue.int(-1)),
         (InkValue.int(4), InkValue.int(4)),
     ])
-    func `INT truncates a float to an int and keeps an int`(value: InkValue, expected: InkValue) {
-        #expect(value.toInt == expected)
+    func `INT truncates a float to an int and keeps an int`(value: InkValue, expected: InkValue) throws {
+        #expect(try UnaryNativeFunction.int(value) == expected)
     }
 
-    @Test func `FLOAT of an int is a float`() {
-        #expect(InkValue.int(2).toFloat == .float(2.0))
+    @Test func `FLOAT of an int is a float`() throws {
+        #expect(try UnaryNativeFunction.float(.int(2)) == .float(2.0))
     }
 }

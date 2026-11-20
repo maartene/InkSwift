@@ -104,43 +104,6 @@ extension InkValue {
         case .void: return ""
         }
     }
-
-    /// FLOOR of a float stays a float, as in C# (`AddFloatUnaryOp(Floor, x =>
-    /// (float)Math.Floor(x))`); on an int it is the identity.
-    var floored: InkValue {
-        switch self {
-        case .float(let f): return .float(Foundation.floor(f))
-        default: return self
-        }
-    }
-
-    /// CEILING of a float stays a float, as in C#; on an int it is the identity.
-    var ceiled: InkValue {
-        switch self {
-        case .float(let f): return .float(Foundation.ceil(f))
-        default: return self
-        }
-    }
-
-    var toInt: InkValue {
-        switch self {
-        case .int: return self
-        case .float(let f): return .int(Int(f))
-        case .bool(let b): return .int(b ? 1 : 0)
-        case .string(let s): return .int(Int(s) ?? 0)
-        case .variablePointer, .void: return .int(0)
-        }
-    }
-
-    var toFloat: InkValue {
-        switch self {
-        case .float: return self
-        case .int(let n): return .float(Double(n))
-        case .bool(let b): return .float(b ? 1.0 : 0.0)
-        case .string(let s): return .float(Double(s) ?? 0.0)
-        case .variablePointer, .void: return .float(0.0)
-        }
-    }
 }
 
 // MARK: - Operand coercion
@@ -149,6 +112,31 @@ extension InkValue {
 /// reports `message` bare in `currentErrors` (ADR-017) and ends the flow.
 struct InkRuntimeError: Error, Equatable {
     let message: String
+
+    /// C# `Call<T>` (NativeFunctionCall.cs ~125-170): no form of the operation
+    /// is registered for the coerced type (C# `ValueType`: Int, Float, String).
+    static func cannotPerform(_ function: NativeFunction, on type: String) -> InkRuntimeError {
+        InkRuntimeError(message: "Cannot perform operation '\(function.token)' on \(type)")
+    }
+
+    /// C# `Call` (NativeFunctionCall.cs ~96-98): checked before any coercion.
+    static func voidOperand(_ function: NativeFunction) -> InkRuntimeError {
+        InkRuntimeError(message: "Attempting to perform \(function.token) on a void value. "
+            + "Did you forget to 'return' a value from a function you called here?")
+    }
+
+    /// C# divides ints with plain `/` and `%`, which throw .NET's
+    /// DivideByZeroException; inklecate crashes on it (inkle/ink#843, open
+    /// and unanswered since 2023), so there is no story behaviour to copy.
+    /// InkSwift reports the exception's text as a runtime error and ends the
+    /// flow (maintainer decision; docs/reference/differences-from-inklecate.md).
+    static let divideByZero = InkRuntimeError(message: "Attempted to divide by zero.")
+
+    /// An operator or assignment found too few values on the evaluation stack.
+    /// inklecate's JSON never does this, but `Story(json:)` accepts any JSON
+    /// and must not crash the host on a malformed one (maintainer decision;
+    /// docs/reference/differences-from-inklecate.md).
+    static let emptyEvaluationStack = InkRuntimeError(message: "Evaluation stack is empty")
 }
 
 /// Two operands coerced to one type: what every binary native operates on.
@@ -156,6 +144,23 @@ enum CoercedOperands: Equatable {
     case ints(Int, Int)
     case floats(Double, Double)
     case strings(String, String)
+}
+
+/// One operand coerced as C# coerces a lone parameter: what every unary
+/// native operates on.
+enum CoercedOperand: Equatable {
+    case int(Int)
+    case float(Double)
+    case string(String)
+}
+
+extension NativeFunction {
+
+    /// C# `Call` (NativeFunctionCall.cs ~96-98) refuses a void operand before
+    /// coercing, for unary and binary operations alike.
+    func refuseVoid(_ operands: InkValue...) throws(InkRuntimeError) {
+        if operands.contains(.void) { throw .voidOperand(self) }
+    }
 }
 
 extension InkValue {
@@ -173,9 +178,10 @@ extension InkValue {
     var coercionType: CoercionType {
         switch self {
         case .bool: return .bool
-        // Void has no type in C#: an operator on it is an error there. Until
-        // the runtime raises that error it takes part neutrally, as int 0.
-        case .int, .void: return .int
+        case .int: return .int
+        // Never consulted: every native refuses a void operand before
+        // coercing it (`NativeFunction.refuseVoid`).
+        case .void: return .int
         case .float: return .float
         // A pointer is dereferenced before it reaches an operator; should one
         // get here, it takes part by its name, as text.
@@ -192,6 +198,16 @@ extension InkValue {
         case .bool, .int: return .ints(lhs.asIntOperand, rhs.asIntOperand)
         case .float: return .floats(lhs.asDouble, rhs.asDouble)
         case .string: return .strings(lhs.asString, rhs.asString)
+        }
+    }
+
+    /// C# `CoerceValuesToSingleType` with one parameter: lifted to at least
+    /// an int, so a lone bool operates as 1 or 0.
+    var coercedAlone: CoercedOperand {
+        switch max(coercionType, .int) {
+        case .bool, .int: return .int(asIntOperand)
+        case .float: return .float(asDouble)
+        case .string: return .string(asString)
         }
     }
 
@@ -213,9 +229,15 @@ struct BinaryNativeFunction {
     var int: ((Int, Int) -> InkValue)?
     var float: ((Double, Double) -> InkValue)?
     var string: ((String, String) -> InkValue)?
+    /// Integer division and modulo: a zero divisor is an error (see
+    /// `InkRuntimeError.divideByZero`). A flag rather than throwing closures,
+    /// which need macOS 15 runtime support for typed throws.
+    var refusesZeroIntDivisor = false
 
     func callAsFunction(_ lhs: InkValue, _ rhs: InkValue) throws(InkRuntimeError) -> InkValue {
+        try function.refuseVoid(lhs, rhs)
         switch InkValue.coerced(lhs, rhs) {
+        case .ints(_, 0) where refusesZeroIntDivisor: throw .divideByZero
         case .ints(let a, let b): return try perform(int, a, b, on: "Int")
         case .floats(let a, let b): return try perform(float, a, b, on: "Float")
         case .strings(let a, let b): return try perform(string, a, b, on: "String")
@@ -225,9 +247,7 @@ struct BinaryNativeFunction {
     private func perform<Operand>(
         _ operation: ((Operand, Operand) -> InkValue)?, _ lhs: Operand, _ rhs: Operand, on type: String
     ) throws(InkRuntimeError) -> InkValue {
-        guard let operation else {
-            throw InkRuntimeError(message: "Cannot perform operation '\(function.token)' on \(type)")
-        }
+        guard let operation else { throw .cannotPerform(function, on: type) }
         return operation(lhs, rhs)
     }
 
@@ -251,16 +271,18 @@ struct BinaryNativeFunction {
         function: .subtract, int: { .int($0 - $1) }, float: { .float($0 - $1) })
     static let multiply = BinaryNativeFunction(
         function: .multiply, int: { .int($0 * $1) }, float: { .float($0 * $1) })
-    // Division and modulo by zero yield 0.0 rather than trapping; C# throws a
-    // non-story DivideByZeroException for ints and returns Infinity/NaN for floats.
+    // An int divisor of zero is an error (see `InkRuntimeError.divideByZero`);
+    // floats follow IEEE, as C#'s do: Infinity, -Infinity or NaN.
     static let divide = BinaryNativeFunction(
         function: .divide,
-        int: { $1 == 0 ? .float(0.0) : .int($0 / $1) },
-        float: { $1 == 0.0 ? .float(0.0) : .float($0 / $1) })
+        int: { .int($0 / $1) },
+        float: { .float($0 / $1) },
+        refusesZeroIntDivisor: true)
     static let modulo = BinaryNativeFunction(
         function: .modulo,
-        int: { $1 == 0 ? .float(0.0) : .int($0 % $1) },
-        float: { $1 == 0.0 ? .float(0.0) : .float($0.truncatingRemainder(dividingBy: $1)) })
+        int: { .int($0 % $1) },
+        float: { .float($0.truncatingRemainder(dividingBy: $1)) },
+        refusesZeroIntDivisor: true)
     static let equal = test(.equal, int: ==, float: ==, string: ==)
     static let notEqual = test(.notEqual, int: !=, float: !=, string: !=)
     static let greater = test(.greater, int: >, float: >)
@@ -302,6 +324,50 @@ struct BinaryNativeFunction {
             add, subtract, multiply, divide, modulo, equal, notEqual, greater, less,
             greaterOrEqual, lessOrEqual, and, or, min, max, pow, has, hasnt,
         ].map { ($0.function, $0) })
+}
+
+/// A unary native function per coerced operand type. C# registers the unary
+/// operations for Int and Float only (NativeFunctionCall.cs ~336-385), so a
+/// string operand raises the reference's error, like a binary operation
+/// without a string form.
+struct UnaryNativeFunction {
+    let function: NativeFunction
+    let int: (Int) -> InkValue
+    let float: (Double) -> InkValue
+
+    func callAsFunction(_ operand: InkValue) throws(InkRuntimeError) -> InkValue {
+        try function.refuseVoid(operand)
+        switch operand.coercedAlone {
+        case .int(let number): return int(number)
+        case .float(let number): return float(number)
+        case .string: throw .cannotPerform(function, on: "String")
+        }
+    }
+
+    static let not = UnaryNativeFunction(
+        function: .not, int: { .bool($0 == 0) }, float: { .bool($0 == 0.0) })
+    static let negate = UnaryNativeFunction(
+        function: .negate, int: { .int(-$0) }, float: { .float(-$0) })
+    // FLOOR and CEILING of a float stay a float (`(float)Math.Floor(x)`); on
+    // an int they are the identity.
+    static let floor = UnaryNativeFunction(
+        function: .floor, int: { .int($0) }, float: { .float(Foundation.floor($0)) })
+    static let ceiling = UnaryNativeFunction(
+        function: .ceiling, int: { .int($0) }, float: { .float(Foundation.ceil($0)) })
+    static let int = UnaryNativeFunction(
+        function: .int, int: { .int($0) }, float: { .int(truncatedToInkInt($0)) })
+    static let float = UnaryNativeFunction(
+        function: .float, int: { .float(Double($0)) }, float: { .float($0) })
+
+    /// C# `(int)x`: truncation toward zero into a 32-bit int, saturating as
+    /// .NET's conversion does — Infinity and values above the range give
+    /// int.MaxValue, -Infinity and values below give int.MinValue, NaN gives 0
+    /// (inklecate prints `2147483647 -2147483648 0`). Swift's `Int(_:)` would
+    /// trap on all three, and float division by zero now reaches them.
+    private static func truncatedToInkInt(_ value: Double) -> Int {
+        guard value.isNaN == false else { return 0 }
+        return Int(Swift.min(Swift.max(value, Double(Int32.min)), Double(Int32.max)))
+    }
 }
 
 // MARK: - ChoiceFlags
@@ -458,6 +524,13 @@ struct StoryState: Codable {
 
     // Evaluation stack for expression evaluation
     var evalStack: [InkValue]
+
+    /// The top of the evaluation stack, for an operator or assignment. Only
+    /// malformed JSON leaves it empty; that is reported, not skipped.
+    mutating func popEvaluationStack() throws(InkRuntimeError) -> InkValue {
+        guard let value = evalStack.popLast() else { throw .emptyEvaluationStack }
+        return value
+    }
 
     // Tag accumulation state
     var inTagMode: Bool

@@ -52,7 +52,7 @@ struct TreeWalker {
             break  // handled by InkEngine before dispatchNode is reached
 
         case .variableAssignment(let name, let isGlobal):
-            handleVariableAssignment(name: name, isGlobal: isGlobal, state: &state)
+            try handleVariableAssignment(name: name, isGlobal: isGlobal, state: &state)
 
         case .variableReference(let name):
             handleVariableReference(name: name, state: &state)
@@ -212,11 +212,10 @@ struct TreeWalker {
 
     // MARK: - Variable handling
 
-    private func handleVariableAssignment(name: String, isGlobal: Bool, state: inout StoryState) {
-        // Defensive: well-formed JSON always leaves a value to assign (a missing
-        // variable reads as 0, see handleVariableReference), so an empty stack is
-        // not expected; the assignment is then skipped.
-        guard let value = state.evalStack.popLast() else { return }
+    private func handleVariableAssignment(
+        name: String, isGlobal: Bool, state: inout StoryState
+    ) throws(InkRuntimeError) {
+        let value = try state.popEvaluationStack()
 
         // VAR= (global): always write to variablesState, with pointer write-through
         // if the existing global is a variable pointer.
@@ -282,60 +281,43 @@ struct TreeWalker {
 
     // MARK: - Native function handling
 
-    /// Binary natives coerce their operands to one type first (C#
-    /// `CoerceValuesToSingleType`), see `BinaryNativeFunction`; one with no
-    /// string form throws the reference's error on string operands. The switch
-    /// is exhaustive over the catalog, so a new native cannot be silently ignored.
+    /// Natives coerce their operands to one type first (C#
+    /// `CoerceValuesToSingleType`), see `BinaryNativeFunction` and
+    /// `UnaryNativeFunction`; a void operand, or a type the operation has no
+    /// form for, throws the reference's error. The switch is exhaustive over
+    /// the catalog, so a new native cannot be silently ignored.
     private func handleNativeFunction(_ fn: NativeFunction, state: inout StoryState) throws(InkRuntimeError) {
         switch fn {
         case .add, .subtract, .multiply, .divide, .modulo, .equal, .notEqual, .greater, .less,
              .greaterOrEqual, .lessOrEqual, .and, .or, .min, .max, .pow, .has, .hasnt:
             try applyBinaryOp(fn, state: &state)
-        case .not:
-            applyUnaryOp(state: &state) { value in
-                return .bool(!value.asBool)
-            }
-        // Arithmetic negation. The reference names this `_` to keep it distinct
-        // from binary `-` subtraction (`NativeFunctionCall.Negate`) and defines it
-        // for int and float only — `AddIntUnaryOp(Negate, x => -x)` and its float
-        // counterpart, with no bool or string form. Any other value is therefore
-        // left untouched rather than coerced into a number it never had.
-        case .negate:
-            applyUnaryOp(state: &state) { value in
-                switch value {
-                case .int(let number): return .int(-number)
-                case .float(let number): return .float(-number)
-                default: return value
-                }
-            }
+        // The reference names negation `_` to keep it distinct from binary `-`.
+        case .not:     try applyUnaryOp(.not, state: &state)
+        case .negate:  try applyUnaryOp(.negate, state: &state)
+        case .floor:   try applyUnaryOp(.floor, state: &state)
+        case .ceiling: try applyUnaryOp(.ceiling, state: &state)
+        case .int:     try applyUnaryOp(.int, state: &state)
+        case .float:   try applyUnaryOp(.float, state: &state)
         // The seed is popped and void pushed, as C# `Story` does, so the `pop`
         // compiled for the discarded call removes the void and nothing below it.
         // With RANDOM refused, a seed has no observable effect.
         case .seedRandom:
             _ = state.evalStack.popLast()
             state.evalStack.append(.void)
-        case .floor:      applyUnaryOp(state: &state) { $0.floored }
-        case .ceiling:    applyUnaryOp(state: &state) { $0.ceiled }
-        case .int:        applyUnaryOp(state: &state) { $0.toInt }
-        case .float:      applyUnaryOp(state: &state) { $0.toFloat }
         }
     }
 
     // MARK: - Stack operation helpers
 
-    /// Defensive: an empty stack is not expected, see
-    /// `handleVariableAssignment`; the operation is then skipped.
-    private func applyUnaryOp(state: inout StoryState, op: (InkValue) -> InkValue) {
-        guard let top = state.evalStack.popLast() else { return }
-        state.evalStack.append(op(top))
+    private func applyUnaryOp(_ operation: UnaryNativeFunction, state: inout StoryState) throws(InkRuntimeError) {
+        let operand = try state.popEvaluationStack()
+        state.evalStack.append(try operation(operand))
     }
 
-    /// Defensive: fewer than two operands is not expected, see
-    /// `handleVariableAssignment`; the operation is then skipped.
     private func applyBinaryOp(_ fn: NativeFunction, state: inout StoryState) throws(InkRuntimeError) {
-        guard let operation = BinaryNativeFunction.byFunction[fn], state.evalStack.count >= 2 else { return }
-        let rhs = state.evalStack.removeLast()
-        let lhs = state.evalStack.removeLast()
+        guard let operation = BinaryNativeFunction.byFunction[fn] else { return }
+        let rhs = try state.popEvaluationStack()
+        let lhs = try state.popEvaluationStack()
         state.evalStack.append(try operation(lhs, rhs))
     }
 }
