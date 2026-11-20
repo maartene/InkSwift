@@ -10,9 +10,9 @@
 //
 // Expected texts recorded from inklecate 1.2.1 (`-p`, invariant culture) on
 // 2026-11-20. Every fixture continues past the construct it pins with prose
-// and a choice. On glue-before-tag, `inklecate -p` also joins the line after
-// `glued.` ("Text glued.After the glue."); the InkSwift runtime on inklecate's
-// JSON does not, and the native path is held to the runtime path.
+// and a choice. On glue-before-tag, inklecate and the reference runtime (inkjs)
+// also join the line after `glued.` ("Text glued.After the glue."); InkSwift
+// deliberately does not (#43), and the native path is held to the runtime path.
 //
 // Driving ports: InkCompiler.compile(source:) and Story(json:).
 
@@ -147,11 +147,29 @@ struct Compiler_EscapeTests {
 
     static let glueBeforeTag = "glue-before-tag"
 
-    @Test func `glue before a tag joins the line to the next one, as inklecate`() throws {
+    @Test func `glue before a tag joins the glued line, as inklecate`() throws {
         let native = try Self.native(Self.glueBeforeTag)
         let runtime = try Self.runtime(Self.glueBeforeTag)
 
         #expect(native.first == .line("Text glued.", tags: ["t"]))
         #expect(native == runtime)
+    }
+
+    // A DELIBERATE DIFFERENCE FROM THE REFERENCE (#43, maintainer decision
+    // 2026-11-20). inklecate and inkjs keep gluing after the glued line, so
+    // `After the glue.` joins it too ("Text glued.After the glue."). That is
+    // inkle/ink#923, "Gluing a tag causes glue state to persist indefinitely":
+    // ink stays in glue mode until the next choice point, which cannot be the
+    // intended behaviour. It was reported in 2024 and is still open with no
+    // maintainer reply. Authors who hit it in inklecate or Inky have already
+    // worked around it, so not copying it costs little. InkSwift's glue ends
+    // after the line it glues. Recorded in docs/reference/differences-from-inklecate.md.
+    @Test func `glue before a tag does not keep gluing later lines, unlike the reference (#43)`() throws {
+        for lines in [try Self.native(Self.glueBeforeTag), try Self.runtime(Self.glueBeforeTag)] {
+            #expect(Array(lines.prefix(2)) == [
+                .line("Text glued.", tags: ["t"]),
+                .line("After the glue.", tags: []),
+            ])
+        }
     }
 }

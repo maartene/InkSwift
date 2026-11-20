@@ -210,6 +210,14 @@ Known places where the same compiled story plays differently on InkSwift's runti
   `getVariable` returns the `Double` (`0.30000000000000004` for `0.1 + 0.2`).
   Floats always print with a `.` as decimal separator; inklecate's own player uses the
   machine's locale ([inkle/ink#916](https://github.com/inkle/ink/issues/916)).
+- **Glue before a tag stops after the glued line.** For `Text <> # t` followed by
+  `glued.` and `After the glue.`, inklecate and inkjs print `Text glued.After the glue.`:
+  they keep gluing until the next choice point. InkSwift prints `Text glued.` (tag `t`)
+  and then `After the glue.`. This is a deliberate difference: the reference behaviour
+  is the open upstream bug
+  [inkle/ink#923](https://github.com/inkle/ink/issues/923), "Gluing a tag causes glue
+  state to persist indefinitely", which InkSwift does not copy
+  ([#43](https://github.com/maartene/InkSwift/issues/43)).
 - **Default (fallback) choices** and a tunnel onwards with a divert (`->-> target`)
   differ in some cases.
 
