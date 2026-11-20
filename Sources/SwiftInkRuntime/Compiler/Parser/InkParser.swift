@@ -12,7 +12,7 @@ import Foundation
 public enum InkParser {
 
     private static let knotMarker = "=="
-    private static let divertMarker = "->"
+    private static let divertMarker = ContentTextScanner.Marker.divert.text
     private static let endTarget = "END"
     private static let varMarker = "VAR"
     private static let constMarker = "CONST"
@@ -1084,13 +1084,15 @@ public enum InkParser {
     /// the existing AST fields: `label` carries the menu text (`prefix + choiceOnly`)
     /// and `body` carries the glued outcome (`prefix + suffix`).
     private static func splitChoiceOnlyLabel(_ remainder: String) -> (label: String?, body: String) {
-        guard let openIndex = remainder.firstIndex(of: "["),
-              let closeIndex = remainder[remainder.index(after: openIndex)...].firstIndex(of: "]") else {
+        let tokens = ContentTextScanner.scan(remainder, context: .choice)
+        guard let open = tokens.first(where: { $0.marker == .bracketOpen }),
+              let close = tokens.first(where: { $0.marker == .bracketClose && $0.offset > open.offset }) else {
             return (nil, remainder)
         }
-        let prefix = String(remainder[..<openIndex])
-        let choiceOnly = String(remainder[remainder.index(after: openIndex)..<closeIndex])
-        let suffix = String(remainder[remainder.index(after: closeIndex)...])
+        let characters = Array(remainder)
+        let prefix = String(characters[..<open.offset])
+        let choiceOnly = String(characters[open.end..<close.offset])
+        let suffix = String(characters[close.end...])
         let menuText = (prefix + choiceOnly).trimmingCharacters(in: .whitespaces)
         let outcome = (prefix + suffix).trimmingCharacters(in: .whitespaces)
         return (menuText, outcome)
@@ -1315,15 +1317,15 @@ public enum InkParser {
     /// a trailing glue marker.
     private static func needsContentDispatch(_ remainder: String) -> Bool {
         carriesInterpolationOrTag(remainder)
-            || remainder.contains(divertMarker)
-            || remainder.hasSuffix(GlueMarker.marker)
+            || ContentTextScanner.contains(.divert, in: remainder, context: .content)
+            || GlueMarker.endsWithGlue(remainder)
     }
 
     /// True when a content line needs the segment parser: without `{` it can
     /// only ever produce literals and tags, so an interpolation `{…}` or a tag
     /// `#` are exactly the cases that need it.
     private static func carriesInterpolationOrTag(_ text: String) -> Bool {
-        text.contains("{") || text.contains("#")
+        ContentTextScanner.scan(text, context: .content).contains { $0.marker == .braceOpen || $0.marker == .hash }
     }
 
     /// A content line with no glue on either edge: segmented content, prose
@@ -1334,7 +1336,7 @@ public enum InkParser {
         into statements: inout [InkStatement]
     ) throws {
         if carriesInterpolationOrTag(trimmed) {
-            if trimmed.contains("{") {
+            if ContentTextScanner.contains(.braceOpen, in: trimmed, context: .content) {
                 try UnsupportedConstructDetector.check(line: trimmed, lineNumber: position.line)
             }
             let segments = try parseContentSegments(trimmed)
@@ -1359,13 +1361,13 @@ public enum InkParser {
         position: SourcePosition,
         into statements: inout [InkStatement]
     ) -> Bool {
-        guard let arrowRange = trimmed.range(of: divertMarker),
-              arrowRange.lowerBound != trimmed.startIndex else {
+        guard let arrow = ContentTextScanner.first(.divert, in: trimmed, context: .content), arrow.offset > 0 else {
             return false
         }
-        let prose = String(trimmed[..<arrowRange.lowerBound]).trimmingCharacters(in: .whitespaces)
-        let target = String(trimmed[arrowRange.upperBound...]).trimmingCharacters(in: .whitespaces)
-        guard prose.isEmpty == false, target.isEmpty == false, target.contains(divertMarker) == false else {
+        let prose = String(trimmed.prefix(arrow.offset)).trimmingCharacters(in: .whitespaces)
+        let target = String(trimmed.dropFirst(arrow.end)).trimmingCharacters(in: .whitespaces)
+        let isChain = ContentTextScanner.contains(.divert, in: target, context: .content)
+        guard prose.isEmpty == false, target.isEmpty == false, isChain == false else {
             return false
         }
         statements.append(InkStatement(kind: .text(prose), position: position))
@@ -1384,40 +1386,46 @@ public enum InkParser {
     /// a tag running to the end of the line; everything else is literal text.
     /// Empty literal runs are dropped.
     private static func parseContentSegments(_ line: String) throws -> [ContentSegment] {
+        let tokens = ContentTextScanner.scan(line, context: .content)
         var segments: [ContentSegment] = []
         var literal = ""
-        var index = line.startIndex
-        while index < line.endIndex {
-            let character = line[index]
-            if character == "{" {
+        var position = 0
+        while position < tokens.count {
+            switch tokens[position].marker {
+            case .braceOpen?:
                 appendLiteral(literal, into: &segments)
                 literal = ""
-                let (segment, next) = try scanBraceSegment(in: line, after: index)
+                let (segment, next) = try scanBraceSegment(in: tokens, after: position)
                 segments.append(segment)
-                index = next
-                continue
-            }
-            if character == "#" {
+                position = next
+            case .hash?:
                 // The text before a `#` is emitted untrimmed, as inklecate emits
                 // it ("^ after. "): `TrimEndWhitespace` (`InkParser_Content.cs`)
                 // only trims the tag text, and the runtime cleans line-end
                 // whitespace. Trimming the leading side lost the space in
                 // `{n > 0: A} after. # t` (#34).
                 appendLiteral(literal, into: &segments)
-                literal = ""
-                let tag = String(line[line.index(after: index)...]).trimmingCharacters(in: .whitespaces)
-                segments.append(.tag(tag))
-                break
+                segments.append(.tag(tagText(after: tokens[position], in: line)))
+                return segments
+            default:
+                literal += tokens[position].text
+                position += 1
             }
-            literal.append(character)
-            index = line.index(after: index)
         }
         appendLiteral(literal, into: &segments)
         return segments
     }
 
-    /// Scan a `{ … }` group beginning at the brace at `openIndex`. Returns the
-    /// resulting segment and the index just past the closing brace.
+    /// The text of a tag: everything after its `#` to the end of the line, read
+    /// as tag text and trimmed.
+    private static func tagText(after hash: ContentTextScanner.Token, in line: String) -> String {
+        ContentTextScanner.text(of: String(line.dropFirst(hash.end)), context: .tag)
+            .trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Scan a `{ … }` group beginning at the brace token at `openPosition`.
+    /// Returns the resulting segment and the token position just past the
+    /// closing brace. The body runs to the FIRST `}`; nesting is not tracked.
     ///
     /// Classification order matters and mirrors inklecate: a LEADING ALTERNATIVE
     /// MARKER — `!` once, `&` cycle, `\` escape-to-sequence — read after any
@@ -1435,16 +1443,16 @@ public enum InkParser {
     /// by `UnsupportedConstructDetector`, and claiming it here would silently
     /// downgrade an unsupported shuffle to a plain sequence.
     private static func scanBraceSegment(
-        in line: String,
-        after openIndex: String.Index
-    ) throws -> (segment: ContentSegment, next: String.Index) {
-        var index = line.index(after: openIndex)
+        in tokens: [ContentTextScanner.Token],
+        after openPosition: Int
+    ) throws -> (segment: ContentSegment, next: Int) {
+        var position = openPosition + 1
         var body = ""
-        while index < line.endIndex, line[index] != "}" {
-            body.append(line[index])
-            index = line.index(after: index)
+        while position < tokens.count, tokens[position].marker != .braceClose {
+            body += tokens[position].text
+            position += 1
         }
-        let next = index < line.endIndex ? line.index(after: index) : index
+        let next = min(position + 1, tokens.count)
         if let markerSegment = leadingAlternativeSegment(body) {
             return (markerSegment, next)
         }
@@ -1491,6 +1499,18 @@ public enum InkParser {
     /// Read the leading mode marker of a variable-text body and return the mode
     /// plus the body with that marker stripped. A leading `\` escape yields a
     /// sequence over the body minus the escape character.
+    ///
+    /// PROBE for 05-02 (escape-aware mode): this reads a leading `\` as a
+    /// body-level "escape-to-sequence" marker, unlike inklecate. There
+    /// `ContentTextAllowingEcapeChar` makes ANY `\x` in a stage the literal
+    /// `x`; an escape is a property of the content run, not of the body, and
+    /// only the first one is handled here (`{a|\|b}` still splits at the
+    /// escaped bar, `{\!a|b\!}` keeps the second backslash). Because `\` is
+    /// in `alternativeMarkers`, `{\x}` is a one-stage sequence even with no
+    /// top-level `|`. Once the scanner unescapes, `{\!a|b}` would reach here as
+    /// `!a|b` and be misread as a once-only: 05-02 must classify the mode on
+    /// the scanner's tokens (an escaped first character is no marker) and drop
+    /// `\` from `alternativeMarkers`.
     private static func modeAndContent(of body: String) -> (VariableTextMode, String) {
         if body.first == "\\" {
             return (.sequence, String(body.dropFirst()))
@@ -1508,15 +1528,14 @@ public enum InkParser {
         var stages: [String] = []
         var current = ""
         var depth = 0
-        for character in body {
-            if character == "{" { depth += 1 }
-            if character == "}" { depth -= 1 }
-            if character == "|" && depth == 0 {
+        for token in ContentTextScanner.scan(body, context: .content) {
+            depth += token.braceDepthChange
+            if token.marker == .bar && depth == 0 {
                 stages.append(current)
                 current = ""
                 continue
             }
-            current.append(character)
+            current += token.text
         }
         stages.append(current)
         return stages
@@ -1555,18 +1574,21 @@ public enum InkParser {
 
     /// Index of the first `|` at brace-nesting depth 0, or `nil` when none.
     private static func topLevelBarIndex(in body: String) -> String.Index? {
-        topLevelIndex(of: "|", in: body)
+        topLevelIndex(of: barCharacter, in: body)
     }
 
+    /// The variable-text and inline-branch separator, as the scanner defines it.
+    private static let barCharacter = Character(ContentTextScanner.Marker.bar.text)
+
+    /// Index of the first `target` at brace-nesting depth 0. Depth changes only
+    /// at brace markers, so a run is searched whole at its depth.
     private static func topLevelIndex(of target: Character, in body: String) -> String.Index? {
         var depth = 0
-        var index = body.startIndex
-        while index < body.endIndex {
-            let character = body[index]
-            if character == "{" { depth += 1 }
-            if character == "}" { depth -= 1 }
-            if character == target && depth == 0 { return index }
-            index = body.index(after: index)
+        for token in ContentTextScanner.scan(body, context: .content) {
+            depth += token.braceDepthChange
+            guard depth == 0, let offset = token.text.firstIndex(of: target) else { continue }
+            let offsetInBody = token.offset + token.text.distance(from: token.text.startIndex, to: offset)
+            return body.index(body.startIndex, offsetBy: offsetInBody)
         }
         return nil
     }

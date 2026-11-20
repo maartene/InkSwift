@@ -339,12 +339,12 @@ enum ConditionalEmitter {
         // raw bare name reached the runtime's absolute-from-root resolver, which
         // cannot find a knot-nested stitch, so `{cond: -> end_game}` silently
         // no-op'd instead of diverting.
-        if let arrowRange = trimmed.range(of: "->") {
-            let prose = String(trimmed[..<arrowRange.lowerBound]).trimmingCharacters(in: .whitespaces)
+        if let arrow = ContentTextScanner.first(.divert, in: trimmed, context: .content) {
+            let prose = String(trimmed.prefix(arrow.offset)).trimmingCharacters(in: .whitespaces)
             if prose.isEmpty == false {
                 children.append(.text(prose))
             }
-            let target = String(trimmed[arrowRange.upperBound...]).trimmingCharacters(in: .whitespaces)
+            let target = String(trimmed.dropFirst(arrow.end)).trimmingCharacters(in: .whitespaces)
             children.append(LoweringContext.divertNode(to: target, qualify: qualifyDivertTarget))
             return ContainerNode(children: children, namedContent: [:], flags: 0, name: key)
         }

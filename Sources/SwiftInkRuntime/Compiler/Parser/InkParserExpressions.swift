@@ -330,25 +330,19 @@ private struct ExpressionTokenizer {
 
     /// Scan a double-quoted string literal beginning at the opening quote at
     /// `start`. Returns the unquoted contents and the index just past the
-    /// closing quote.
+    /// closing quote. The contents are string text (`ContentTextScanner`): an
+    /// escape pair (an escaped quote or backslash) never closes the literal and
+    /// is kept verbatim in escape-agnostic mode.
     private func scanStringLiteral(from start: Int) -> (token: ExpressionToken, endIndex: Int) {
-        var index = start + 1
+        let rest = String(characters[(start + 1)...])
         var contents = ""
-        while index < characters.count, characters[index] != "\"" {
-            if characters[index] == "\\", index + 1 < characters.count {
-                // A backslash escapes the next character (an escaped quote or
-                // escaped backslash): copy the pair verbatim so the escaped
-                // quote does not terminate the literal early.
-                contents.append(characters[index])
-                contents.append(characters[index + 1])
-                index += 2
-                continue
+        for token in ContentTextScanner.scan(rest, context: .string) {
+            if token.marker == .quote {
+                return (ExpressionToken(text: contents, isStringLiteral: true), start + 1 + token.end)
             }
-            contents.append(characters[index])
-            index += 1
+            contents += token.text
         }
-        let endIndex = index < characters.count ? index + 1 : index
-        return (ExpressionToken(text: contents, isStringLiteral: true), endIndex)
+        return (ExpressionToken(text: contents, isStringLiteral: true), characters.count)
     }
 
     /// Scan a containment operator (`!?`, `?`) beginning at `index`, before

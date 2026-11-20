@@ -671,10 +671,10 @@ private enum WeaveParser {
         // to `.content` so `lowerBody` recognises and threads it; a `~` logic line
         // executes; plain prose stays `.text`. The arrow path below still handles
         // `- -> target` (including a leading prose prefix).
-        guard let arrowRange = body.range(of: "->") else {
+        guard let arrow = ContentTextScanner.first(.divert, in: body, context: .content) else {
             return nonDivertOutcomeStatements(body, at: position)
         }
-        return divertOutcomeStatements(body, arrowRange: arrowRange, at: position)
+        return divertOutcomeStatements(body, arrow: arrow, at: position)
     }
 
     /// An outcome with no divert arrow.
@@ -714,7 +714,8 @@ private enum WeaveParser {
     /// goes through the outcome recogniser (and is dropped if it fails); plain
     /// prose stays verbatim, leading whitespace included.
     private static func gluedRemainderStatements(_ remainder: String, at position: SourcePosition) -> [InkStatement] {
-        if remainder.contains("{") || remainder.contains("->") {
+        let tokens = ContentTextScanner.scan(remainder, context: .content)
+        if tokens.contains(where: { $0.marker == .braceOpen || $0.marker == .divert }) {
             return [try? InkParser.outcomeStatement(remainder, at: position)].compactMap { $0 }
         }
         guard remainder.trimmingCharacters(in: .whitespaces).isEmpty == false else {
@@ -726,22 +727,22 @@ private enum WeaveParser {
     /// An outcome holding a divert arrow: optional prose, then the divert.
     private static func divertOutcomeStatements(
         _ body: String,
-        arrowRange: Range<String.Index>,
+        arrow: ContentTextScanner.Token,
         at position: SourcePosition
     ) -> [InkStatement] {
         // Route the prose preceding the divert through the same outcome
         // recogniser as the no-arrow path so a brace-bearing prefix
         // (inline-conditional `{c: …}` / variable-text `{|…|}`) lowers to
         // `.content` and is threaded by `lowerBody` — not echoed as literal text.
-        let prose = String(body[..<arrowRange.lowerBound]).trimmingCharacters(in: .whitespaces)
+        let prose = String(body.prefix(arrow.offset)).trimmingCharacters(in: .whitespaces)
         var statements = [outcomeOrText(prose, at: position)].compactMap { $0 }
-        let target = String(body[arrowRange.upperBound...]).trimmingCharacters(in: .whitespaces)
+        let target = String(body.dropFirst(arrow.end)).trimmingCharacters(in: .whitespaces)
         // A bare-divert outcome that is a TUNNEL CHAIN (`-> A -> B`) — e.g. the
         // `missing_reel -> harris_demands_component` gather loose-end — lowers via the
         // shared parser recogniser to `tunnelDivert(A)` + `divert(B)`, matching
         // inklecate's adjacent `{"->t->":A},{"->":B}`. A single-hop divert keeps the
         // existing one-statement path (and its inline auto-glue) below.
-        if prose.isEmpty, target.contains("->") {
+        if prose.isEmpty, ContentTextScanner.contains(.divert, in: target, context: .content) {
             return InkParser.divertStatements(of: body, at: position)
         }
         // An inline divert (`prose -> target` on ONE source line) auto-glues the
@@ -998,7 +999,7 @@ private final class WeaveResolver {
     /// `choice.label` verbatim) that this fix does not replicate — left as a
     /// follow-up, out of scope for Issue #8's bracketed-choice reproduction.
     private static func splitChoiceLabelTag(_ label: String) -> (text: String, tags: [String]) {
-        let parts = label.split(separator: "#", omittingEmptySubsequences: false)
+        let parts = ContentTextScanner.split(label, at: .hash, context: .choice)
         guard parts.count > 1 else {
             return (label, [])
         }

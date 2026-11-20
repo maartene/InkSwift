@@ -104,7 +104,7 @@ enum UnsupportedConstructDetector {
     /// error is unlocated; `InkParser` fills in the statement's position.
     /// `contents` is the literal's raw text, escape pairs (`\{`) still in place.
     static func checkStringLiteral(_ contents: String) throws {
-        guard unescapedIndex(of: "{", in: Substring(contents)) != nil else { return }
+        guard escapeAwareScan(contents, context: .string).contains(where: { $0.marker == .braceOpen }) else { return }
         throw CompileError(
             kind: .unsupportedConstruct,
             construct: "string with inline logic",
@@ -123,11 +123,12 @@ enum UnsupportedConstructDetector {
     /// - A tag with inline logic: a top-level tag, which runs to the end of the
     ///   line, holding a `{` (`Line # pic{n}.jpg`, `# {a|b}`).
     static func checkTag(line trimmed: String, lineNumber: Int, column: Int) throws {
-        guard let (hash, insideLogic) = firstTag(in: trimmed) else { return }
+        let tokens = escapeAwareScan(trimmed, context: .content)
+        guard let (hash, insideLogic) = firstTag(in: tokens) else { return }
         let construct: String
         if insideLogic {
             construct = "tag inside inline logic"
-        } else if unescapedIndex(of: "{", in: trimmed[hash...]) != nil {
+        } else if tokens.contains(where: { $0.marker == .braceOpen && $0.offset > hash.offset }) {
             construct = "tag with inline logic"
         } else {
             return
@@ -137,45 +138,26 @@ enum UnsupportedConstructDetector {
             construct: construct,
             message: "A \(construct) is not supported by the native compiler yet.",
             line: lineNumber,
-            column: column + trimmed.distance(from: trimmed.startIndex, to: hash)
+            column: column + hash.offset
         )
     }
 
-    /// The first unescaped `#` in `line`, and whether it sits inside a `{…}`
-    /// group, or `nil` when the line has no tag.
-    private static func firstTag(in line: String) -> (hash: String.Index, insideLogic: Bool)? {
-        var depth = 0
-        var index = line.startIndex
-        while index < line.endIndex {
-            switch line[index] {
-            case "\\":
-                index = line.index(after: index)
-                if index == line.endIndex { return nil }
-            case "{":
-                depth += 1
-            case "}":
-                depth = max(0, depth - 1)
-            case "#":
-                return (index, depth > 0)
-            default:
-                break
-            }
-            index = line.index(after: index)
-        }
-        return nil
+    /// The line read the way inklecate reads it, whatever the compiler's mode:
+    /// an escaped character (`\{`, `\#`) is text, never a marker (#31). This is
+    /// the scanner's single escape primitive, shared with escape-aware content.
+    private static func escapeAwareScan(_ text: String, context: ContentTextScanner.Context) -> [ContentTextScanner.Token] {
+        ContentTextScanner.scan(text, context: context, mode: .escapeAware)
     }
 
-    /// The first `character` in `text` not escaped by a preceding `\`.
-    private static func unescapedIndex(of character: Character, in text: Substring) -> String.Index? {
-        var index = text.startIndex
-        while index < text.endIndex {
-            if text[index] == "\\" {
-                index = text.index(after: index)
-                if index == text.endIndex { return nil }
-            } else if text[index] == character {
-                return index
+    /// The first unescaped `#` in the scanned line, and whether it sits inside a
+    /// `{…}` group, or `nil` when the line has no tag.
+    private static func firstTag(in tokens: [ContentTextScanner.Token]) -> (hash: ContentTextScanner.Token, insideLogic: Bool)? {
+        var depth = 0
+        for token in tokens {
+            if token.marker == .hash {
+                return (token, depth > 0)
             }
-            index = text.index(after: index)
+            depth = max(0, depth + token.braceDepthChange)
         }
         return nil
     }
@@ -184,60 +166,47 @@ enum UnsupportedConstructDetector {
     /// alternative (sequence / cycle / once / shuffle), throw a located
     /// `.unsupportedConstruct` naming it. Returns normally when none is present.
     static func check(line: String, lineNumber: Int) throws {
-        var index = line.startIndex
-        while index < line.endIndex {
-            guard line[index] == "{" else {
-                index = line.index(after: index)
+        let tokens = ContentTextScanner.scan(line, context: .content)
+        var position = 0
+        while position < tokens.count {
+            guard tokens[position].marker == .braceOpen else {
+                position += 1
                 continue
             }
-            let group = scanBraceGroup(in: line, openIndex: index)
+            let group = scanBraceGroup(in: tokens, openPosition: position)
             if let construct = variableTextConstruct(of: group.body) {
-                let column = line.distance(from: line.startIndex, to: index) + 1
                 throw CompileError(
                     kind: .unsupportedConstruct,
                     construct: construct,
                     message: "Variable-text \(construct) is not supported.",
                     line: lineNumber,
-                    column: column
+                    column: tokens[position].offset + 1
                 )
             }
-            index = group.next
+            position = group.next
         }
     }
 
-    /// Scan a brace group beginning at `openIndex`, tracking brace nesting so a
-    /// nested `{…}` does not terminate the outer group. Returns the inner body
-    /// (without the outer braces) and the index just past the closing brace.
+    /// Scan a brace group beginning at the `{` token at `openPosition`, tracking
+    /// brace nesting so a nested `{…}` does not terminate the outer group.
+    /// Returns the inner body (without the outer braces) and the token position
+    /// just past the closing brace.
     private static func scanBraceGroup(
-        in line: String,
-        openIndex: String.Index
-    ) -> (body: String, next: String.Index) {
-        var depth = 0
+        in tokens: [ContentTextScanner.Token],
+        openPosition: Int
+    ) -> (body: String, next: Int) {
+        var depth = 1
         var body = ""
-        var index = openIndex
-        while index < line.endIndex {
-            let character = line[index]
-            if character == "{" {
-                depth += 1
-                if depth > 1 {
-                    body.append(character)
-                }
-                index = line.index(after: index)
-                continue
+        var position = openPosition + 1
+        while position < tokens.count {
+            depth += tokens[position].braceDepthChange
+            if depth == 0 {
+                return (body, position + 1)
             }
-            if character == "}" {
-                depth -= 1
-                if depth == 0 {
-                    return (body, line.index(after: index))
-                }
-                body.append(character)
-                index = line.index(after: index)
-                continue
-            }
-            body.append(character)
-            index = line.index(after: index)
+            body += tokens[position].text
+            position += 1
         }
-        return (body, index)
+        return (body, position)
     }
 
     /// Name the variable-text construct of a brace-group body, or `nil` when the

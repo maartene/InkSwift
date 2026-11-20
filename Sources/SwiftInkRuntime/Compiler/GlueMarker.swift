@@ -24,8 +24,8 @@
 /// remainder — whether to trim it, re-dispatch it through a parser, and which
 /// node kind to emit — because those genuinely differ by context.
 enum GlueMarker {
-    /// The glue marker literal.
-    static let marker = "<>"
+    /// The glue marker literal (defined by `ContentTextScanner`).
+    static let marker = ContentTextScanner.Marker.glue.text
 
     /// Where (if anywhere) a glue marker sits on the edge of a body.
     enum Edge: Equatable {
@@ -42,12 +42,18 @@ enum GlueMarker {
     /// ends (`<>x<>`) is reported as `.leading` with the trailing marker left in
     /// the remainder for the caller to re-dispatch.
     static func edge(of body: String) -> Edge {
-        if body.hasPrefix(marker) {
-            return .leading(remainder: String(body.dropFirst(marker.count)))
+        let tokens = ContentTextScanner.scan(body, context: .content)
+        if let first = tokens.first, first.marker == .glue {
+            return .leading(remainder: String(body.dropFirst(first.length)))
         }
-        if body.hasSuffix(marker) {
-            return .trailing(prose: String(body.dropLast(marker.count)))
+        if let last = tokens.last, last.marker == .glue {
+            return .trailing(prose: String(body.dropLast(last.length)))
         }
         return .none
+    }
+
+    /// Whether `body` ends with a glue marker.
+    static func endsWithGlue(_ body: String) -> Bool {
+        ContentTextScanner.scan(body, context: .content).last?.marker == .glue
     }
 }
