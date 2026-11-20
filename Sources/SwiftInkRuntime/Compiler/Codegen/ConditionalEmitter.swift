@@ -47,10 +47,10 @@ enum ConditionalEmitter {
         _ keyPrefix: [String],
         _ fallThrough: WeaveEmitter.FallThrough,
         _ named: inout [String: ContainerNode]
-    ) -> [NodeKind]
+    ) throws -> [NodeKind]
 
     /// Lowers a guard/subject/label expression to postfix runtime nodes.
-    typealias ExpressionLowerer = (InkExpression) -> [NodeKind]
+    typealias ExpressionLowerer = (InkExpression) throws -> [NodeKind]
 
     /// Lower a block/switch conditional. `subject` is the switch value (compared
     /// `== match` per arm) when `isSwitch`; otherwise each arm's `match` is its own
@@ -68,7 +68,7 @@ enum ConditionalEmitter {
         lowerBranch: BranchLowerer,
         lowerContinuation: BranchLowerer? = nil,
         lowerExpression: ExpressionLowerer
-    ) -> [NodeKind] {
+    ) throws -> [NodeKind] {
         let ordinal = nextOrdinal(in: named)
         let endKey = key(ordinal, "end")
         let endPath = path(keyPrefix, endKey)
@@ -78,26 +78,26 @@ enum ConditionalEmitter {
 
         for (index, branch) in branches.enumerated() {
             guard let match = branch.match else {
-                elseKey = registerArm(
+                elseKey = try registerArm(
                     branch, ordinal: ordinal, index: index, label: "else",
                     endPath: endPath, keyPrefix: keyPrefix, named: &named,
                     lowerBranch: lowerBranch, lowerArm: lowerContinuation
                 )
                 continue
             }
-            let branchKey = registerArm(
+            let branchKey = try registerArm(
                 branch, ordinal: ordinal, index: index, label: "b\(index)",
                 endPath: endPath, keyPrefix: keyPrefix, named: &named,
                 lowerBranch: lowerBranch, lowerArm: lowerContinuation
             )
-            dispatch.append(contentsOf: guardNodes(
+            dispatch.append(contentsOf: try guardNodes(
                 subject: subject, match: match, isSwitch: isSwitch, lowerExpression: lowerExpression
             ))
             dispatch.append(conditionalDivert(to: path(keyPrefix, branchKey)))
         }
 
         dispatch.append(unconditionalDivert(to: elseKey.map { path(keyPrefix, $0) } ?? endPath))
-        registerContinuation(
+        try registerContinuation(
             continuation, endKey: endKey, keyPrefix: keyPrefix,
             fallThrough: fallThrough, named: &named,
             lowerBranch: lowerBranch, lowerContinuation: lowerContinuation
@@ -120,7 +120,7 @@ enum ConditionalEmitter {
         lowerContinuation: BranchLowerer? = nil,
         lowerExpression: ExpressionLowerer,
         qualifyDivertTarget: (String) -> String = { $0 }
-    ) -> [NodeKind] {
+    ) throws -> [NodeKind] {
         let ordinal = nextOrdinal(in: named)
         let endKey = key(ordinal, "end")
         let endPath = path(keyPrefix, endKey)
@@ -135,7 +135,7 @@ enum ConditionalEmitter {
         )
 
         var dispatch: [NodeKind] = [.controlCommand("ev")]
-        dispatch.append(contentsOf: lowerExpression(condition))
+        dispatch.append(contentsOf: try lowerExpression(condition))
         dispatch.append(.controlCommand("/ev"))
         dispatch.append(conditionalDivert(to: path(keyPrefix, trueKey)))
         dispatch.append(unconditionalDivert(to: path(keyPrefix, falseKey)))
@@ -155,9 +155,9 @@ enum ConditionalEmitter {
         var endNamed: [String: ContainerNode] = [:]
         var endChildren: [NodeKind]
         if let lowerContinuation {
-            endChildren = lowerContinuation(continuation, keyPrefix + [endKey], fallThrough, &endNamed)
+            endChildren = try lowerContinuation(continuation, keyPrefix + [endKey], fallThrough, &endNamed)
         } else {
-            endChildren = lowerBranch(continuation, keyPrefix + [endKey], fallThrough, &endNamed)
+            endChildren = try lowerBranch(continuation, keyPrefix + [endKey], fallThrough, &endNamed)
         }
         // A continuation that opens its own weave (trailing choices/gathers routed
         // through the resolver) OR already diverts away threads its own loose end; a
@@ -248,7 +248,7 @@ enum ConditionalEmitter {
         named: inout [String: ContainerNode],
         lowerBranch: BranchLowerer,
         lowerArm: BranchLowerer? = nil
-    ) -> String {
+    ) throws -> String {
         let armKey = key(ordinal, label)
         var armNamed: [String: ContainerNode] = [:]
         // An arm's loose end is its OWN conditional's rejoin: a conditional nested
@@ -258,9 +258,9 @@ enum ConditionalEmitter {
         // arm rejoins the block exactly where a plain arm body does.
         var children: [NodeKind]
         if let lowerArm {
-            children = lowerArm(branch.body, keyPrefix + [armKey], .gather(endPath), &armNamed)
+            children = try lowerArm(branch.body, keyPrefix + [armKey], .gather(endPath), &armNamed)
         } else {
-            children = lowerBranch(branch.body, keyPrefix + [armKey], .gather(endPath), &armNamed)
+            children = try lowerBranch(branch.body, keyPrefix + [armKey], .gather(endPath), &armNamed)
         }
         // An arm always rejoins its own conditional's `-end`. See `terminateArm` for
         // why a weave-bearing arm must swap the weave's halting `done` for that rejoin.
@@ -290,7 +290,7 @@ enum ConditionalEmitter {
         named: inout [String: ContainerNode],
         lowerBranch: BranchLowerer,
         lowerContinuation: BranchLowerer? = nil
-    ) {
+    ) throws {
         // When a `lowerContinuation` is supplied (the weave-routing path, symmetric
         // with `lowerInline`), a weave-bearing rejoin (trailing choices/gathers after
         // a knot/gather-opening block conditional, e.g. `admitted_to_something`'s
@@ -305,9 +305,9 @@ enum ConditionalEmitter {
         var endNamed: [String: ContainerNode] = [:]
         var children: [NodeKind]
         if let lowerContinuation {
-            children = lowerContinuation(continuation, keyPrefix + [endKey], fallThrough, &endNamed)
+            children = try lowerContinuation(continuation, keyPrefix + [endKey], fallThrough, &endNamed)
         } else {
-            children = lowerBranch(continuation, keyPrefix + [endKey], fallThrough, &endNamed)
+            children = try lowerBranch(continuation, keyPrefix + [endKey], fallThrough, &endNamed)
             for (innerKey, container) in endNamed {
                 named[innerKey] = container
             }
@@ -389,14 +389,14 @@ enum ConditionalEmitter {
         match: InkExpression,
         isSwitch: Bool,
         lowerExpression: ExpressionLowerer
-    ) -> [NodeKind] {
+    ) throws -> [NodeKind] {
         var nodes: [NodeKind] = [.controlCommand("ev")]
         if isSwitch {
-            nodes.append(contentsOf: lowerExpression(subject))
-            nodes.append(contentsOf: lowerExpression(match))
+            nodes.append(contentsOf: try lowerExpression(subject))
+            nodes.append(contentsOf: try lowerExpression(match))
             nodes.append(.nativeFunction(.equal))
         } else {
-            nodes.append(contentsOf: lowerExpression(match))
+            nodes.append(contentsOf: try lowerExpression(match))
         }
         nodes.append(.controlCommand("/ev"))
         return nodes

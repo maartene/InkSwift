@@ -86,15 +86,15 @@ struct Compiler_S4_CeilingTests {
 
     @Test func `not unary operator lowers to native postfix bang after the operand`() throws {
         let plain = try InkExpressionParser.parse("not x")
-        #expect(describeNotLowering(plain) == ["ev", "var:x", "fn:!", "out", "/ev"])
+        #expect(try describeNotLowering(plain) == ["ev", "var:x", "fn:!", "out", "/ev"])
 
         // Parenthesised operand: the whole comparison is lowered before `!`.
         let parenthesised = try InkExpressionParser.parse("not (a == b)")
-        #expect(describeNotLowering(parenthesised) == ["ev", "var:a", "var:b", "fn:==", "fn:!", "out", "/ev"])
+        #expect(try describeNotLowering(parenthesised) == ["ev", "var:a", "var:b", "fn:==", "fn:!", "out", "/ev"])
 
         // Double `not` recurses: inner `!` then outer `!`.
         let doubled = try InkExpressionParser.parse("not not x")
-        #expect(describeNotLowering(doubled) == ["ev", "var:x", "fn:!", "fn:!", "out", "/ev"])
+        #expect(try describeNotLowering(doubled) == ["ev", "var:x", "fn:!", "fn:!", "out", "/ev"])
     }
 
     // GAP-2 enabler (step 06-01): a dotted read-count reference to a NAMED target
@@ -450,8 +450,8 @@ private func readCountKeys(in container: ContainerNode) -> [PathReference] {
 
 /// Render a lowered expression's nodes into intention-revealing tokens so the
 /// postfix `not`→`!` order can be asserted (local to this enabler test).
-private func describeNotLowering(_ expression: InkExpression) -> [String] {
-    RuntimeObjectEmitter.lowerInlineExpression(expression).map { node in
+private func describeNotLowering(_ expression: InkExpression) throws -> [String] {
+    try RuntimeObjectEmitter.lowerInlineExpression(expression).map { node in
         switch node {
         case .controlCommand(let command): return command
         case .nativeFunction(let symbol): return "fn:\(symbol)"

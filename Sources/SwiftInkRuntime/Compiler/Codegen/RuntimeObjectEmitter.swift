@@ -44,9 +44,9 @@ enum RuntimeObjectEmitter {
             namedContent[knot.name] = try emitKnot(knot, context: context)
         }
         for function in outline.functions {
-            namedContent[function.name] = emitFunction(function, context: context)
+            namedContent[function.name] = try emitFunction(function, context: context)
         }
-        if let globalDecl = emitGlobalDecl(statements, context: context) {
+        if let globalDecl = try emitGlobalDecl(statements, context: context) {
             namedContent[globalDeclKey] = globalDecl
         }
         let builtRoot = ContainerNode(children: rootChildren, namedContent: namedContent, flags: 0, name: nil)
@@ -87,7 +87,7 @@ enum RuntimeObjectEmitter {
         // choicePoints unreachable after the variable-text divert (loop never
         // advances). Bodies with no leading weave keep the flat `lowerBody` path.
         guard leadsWithWeave(body) else {
-            let flat = lowerBody(body, context: context, keyPrefix: keyPrefix, fallThrough: fallThrough, named: &named)
+            let flat = try lowerBody(body, context: context, keyPrefix: keyPrefix, fallThrough: fallThrough, named: &named)
             return terminateFlatBodyWithDone ? flat + [.controlCommand("done")] : flat
         }
         // A weave lead / choice / gather body can itself emit named containers
@@ -115,7 +115,7 @@ enum RuntimeObjectEmitter {
                 // collector (promoted flat below) — NOT through BodyLowering.named
                 // (which nests them in the container, the wrong scope here).
                 var weaveNamed = bodyNamed.contents
-                let children = lowerBody(statements, context: context, keyPrefix: keyPrefix, named: &weaveNamed)
+                let children = try lowerBody(statements, context: context, keyPrefix: keyPrefix, named: &weaveNamed)
                 bodyNamed.merge(weaveNamed)
                 return WeaveEmitter.BodyLowering(children: children)
             },
@@ -127,14 +127,14 @@ enum RuntimeObjectEmitter {
                 // anonymous conditional/sequence containers get unique ordinals and
                 // do not collide when promoted to the enclosing scope (step 01-03).
                 var weaveNamed = bodyNamed.contents
-                let children = lowerBody(
+                let children = try lowerBody(
                     statements, context: context, keyPrefix: keyPrefix,
                     fallThrough: looseEnd, named: &weaveNamed
                 )
                 bodyNamed.merge(weaveNamed)
                 return WeaveEmitter.BodyLowering(children: children)
             },
-            lowerCondition: { expression in ExpressionLowering.lowerExpression(expression, context: context) }
+            lowerCondition: { expression in try ExpressionLowering.lowerExpression(expression, context: context) }
         )
         for (key, container) in weave.named {
             named[key] = container
@@ -186,7 +186,7 @@ enum RuntimeObjectEmitter {
     private static func emitGlobalDecl(
         _ statements: [InkStatement],
         context: LoweringContext
-    ) -> ContainerNode? {
+    ) throws -> ContainerNode? {
         let globals = statements.compactMap { statement -> (name: String, value: InkExpression)? in
             guard case .globalVariable(let name, let value) = statement.kind else { return nil }
             return (name, value)
@@ -196,7 +196,7 @@ enum RuntimeObjectEmitter {
         var assignments: [NodeKind] = []
         for global in globals {
             // The value is left on the eval stack for the `{VAR=}` that follows.
-            assignments.append(contentsOf: ExpressionLowering.lowerExpression(global.value, context: context))
+            assignments.append(contentsOf: try ExpressionLowering.lowerExpression(global.value, context: context))
             assignments.append(.variableAssignment(name: global.name, isGlobal: true))
         }
         let children = ExpressionLowering.evalGroup(assignments) + [.controlCommand("end")]
@@ -207,8 +207,8 @@ enum RuntimeObjectEmitter {
 
     /// Lower an inline-printed expression with no surrounding declaration or
     /// function tables (see `ExpressionLowering.lowerInlineExpression`).
-    static func lowerInlineExpression(_ expression: InkExpression) -> [NodeKind] {
-        ExpressionLowering.lowerInlineExpression(expression, context: LoweringContext(constants: [:], functions: [:]))
+    static func lowerInlineExpression(_ expression: InkExpression) throws -> [NodeKind] {
+        try ExpressionLowering.lowerInlineExpression(expression, context: LoweringContext(constants: [:], functions: [:]))
     }
 
     // MARK: - Lowering
@@ -257,14 +257,14 @@ enum RuntimeObjectEmitter {
     /// bindings are emitted in REVERSE parameter order, matching the oracle), then
     /// lower the body. A body whose last statement is not an explicit `~ return`
     /// relies on the runtime's implicit void return at container exhaustion.
-    private static func emitFunction(_ function: StoryOutline.Function, context: LoweringContext) -> ContainerNode {
+    private static func emitFunction(_ function: StoryOutline.Function, context: LoweringContext) throws -> ContainerNode {
         var named: [String: ContainerNode] = [:]
         var children: [NodeKind] = []
         for parameter in function.parameters.reversed() {
             children.append(.variableAssignment(name: parameter.name, isGlobal: false))
         }
         let functionContext = context.bindingLocals(localNames(of: function))
-        children.append(contentsOf: lowerBody(
+        children.append(contentsOf: try lowerBody(
             function.body, context: functionContext, keyPrefix: [function.name], named: &named
         ))
         return ContainerNode(children: children, namedContent: named, flags: 0, name: function.name)
@@ -295,12 +295,12 @@ enum RuntimeObjectEmitter {
         keyPrefix: [String],
         fallThrough: WeaveEmitter.FallThrough = .end,
         named: inout [String: ContainerNode]
-    ) -> [NodeKind] {
+    ) throws -> [NodeKind] {
         var children: [NodeKind] = []
         for (offset, statement) in statements.enumerated() {
             let rest = Array(statements[(offset + 1)...])
             if case .conditionalBlock(let subject, let isSwitch, let branches) = statement.kind {
-                children.append(contentsOf: ConditionalEmitter.lower(
+                children.append(contentsOf: try ConditionalEmitter.lower(
                     subject: subject, isSwitch: isSwitch, branches: branches,
                     continuation: rest, keyPrefix: keyPrefix,
                     fallThrough: fallThrough, named: &named,
@@ -308,13 +308,13 @@ enum RuntimeObjectEmitter {
                     lowerContinuation: inlineConditionalContinuationLowerer(
                         context: context, enclosingKeyPrefix: keyPrefix
                     ),
-                    lowerExpression: { ExpressionLowering.lowerExpression($0, context: context) }
+                    lowerExpression: { try ExpressionLowering.lowerExpression($0, context: context) }
                 ))
                 return children
             }
             if case .content(let segments) = statement.kind,
                let inlineIndex = segments.firstIndex(where: isConditionalSegment) {
-                children.append(contentsOf: lowerInlineConditionalLine(
+                children.append(contentsOf: try lowerInlineConditionalLine(
                     segments, conditionalIndex: inlineIndex, restOfBody: rest,
                     context: context, keyPrefix: keyPrefix, fallThrough: fallThrough, named: &named
                 ))
@@ -322,14 +322,14 @@ enum RuntimeObjectEmitter {
             }
             if case .content(let segments) = statement.kind,
                let variableTextIndex = segments.firstIndex(where: isVariableTextSegment) {
-                children.append(contentsOf: lowerVariableTextLine(
+                children.append(contentsOf: try lowerVariableTextLine(
                     segments, variableTextIndex: variableTextIndex, restOfBody: rest,
                     context: context, keyPrefix: keyPrefix, fallThrough: fallThrough, named: &named
                 ))
                 return children
             }
             let nextIsGlue = isGlue(statements, at: offset + 1)
-            children.append(contentsOf: lower(
+            children.append(contentsOf: try lower(
                 statement, gluedToNext: nextIsGlue, context: context
             ))
         }
@@ -347,7 +347,7 @@ enum RuntimeObjectEmitter {
             // scope's fall-through), so THREAD it — a conditional nested in the body
             // otherwise fell back on the `.end` default and ended the story inside
             // its own rejoin container, stranding everything after the outer block.
-            lowerBody(body, context: context, keyPrefix: prefix, fallThrough: fallThrough, named: &collected)
+            try lowerBody(body, context: context, keyPrefix: prefix, fallThrough: fallThrough, named: &collected)
         }
     }
 
@@ -374,17 +374,17 @@ enum RuntimeObjectEmitter {
         keyPrefix: [String],
         fallThrough: WeaveEmitter.FallThrough = .end,
         named: inout [String: ContainerNode]
-    ) -> [NodeKind] {
+    ) throws -> [NodeKind] {
         guard case .variableText(let mode, let stages) = segments[variableTextIndex] else {
             return []
         }
         let prefixSegments = Array(segments[..<variableTextIndex])
         let suffixSegments = Array(segments[(variableTextIndex + 1)...])
-        var children = lowerContentSegments(prefixSegments, context: context)
+        var children = try lowerContentSegments(prefixSegments, context: context)
 
         let continuation = inlineContinuationStatements(suffixSegments, restOfBody: restOfBody)
 
-        children.append(contentsOf: VariableTextEmitter.lower(
+        children.append(contentsOf: try VariableTextEmitter.lower(
             mode: mode, stages: stages, continuation: continuation,
             keyPrefix: keyPrefix, named: &named,
             lowerContinuation: continuationLowerer(
@@ -403,7 +403,7 @@ enum RuntimeObjectEmitter {
         context: LoweringContext,
         enclosingKeyPrefix: [String],
         fallThrough: WeaveEmitter.FallThrough
-    ) -> (_ body: [InkStatement], _ prefix: [String], _ named: inout [String: ContainerNode]) -> [NodeKind] {
+    ) -> (_ body: [InkStatement], _ prefix: [String], _ named: inout [String: ContainerNode]) throws -> [NodeKind] {
         return { body, prefix, collected in
             // The weave's `c-N`/`g-N` outcome/gather containers promote up into the
             // ENCLOSING scope's named map (the variable-text caller's collector), so
@@ -420,14 +420,14 @@ enum RuntimeObjectEmitter {
             // through to the enclosing gather. Routing such a body through the
             // resolver would split the second segment's lead from the choice items,
             // dead-ending the dispatch before the choices are reached (#3b layer 1+2).
-            guard let weave = lowerLeadingWeave(
+            guard let weave = try lowerLeadingWeave(
                 body, keyPrefix: enclosingKeyPrefix, fallThrough: fallThrough, context: context
             ) else {
                 // Address the chained segment's containers under `enclosingKeyPrefix`
                 // (not the continuation's own `prefix`): like the weave branch above,
                 // its dispatch/stage/choice containers promote up into the enclosing
                 // scope's collector, so their paths must resolve from that scope.
-                return lowerBody(
+                return try lowerBody(
                     body, context: context, keyPrefix: enclosingKeyPrefix,
                     fallThrough: fallThrough, named: &collected
                 )
@@ -452,17 +452,17 @@ enum RuntimeObjectEmitter {
         keyPrefix: [String],
         fallThrough: WeaveEmitter.FallThrough = .end,
         named: inout [String: ContainerNode]
-    ) -> [NodeKind] {
+    ) throws -> [NodeKind] {
         guard case .conditional(let condition, let ifTrue, let ifFalse) = segments[conditionalIndex] else {
             return []
         }
         let prefixSegments = Array(segments[..<conditionalIndex])
         let suffixSegments = Array(segments[(conditionalIndex + 1)...])
-        var children = lowerContentSegments(prefixSegments, context: context)
+        var children = try lowerContentSegments(prefixSegments, context: context)
 
         let continuation = inlineContinuationStatements(suffixSegments, restOfBody: restOfBody)
 
-        children.append(contentsOf: ConditionalEmitter.lowerInline(
+        children.append(contentsOf: try ConditionalEmitter.lowerInline(
             condition: condition, trueText: ifTrue, falseText: ifFalse,
             continuation: continuation, keyPrefix: keyPrefix,
             fallThrough: fallThrough, named: &named,
@@ -470,7 +470,7 @@ enum RuntimeObjectEmitter {
             lowerContinuation: inlineConditionalContinuationLowerer(
                 context: context, enclosingKeyPrefix: keyPrefix
             ),
-            lowerExpression: { ExpressionLowering.lowerExpression($0, context: context) },
+            lowerExpression: { try ExpressionLowering.lowerExpression($0, context: context) },
             qualifyDivertTarget: { context.qualifiedDivertTarget($0) }
         ))
         return children
@@ -499,10 +499,10 @@ enum RuntimeObjectEmitter {
             // c-N/g-N containers and any nested inline conditional nest under, so
             // choicePoint targets and rejoin diverts resolve self-consistently and
             // never collide with sibling conditionals in the enclosing scope.
-            guard let weave = lowerLeadingWeave(
+            guard let weave = try lowerLeadingWeave(
                 body, keyPrefix: prefix, fallThrough: fallThrough, context: context
             ) else {
-                return lowerBody(
+                return try lowerBody(
                     body, context: context, keyPrefix: prefix,
                     fallThrough: fallThrough, named: &collected
                 )
@@ -537,26 +537,26 @@ enum RuntimeObjectEmitter {
         keyPrefix: [String],
         fallThrough: WeaveEmitter.FallThrough,
         context: LoweringContext
-    ) -> (children: [NodeKind], named: [String: ContainerNode])? {
+    ) throws -> (children: [NodeKind], named: [String: ContainerNode])? {
         guard leadsWithWeave(body) else {
             return nil
         }
-        return try? WeaveEmitter.lower(
+        return try WeaveEmitter.lower(
             body, keyPrefix: keyPrefix, fallThrough: fallThrough,
             lowerStatement: { statements, bodyKeyPrefix in
                 var weaveNamed: [String: ContainerNode] = [:]
-                let children = lowerBody(statements, context: context, keyPrefix: bodyKeyPrefix, named: &weaveNamed)
+                let children = try lowerBody(statements, context: context, keyPrefix: bodyKeyPrefix, named: &weaveNamed)
                 return WeaveEmitter.BodyLowering(children: children, named: weaveNamed)
             },
             lowerStatementWithFallThrough: { statements, looseEnd, bodyKeyPrefix in
                 var weaveNamed: [String: ContainerNode] = [:]
-                let children = lowerBody(
+                let children = try lowerBody(
                     statements, context: context, keyPrefix: bodyKeyPrefix,
                     fallThrough: looseEnd, named: &weaveNamed
                 )
                 return WeaveEmitter.BodyLowering(children: children, named: weaveNamed)
             },
-            lowerCondition: { expression in ExpressionLowering.lowerExpression(expression, context: context) }
+            lowerCondition: { expression in try ExpressionLowering.lowerExpression(expression, context: context) }
         )
     }
 
@@ -579,22 +579,22 @@ enum RuntimeObjectEmitter {
         _ statement: InkStatement,
         gluedToNext: Bool,
         context: LoweringContext
-    ) -> [NodeKind] {
+    ) throws -> [NodeKind] {
         switch statement.kind {
         case .text(let value):
             let text = gluedToNext ? value + " " : value
             return [.text(text), .newline]
         case .content(let segments):
-            return lowerContent(segments, context: context)
+            return try lowerContent(segments, context: context)
         case .temporaryVariable(let name, let value):
-            return lowerAssignment(name: name, value: value, isGlobal: false, context: context)
+            return try lowerAssignment(name: name, value: value, isGlobal: false, context: context)
         case .assignment(let name, let value):
             // An assignment to a function-local name (parameter or body temp)
             // lowers to `temp=` so the runtime writes through the call frame — the
             // path a `ref` parameter needs to mutate the caller's variable. Any
             // other name is a global reassignment (`VAR=`).
             let isGlobal = context.localNames.contains(name) == false
-            return lowerAssignment(name: name, value: value, isGlobal: isGlobal, context: context)
+            return try lowerAssignment(name: name, value: value, isGlobal: isGlobal, context: context)
         case .divert(let target):
             return [LoweringContext.divertNode(to: target, qualify: context.qualifiedDivertTarget)]
         case .tunnelDivert(let target):
@@ -604,9 +604,9 @@ enum RuntimeObjectEmitter {
             // `ev void /ev` matches the oracle (a void result for the call site).
             return ExpressionLowering.evalGroup([.voidValue]) + [.controlCommand("->->")]
         case .functionCallStatement(let call):
-            return lowerFunctionCallStatement(call, context: context)
+            return try lowerFunctionCallStatement(call, context: context)
         case .returnStatement(let value):
-            return lowerReturn(value, context: context)
+            return try lowerReturn(value, context: context)
         case .end:
             return [.controlCommand("end")]
         case .glue:
@@ -631,8 +631,8 @@ enum RuntimeObjectEmitter {
     private static func lowerFunctionCallStatement(
         _ call: InkExpression,
         context: LoweringContext
-    ) -> [NodeKind] {
-        ExpressionLowering.evalGroup(ExpressionLowering.lowerExpression(call, context: context) + [.controlCommand("pop")])
+    ) throws -> [NodeKind] {
+        try ExpressionLowering.evalGroup(ExpressionLowering.lowerExpression(call, context: context) + [.controlCommand("pop")])
     }
 
     /// Lower a function return `~ return [expr]`: evaluate the optional value onto
@@ -641,8 +641,8 @@ enum RuntimeObjectEmitter {
     private static func lowerReturn(
         _ value: InkExpression?,
         context: LoweringContext
-    ) -> [NodeKind] {
-        let valueNodes = value.map { ExpressionLowering.lowerExpression($0, context: context) } ?? []
+    ) throws -> [NodeKind] {
+        let valueNodes = try value.map { try ExpressionLowering.lowerExpression($0, context: context) } ?? []
         return ExpressionLowering.evalGroup(valueNodes) + [.controlCommand("~ret")]
     }
 
@@ -653,8 +653,8 @@ enum RuntimeObjectEmitter {
     private static func lowerContent(
         _ segments: [ContentSegment],
         context: LoweringContext
-    ) -> [NodeKind] {
-        var nodes = lowerContentSegments(segments, context: context)
+    ) throws -> [NodeKind] {
+        var nodes = try lowerContentSegments(segments, context: context)
         nodes.append(.newline)
         return nodes
     }
@@ -664,14 +664,14 @@ enum RuntimeObjectEmitter {
     private static func lowerContentSegments(
         _ segments: [ContentSegment],
         context: LoweringContext
-    ) -> [NodeKind] {
+    ) throws -> [NodeKind] {
         var nodes: [NodeKind] = []
         for segment in segments {
             switch segment {
             case .literal(let text):
                 nodes.append(.text(text))
             case .expression(let expression):
-                nodes.append(contentsOf: ExpressionLowering.lowerInlineExpression(expression, context: context))
+                nodes.append(contentsOf: try ExpressionLowering.lowerInlineExpression(expression, context: context))
             case .tag(let tag):
                 nodes.append(contentsOf: [.tagOpen, .text(tag), .tagClose])
             case .conditional:
@@ -693,8 +693,8 @@ enum RuntimeObjectEmitter {
         value: InkExpression,
         isGlobal: Bool,
         context: LoweringContext
-    ) -> [NodeKind] {
-        ExpressionLowering.evalGroup(ExpressionLowering.lowerExpression(value, context: context))
+    ) throws -> [NodeKind] {
+        try ExpressionLowering.evalGroup(ExpressionLowering.lowerExpression(value, context: context))
             + [.variableAssignment(name: name, isGlobal: isGlobal)]
     }
 

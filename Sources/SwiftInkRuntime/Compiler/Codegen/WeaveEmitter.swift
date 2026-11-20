@@ -120,9 +120,9 @@ enum WeaveEmitter {
         _ statements: [InkStatement],
         keyPrefix: [String] = [],
         fallThrough: FallThrough = .end,
-        lowerStatement: @escaping ([InkStatement], [String]) -> BodyLowering,
-        lowerStatementWithFallThrough: (([InkStatement], FallThrough, [String]) -> BodyLowering)? = nil,
-        lowerCondition: @escaping (InkExpression) -> [NodeKind] = { _ in [] }
+        lowerStatement: @escaping ([InkStatement], [String]) throws -> BodyLowering,
+        lowerStatementWithFallThrough: (([InkStatement], FallThrough, [String]) throws -> BodyLowering)? = nil,
+        lowerCondition: @escaping (InkExpression) throws -> [NodeKind] = { _ in [] }
     ) throws -> (children: [NodeKind], named: [String: ContainerNode]) {
         let resolved = try lowerWithLabelPaths(
             statements, keyPrefix: keyPrefix, fallThrough: fallThrough,
@@ -147,9 +147,9 @@ enum WeaveEmitter {
         _ statements: [InkStatement],
         keyPrefix: [String] = [],
         fallThrough: FallThrough = .end,
-        lowerStatement: @escaping ([InkStatement], [String]) -> BodyLowering,
-        lowerStatementWithFallThrough: (([InkStatement], FallThrough, [String]) -> BodyLowering)? = nil,
-        lowerCondition: @escaping (InkExpression) -> [NodeKind] = { _ in [] }
+        lowerStatement: @escaping ([InkStatement], [String]) throws -> BodyLowering,
+        lowerStatementWithFallThrough: (([InkStatement], FallThrough, [String]) throws -> BodyLowering)? = nil,
+        lowerCondition: @escaping (InkExpression) throws -> [NodeKind] = { _ in [] }
     ) throws -> (children: [NodeKind], named: [String: ContainerNode], labelPaths: [String: [String]]) {
         let block = WeaveParser.parse(statements, atLevel: WeaveParser.topLevel(of: statements))
         let resolver = WeaveResolver(
@@ -815,18 +815,18 @@ private final class WeaveResolver {
     /// knot/stitch prefix — without the per-container prefix, two sibling choice
     /// bodies' conditionals collide on `cond0-*` and clobber each other's
     /// continuation (the `-> pushes_cup` continuation loss, step 01-03).
-    let lowerStatement: ([InkStatement], [String]) -> WeaveEmitter.BodyLowering
+    let lowerStatement: ([InkStatement], [String]) throws -> WeaveEmitter.BodyLowering
     /// Lowers a gather/choice body while threading the enclosing loose-end target,
     /// so a body that LEADS with a variable-text / inline-conditional line falls
     /// through to the enclosing gather (not the hardcoded `.end`) once its trailing
     /// choices thread off that line (#3b layer 1+2). `nil` falls back to the plain
     /// `lowerStatement` (callers that do not thread a loose-end into bodies). Takes
     /// the container's own key prefix (see `lowerStatement`).
-    let lowerStatementWithFallThrough: (([InkStatement], FallThrough, [String]) -> WeaveEmitter.BodyLowering)?
+    let lowerStatementWithFallThrough: (([InkStatement], FallThrough, [String]) throws -> WeaveEmitter.BodyLowering)?
     /// Lowers a choice's `{guard}` expression to POSTFIX eval-stack nodes, reusing
     /// the `ExpressionLowering.lowerExpression` idiom (composes with 02-03's dotted
     /// read-count operands). The resolver wraps the result in an `ev … /ev` block.
-    let lowerCondition: (InkExpression) -> [NodeKind]
+    let lowerCondition: (InkExpression) throws -> [NodeKind]
 
     /// The `label -> absolute compiled path` table written at the keying site as
     /// containers resolve (criterion 3): the same `keyPrefix + key` the container
@@ -834,9 +834,9 @@ private final class WeaveResolver {
     private(set) var labelPaths: [String: [String]] = [:]
 
     init(
-        lowerStatement: @escaping ([InkStatement], [String]) -> WeaveEmitter.BodyLowering,
-        lowerStatementWithFallThrough: (([InkStatement], FallThrough, [String]) -> WeaveEmitter.BodyLowering)? = nil,
-        lowerCondition: @escaping (InkExpression) -> [NodeKind] = { _ in [] }
+        lowerStatement: @escaping ([InkStatement], [String]) throws -> WeaveEmitter.BodyLowering,
+        lowerStatementWithFallThrough: (([InkStatement], FallThrough, [String]) throws -> WeaveEmitter.BodyLowering)? = nil,
+        lowerCondition: @escaping (InkExpression) throws -> [NodeKind] = { _ in [] }
     ) {
         self.lowerStatement = lowerStatement
         self.lowerStatementWithFallThrough = lowerStatementWithFallThrough
@@ -848,11 +848,11 @@ private final class WeaveResolver {
     /// otherwise lower it plainly.
     private func lowerBody(
         _ body: [InkStatement], looseEnd: FallThrough, keyPrefix: [String]
-    ) -> WeaveEmitter.BodyLowering {
+    ) throws -> WeaveEmitter.BodyLowering {
         if let lowerStatementWithFallThrough {
-            return lowerStatementWithFallThrough(body, looseEnd, keyPrefix)
+            return try lowerStatementWithFallThrough(body, looseEnd, keyPrefix)
         }
-        return lowerStatement(body, keyPrefix)
+        return try lowerStatement(body, keyPrefix)
     }
 
     func resolve(
@@ -861,7 +861,7 @@ private final class WeaveResolver {
         fallThrough: FallThrough
     ) throws -> (children: [NodeKind], named: [String: ContainerNode]) {
         let gathers = gatherKeys(block, keyPrefix: keyPrefix)
-        let lead = lowerStatement(block.lead, keyPrefix)
+        let lead = try lowerStatement(block.lead, keyPrefix)
         var children = lead.children
         // The block lead is lowered under the enclosing `keyPrefix`, so any named
         // containers it opened (inline-conditional/variable-text sub-containers) are
@@ -888,7 +888,7 @@ private final class WeaveResolver {
             case .choice(let choice):
                 let key = choiceKey(choice, ordinal: choiceOrdinal)
                 recordLabelPath(choice.weaveLabel, keyPrefix: keyPrefix, key: key)
-                children.append(contentsOf: choicePointNodes(choice, target: qualified(keyPrefix, key)))
+                children.append(contentsOf: try choicePointNodes(choice, target: qualified(keyPrefix, key)))
                 named[key] = try outcomeContainer(
                     choice,
                     key: key,
@@ -936,7 +936,7 @@ private final class WeaveResolver {
 
     // MARK: Choice lowering
 
-    private func choicePointNodes(_ choice: WeaveChoice, target: [String]) -> [NodeKind] {
+    private func choicePointNodes(_ choice: WeaveChoice, target: [String]) throws -> [NodeKind] {
         // Choice-text eval block first (leaves the menu string on the eval stack),
         // then — for a `{guard}`-carrying choice — the guard eval block (leaves a
         // boolean on top). The runtime pops the condition bool first, then the
@@ -959,7 +959,7 @@ private final class WeaveResolver {
         nodes.append(contentsOf: [.controlCommand("/str"), .controlCommand("/ev")])
         if let condition = choice.condition {
             nodes.append(.controlCommand("ev"))
-            nodes.append(contentsOf: lowerCondition(condition))
+            nodes.append(contentsOf: try lowerCondition(condition))
             nodes.append(.controlCommand("/ev"))
         }
         let targetPath = ContainerPath(components: target.map(PathComponent.init(parsing:)))
@@ -1034,7 +1034,7 @@ private final class WeaveResolver {
             lead.append(.text(choice.label))
             lead.append(.newline)
         }
-        let body = lowerBody(choice.body, looseEnd: looseEnd, keyPrefix: keyPrefix)
+        let body = try lowerBody(choice.body, looseEnd: looseEnd, keyPrefix: keyPrefix)
         lead.append(contentsOf: body.children)
         return try containerSpliced(
             lead: lead, body: choice.body, nested: choice.nested,
@@ -1092,7 +1092,7 @@ private final class WeaveResolver {
                 gather, nested: nested, key: key, keyPrefix: keyPrefix, looseEnd: looseEnd, terminator: terminator
             )
         }
-        let body = lowerBody(gather.body, looseEnd: looseEnd, keyPrefix: keyPrefix + [key])
+        let body = try lowerBody(gather.body, looseEnd: looseEnd, keyPrefix: keyPrefix + [key])
         return try containerSpliced(
             lead: body.children,
             body: gather.body, nested: gather.nested,
@@ -1141,7 +1141,7 @@ private final class WeaveResolver {
         // The body lowered so its conditional continuation falls through to the
         // rejoin (the choices), not the gather's eventual loose end.
         var named: [String: ContainerNode] = [rejoinKey: rejoin]
-        let body = lowerBody(gather.body, looseEnd: .gather(rejoinPath), keyPrefix: gatherPath)
+        let body = try lowerBody(gather.body, looseEnd: .gather(rejoinPath), keyPrefix: gatherPath)
         // The gather body's own inline-conditional/variable-text sub-containers nest
         // under the gather scope alongside the rejoin (step 01-13).
         for (bodyKey, container) in body.named { named[bodyKey] = container }

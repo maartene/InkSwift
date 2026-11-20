@@ -50,7 +50,7 @@ enum VariableTextEmitter {
         _ body: [InkStatement],
         _ keyPrefix: [String],
         _ named: inout [String: ContainerNode]
-    ) -> [NodeKind]
+    ) throws -> [NodeKind]
 
     /// Lower a variable-text alternative. `mode` selects the dispatch arithmetic;
     /// `stages` are the raw `|`-split stage texts. `continuation` is the statements
@@ -65,7 +65,7 @@ enum VariableTextEmitter {
         keyPrefix: [String],
         named: inout [String: ContainerNode],
         lowerContinuation: ContinuationLowerer
-    ) -> [NodeKind] {
+    ) throws -> [NodeKind] {
         let ordinal = nextOrdinal(in: named)
         let dispatchKey = key(ordinal, "d")
         let endKey = key(ordinal, "end")
@@ -89,7 +89,7 @@ enum VariableTextEmitter {
             children: dispatchChildren, namedContent: stageContainers,
             flags: visitedFlag, name: dispatchKey
         )
-        registerContinuation(
+        try registerContinuation(
             continuation, endKey: endKey, keyPrefix: keyPrefix,
             named: &named, lowerContinuation: lowerContinuation
         )
@@ -161,14 +161,14 @@ enum VariableTextEmitter {
         keyPrefix: [String],
         named: inout [String: ContainerNode],
         lowerContinuation: ContinuationLowerer
-    ) {
+    ) throws {
         // Seed the continuation's collector with the dispatch container ALREADY
         // registered for THIS line so a second variable-text segment on the same
         // line (`{&…} {!…}`) picks the NEXT ordinal (`seq1-*`, not a colliding
         // `seq0-*`). The seeded entries are pruned before merging back so the end
         // container does not re-nest its own siblings.
         var endNamed = named
-        let children = lowerContinuation(continuation, keyPrefix + [endKey], &endNamed)
+        let children = try lowerContinuation(continuation, keyPrefix + [endKey], &endNamed)
         for (innerKey, container) in endNamed where named[innerKey] == nil {
             named[innerKey] = container
         }

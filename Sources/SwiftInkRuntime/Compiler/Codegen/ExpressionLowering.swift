@@ -25,8 +25,8 @@ enum ExpressionLowering {
     static func lowerInlineExpression(
         _ expression: InkExpression,
         context: LoweringContext
-    ) -> [NodeKind] {
-        evalGroup(lowerExpression(expression, context: context) + [.controlCommand("out")])
+    ) throws -> [NodeKind] {
+        evalGroup(try lowerExpression(expression, context: context) + [.controlCommand("out")])
     }
 
     /// Wrap eval-stack nodes in the runtime's `ev` … `/ev` evaluation block. The
@@ -46,7 +46,7 @@ enum ExpressionLowering {
     static func lowerExpression(
         _ expression: InkExpression,
         context: LoweringContext
-    ) -> [NodeKind] {
+    ) throws -> [NodeKind] {
         switch expression {
         case .intLiteral(let value):
             return [.intValue(value)]
@@ -57,15 +57,15 @@ enum ExpressionLowering {
         case .stringLiteral(let value):
             return [.controlCommand("str"), .text(value), .controlCommand("/str")]
         case .variableReference(let name):
-            return lowerVariableReference(name, context: context)
+            return try lowerVariableReference(name, context: context)
         case .binary(let oper, let left, let right):
-            return lowerExpression(left, context: context)
+            return try lowerExpression(left, context: context)
                 + lowerExpression(right, context: context)
                 + [.nativeFunction(nativeOperator(oper))]
         case .unary(let oper, let operand):
-            return lowerExpression(operand, context: context) + [.nativeFunction(nativeOperator(oper))]
+            return try lowerExpression(operand, context: context) + [.nativeFunction(nativeOperator(oper))]
         case .functionCall(let name, let arguments):
-            return lowerFunctionCall(name: name, arguments: arguments, context: context)
+            return try lowerFunctionCall(name: name, arguments: arguments, context: context)
         }
     }
 
@@ -84,9 +84,9 @@ enum ExpressionLowering {
     /// label or knot/stitch is a read-count subject (ADR-011 EXTEND #2) and emits
     /// `.readCount(path)` addressing the resolved container; a true miss (a real
     /// qualified variable) falls through to `.variableReference`.
-    private static func lowerVariableReference(_ name: String, context: LoweringContext) -> [NodeKind] {
+    private static func lowerVariableReference(_ name: String, context: LoweringContext) throws -> [NodeKind] {
         if let inlined = context.constants[name] {
-            return lowerExpression(inlined, context: context)
+            return try lowerExpression(inlined, context: context)
         }
         if let path = context.readCountPath(for: name) {
             return [.readCount(.absolute(ContainerPath(components: path.map(PathComponent.init(parsing:)))))]
@@ -103,7 +103,7 @@ enum ExpressionLowering {
         name: String,
         arguments: [InkExpression],
         context: LoweringContext
-    ) -> [NodeKind] {
+    ) throws -> [NodeKind] {
         let parameters = context.functions[name] ?? []
         var nodes: [NodeKind] = []
         for (offset, argument) in arguments.enumerated() {
@@ -112,7 +112,7 @@ enum ExpressionLowering {
                 nodes.append(.variablePointer(name: variableName, contextIndex: globalContextIndex))
                 continue
             }
-            nodes.append(contentsOf: lowerExpression(argument, context: context))
+            nodes.append(contentsOf: try lowerExpression(argument, context: context))
         }
         nodes.append(.functionCall(target: PathReference(parsing: name)))
         return nodes

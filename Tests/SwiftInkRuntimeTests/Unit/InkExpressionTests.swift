@@ -183,7 +183,7 @@ struct RuntimeObjectEmitterExpressionTests {
     // literals → .intValue, operators → .nativeFunction.
     @Test func `lowers inline arithmetic to oracle postfix node order`() throws {
         let expression = try InkExpressionParser.parse("2 + 3 * 4")
-        let nodes = RuntimeObjectEmitter.lowerInlineExpression(expression)
+        let nodes = try RuntimeObjectEmitter.lowerInlineExpression(expression)
 
         #expect(describe(nodes) == ["ev", "int:2", "int:3", "int:4", "fn:*", "fn:+", "out", "/ev"])
     }
@@ -191,7 +191,7 @@ struct RuntimeObjectEmitterExpressionTests {
     // B2b — a float operand lowers to .floatValue carrying the operand value.
     @Test func `lowers a float operand to a float value node`() throws {
         let expression = try InkExpressionParser.parse("1.5 + 2")
-        let nodes = RuntimeObjectEmitter.lowerInlineExpression(expression)
+        let nodes = try RuntimeObjectEmitter.lowerInlineExpression(expression)
 
         #expect(describe(nodes) == ["ev", "float:1.5", "int:2", "fn:+", "out", "/ev"])
     }
@@ -199,7 +199,7 @@ struct RuntimeObjectEmitterExpressionTests {
     // B3 — UNIT INVARIANT: playing the lowered `{2 + 3 * 4}` yields "14".
     @Test func `played inline integer arithmetic yields fourteen`() throws {
         let expression = try InkExpressionParser.parse("2 + 3 * 4")
-        var children = RuntimeObjectEmitter.lowerInlineExpression(expression)
+        var children = try RuntimeObjectEmitter.lowerInlineExpression(expression)
         children.append(.newline)
         let root = ContainerNode(children: children, namedContent: [:], flags: 0, name: nil)
 
